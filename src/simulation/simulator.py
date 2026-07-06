@@ -83,11 +83,9 @@ class MatchSimulator:
 
     def __init__(
         self,
-        set_predictor=None,
         point_model=None,
         player_stats_gen=None,
     ):
-        self.set_predictor = set_predictor
         self.point_model = point_model
         self.player_stats_gen = player_stats_gen
 

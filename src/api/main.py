@@ -92,7 +92,6 @@ except Exception as e:
 
 # ─── Simulador ───
 simulator = MatchSimulator(
-    set_predictor=set_predictor,
     point_model=point_model,
     player_stats_gen=player_gen,
 )
