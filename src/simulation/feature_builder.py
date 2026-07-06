@@ -29,6 +29,7 @@ from src.data.feature_store import (
 ELO_K = 32          # Factor K para actualizacion
 ELO_BASE = 1500     # Elo inicial para equipos nuevos
 ELO_HOME_ADV = 65   # Ventaja de campo en puntos Elo (~P(home)=0.59 con igualdad)
+ASSUMED_REST_DAYS = 7  # Descanso entre jornadas (simplificado)
 
 
 def _elo_expected(elo_a: float, elo_b: float) -> float:
@@ -162,33 +163,40 @@ class RuntimeFeatureBuilder:
                     features[f"{prefix}_win_rate_last5"] = (
                         sum(1 for w, _, _, _, _, _ in last5 if w) / len(last5)
                     )
-                    home_results = [r for r in results if r[1]]
-                    away_results = [r for r in results if not r[1]]
+                    # Win rate home/away (con localia real)
+                    home_results = [r for r in results if r[1]]  # is_home=True
+                    away_results = [r for r in results if not r[1]]  # is_home=False
                     features[f"{prefix}_win_rate_home"] = (
                         sum(1 for w, _, _, _, _, _ in home_results if w) / max(len(home_results), 1)
                     )
                     features[f"{prefix}_win_rate_away"] = (
                         sum(1 for w, _, _, _, _, _ in away_results if w) / max(len(away_results), 1)
                     )
+                    # Set win rate
                     sf = sum(sf for _, _, sf, _, _, _ in results)
                     sc = sum(sc for _, _, _, sc, _, _ in results)
                     total_sets = sf + sc
                     features[f"{prefix}_set_win_rate"] = sf / max(total_sets, 1)
+                    # Set diff exp
                     features[f"{prefix}_set_diff_exp"] = (sf - sc) / max(total, 1)
+                    # Puntos fav/contra (usando puntos reales, no sets)
                     pf = sum(pf for _, _, _, _, pf, _ in results)
                     pc = sum(pc for _, _, _, _, _, pc in results)
                     features[f"{prefix}_pts_fav_exp"] = pf / max(total, 1)
                     features[f"{prefix}_pts_con_exp"] = pc / max(total, 1)
+                    # Forma (home/away real)
                     features[f"{prefix}_forma_home"] = (
                         sum(1 for w, _, _, _, _, _ in home_results if w) / max(len(home_results), 1)
                     ) if home_results else wins / total
                     features[f"{prefix}_forma_away"] = (
                         sum(1 for w, _, _, _, _, _ in away_results if w) / max(len(away_results), 1)
                     ) if away_results else wins / total
+                    # Racha
                     features[f"{prefix}_racha"] = self.streaks.get(team, 0)
                     features[f"{prefix}_ultimo_set_diff"] = (
                         results[-1][2] - results[-1][3] if results else 0
                     )
+                    # Ranking (por puntos SuperLega)
                     features[f"{prefix}_rank_season"] = self.standings_points.get(team, 0)
                 else:
                     features[f"{prefix}_win_rate_global"] = 0.5
@@ -205,7 +213,8 @@ class RuntimeFeatureBuilder:
                     features[f"{prefix}_ultimo_set_diff"] = 0
                     features[f"{prefix}_rank_season"] = 0
 
-                features[f"{prefix}_descanso"] = 7
+                features[f"{prefix}_descanso"] = ASSUMED_REST_DAYS
+                # Elo
                 features[f"elo_{prefix}"] = self.elo.get(team, ELO_BASE)
 
             # Diffs dinamicos
@@ -217,12 +226,14 @@ class RuntimeFeatureBuilder:
                 a_val = features.get(f"a_{feat}", 0)
                 features[f"diff_{feat}"] = h_val - a_val
 
+            # Elo diffs
             features["elo_diff"] = features["elo_h"] - features["elo_a"]
             p_home = _elo_expected(features["elo_h"] + ELO_HOME_ADV, features["elo_a"])
             features["elo_win_prob_h"] = p_home
             features["elo_h_home"] = features["elo_h"] + ELO_HOME_ADV
             features["elo_a_away"] = features["elo_a"]
 
+            # H2H (combinar historico con simulado)
             h2h_key = (local, visitante)
             hist = self.historical_h2h.get(h2h_key, {"wins_h": 0, "total": 0})
             sim = self.h2h.get(h2h_key, {"wins_h": 0, "total": 0})
@@ -232,6 +243,7 @@ class RuntimeFeatureBuilder:
             features["h_h2h_win_rate"] = h2h_rate if total_h2h > 0 else 0.5
             features["h_h2h_set_diff_exp"] = (h2h_rate - 0.5) * 2.0
 
+            # Set ratios y dominancia (estaticos)
             features["set_ratio_h"] = features.get("h_set_win_rate", 0.5)
             features["set_ratio_a"] = features.get("a_set_win_rate", 0.5)
             features["diff_set_ratio"] = features["set_ratio_h"] - features["set_ratio_a"]
@@ -242,11 +254,14 @@ class RuntimeFeatureBuilder:
             features["dominancia_a"] = features.get("a_set_win_rate", 0.5) - 0.5
             features["diff_dominancia"] = features["dominancia_h"] - features["dominancia_a"]
 
+            # SOS (estatico)
             features["sos_h"] = 0.5
             features["sos_a"] = 0.5
             features["diff_sos"] = 0.0
+            # Jornada
             features["jornada_num"] = jornada
 
+            # Rellenar cualquier feature faltante con 0
             all_needed = (
                 [c for c in MATCH_FEATURE_COLS] +
                 [c for c in ENRICHED_MATCH_COLS] +
@@ -283,17 +298,20 @@ class RuntimeFeatureBuilder:
         with self._lock:
             home_won = (winner == "home")
 
+            # Elo
             elo_h = self.elo.get(local, ELO_BASE)
             elo_a = self.elo.get(visitante, ELO_BASE)
             expected_h = _elo_expected(elo_h + ELO_HOME_ADV, elo_a)
             self.elo[local] = _elo_update(elo_h, expected_h, 1.0 if home_won else 0.0)
             self.elo[visitante] = _elo_update(elo_a, 1 - expected_h, 0.0 if home_won else 1.0)
 
+            # Resultados: (win_bool, is_home, sets_favor, sets_contra, pts_favor, pts_contra)
             self.results[local].append((home_won, True, sets_local, sets_visitante,
                                         points_local, points_visitante))
             self.results[visitante].append((not home_won, False, sets_visitante, sets_local,
                                             points_visitante, points_local))
 
+            # Rachas
             if home_won:
                 if self.streaks[local] >= 0:
                     self.streaks[local] += 1
@@ -313,6 +331,7 @@ class RuntimeFeatureBuilder:
                 else:
                     self.streaks[local] = -1
 
+            # H2H
             h2h_key = (local, visitante)
             if h2h_key not in self.h2h:
                 self.h2h[h2h_key] = {"wins_h": 0, "total": 0}
@@ -320,6 +339,7 @@ class RuntimeFeatureBuilder:
             if home_won:
                 self.h2h[h2h_key]["wins_h"] += 1
 
+            # Puntos SuperLega (para ranking)
             if sets_local == 3 and sets_visitante <= 1:
                 self.standings_points[local] += 3
             elif sets_local == 3 and sets_visitante == 2:
@@ -331,6 +351,7 @@ class RuntimeFeatureBuilder:
                 self.standings_points[visitante] += 2
                 self.standings_points[local] += 1
 
+            # Sets totales
             self.sets_won_total[local] += sets_local
             self.sets_lost_total[local] += sets_visitante
             self.sets_won_total[visitante] += sets_visitante
