@@ -34,7 +34,13 @@ class PlayerStatsGenerator:
         self._canonical_map = None  # cache: dict canonical_name -> equipo_id
 
     def _build_canonical_map(self):
-        """Construye cache canonico -> equipo_id para busqueda rapida."""
+        """Construye cache canonico -> equipo_id para busqueda rapida.
+
+        Cuando dos equipo_id mapean al mismo nombre canonico (ej: BAM y
+        CUNEOSPORT -> Cuneo), se queda con el que tenga mayor roster.
+        Si hay empate, elige el equipo_id alfabeticamente primero para
+        garantizar determinismo independientemente del orden de pd.unique().
+        """
         from src.data.team_mapper import normalize_team_name
         self._canonical_map = {}
         for eid in self.team_profiles:
@@ -42,12 +48,15 @@ class PlayerStatsGenerator:
             if canonical not in self._canonical_map:
                 self._canonical_map[canonical] = eid
             # Si hay colision (2 equipos con mismo canonico), quedarse con el
-            # que tenga mas jugadores (mas reciente)
+            # que tenga mas jugadores (mas reciente). En caso de empate, el
+            # equipo_id con orden alfabetico menor (determinista).
             else:
                 existing_id = self._canonical_map[canonical]
                 existing_roster = self.team_rosters.get(existing_id, [])
                 current_roster = self.team_rosters.get(eid, [])
                 if len(current_roster) > len(existing_roster):
+                    self._canonical_map[canonical] = eid
+                elif len(current_roster) == len(existing_roster) and eid < existing_id:
                     self._canonical_map[canonical] = eid
 
     def _resolve_team_key(self, team_name: str) -> str:
