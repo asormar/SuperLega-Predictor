@@ -17,6 +17,16 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+from src.simulation.constants import (
+    DEFAULT_CLAMP_RANGE, CLAMP_MARGIN,
+    POINT_PROB_CLIP_ADAPTIVE_HARD,
+    DEFAULT_SIDEOUT_RATE, POINT_PROB_CLIP,
+    GLOBAL_MOMENTUM_FACTOR,
+    MOMENTUM_BONUS as _MOMENTUM_BONUS,
+    MOMENTUM_MAX_STREAK as _MOMENTUM_MAX_STREAK,
+    MOMENTUM_DECAY as _MOMENTUM_DECAY,
+)
+
 
 # ─────────────────────────────────────────────────────────────
 # Estructuras de datos
@@ -69,15 +79,6 @@ class MatchSimulator:
     """
 
     # Parametros de momentum (desde constants.py)
-    from src.simulation.constants import (
-        MOMENTUM_BONUS as _MOMENTUM_BONUS,
-        MOMENTUM_MAX_STREAK as _MOMENTUM_MAX_STREAK,
-        MOMENTUM_DECAY as _MOMENTUM_DECAY,
-        DEFAULT_CLAMP_RANGE, CLAMP_MARGIN,
-        POINT_PROB_CLIP_ADAPTIVE_HARD, DEFAULT_SIDEOUT_RATE,
-        POINT_PROB_CLIP,
-        GLOBAL_MOMENTUM_FACTOR,
-    )
     MOMENTUM_BONUS = _MOMENTUM_BONUS
     MOMENTUM_MAX_STREAK = _MOMENTUM_MAX_STREAK
     MOMENTUM_DECAY = _MOMENTUM_DECAY
