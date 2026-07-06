@@ -29,20 +29,20 @@ Esta guía resume el estado del TFG PREDICTOR(2) y los próximos pasos recomenda
 
 Orden de menor a mayor impacto. Cada uno puede ser un commit independiente.
 
-| Issue | Archivo | Esfuerzo | Riesgo |
-|---|---|---|---|
-| **N10** Imports no usados (`re`, `Optional`, `BASE_DIR`) | `team_mapper.py:8`, `benchmark.py:13`, `simulator.py:18` | 2 min | Nulo |
-| **N13** Pandas re-imports dentro de funciones | `season_simulator.py:736+`, `simulator.py:323,353` | 2 min | Nulo |
-| **N11** Mojibake `Cantù`→`Cant�` en CSV | `DB/features/match_features.csv` | 5 min | Nulo (no afecta SuperLega) |
-| **N12** `set_predictor` redundante (seteado 2 veces) | `api/main.py:529-535` | 10 min | Bajo |
-| **N3** `_generate_return_leg` confuso (3 iteraciones) | `season_simulator.py:576-596` | 5 min | Bajo |
-| **N15** `userSelectedJornadaRef` posiblemente muerto | `web/src/pages/SimularTemporada.jsx:26` | 5 min | Nulo (revisión) |
-| **N2** `_accumulate_player_stats` no cuenta rotaciones | `season_simulator.py:633-640` | 10 min | Bajo |
-| **N14** `feature_names=None` desreferenciado | `season_simulator.py:374-377, 511-514` | 5 min | Bajo |
-| **N4** `RuntimeFeatureBuilder` thread-safety | `api/main.py:86` | 15 min | Medio |
-| **N7** CORS/auth/rate limit | `api/main.py:45-52` | 5 min docs o 1-2h real | Nulo (solo docs) |
+| Issue | Archivo | Esfuerzo | Riesgo | Estado |
+|---|---|---|---|---|---|
+| **N10** Imports no usados (`re`, `Optional`, `BASE_DIR`) | `team_mapper.py:8`, `benchmark.py:13`, `simulator.py:18` | 2 min | Nulo | [x] |
+| **N13** Pandas re-imports dentro de funciones | `season_simulator.py:736+`, `simulator.py:323,353` | 2 min | Nulo | [x] |
+| **N11** Mojibake `Cantù`→`Cant�` en CSV | `DB/features/match_features.csv` | 5 min | Nulo | [x] (ya resuelto previamente) |
+| **N12** `set_predictor` redundante (seteado 2 veces) | `api/main.py:529-535` | 10 min | Bajo | [x] |
+| **N3** `_generate_return_leg` confuso (3 iteraciones) | `season_simulator.py:576-596` | 5 min | Bajo | [x] |
+| **N15** `userSelectedJornadaRef` posiblemente muerto | `web/src/pages/SimularTemporada.jsx:26` | 5 min | Nulo | [x] (vivo; se agregó comentario) |
+| **N2** `_accumulate_player_stats` no cuenta rotaciones | `season_simulator.py:633-640` | 10 min | Bajo | [x] |
+| **N14** `feature_names=None` desreferenciado | `season_simulator.py:374-377, 511-514` | 5 min | Bajo | [x] |
+| **N4** `RuntimeFeatureBuilder` thread-safety | `api/main.py:86` | 15 min | Medio | [x] |
+| **N7** CORS/auth/rate limit | `api/main.py:45-52` | 5 min docs | Nulo | [x] (docs-only) |
 
-**Total Batch 2a: ~1.5h, 0-1 reentrenamiento.**
+**Total Batch 2a: COMPLETADO. 10 commits, ~1.5h. Sin reentrenamiento.**
 
 ### Batch 2b — Tests (~3-4h)
 
