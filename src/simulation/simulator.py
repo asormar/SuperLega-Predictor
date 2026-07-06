@@ -420,12 +420,22 @@ class MatchSimulator:
         away_strength: float = 0.5,
         match_features: Optional[dict] = None,
         n_simulations: int = 1000,
+        seed: Optional[int] = None,
         set_predictor: Optional[object] = None,
         team_features: Optional[dict] = None,
     ) -> dict:
         """
         Ejecuta N simulaciones Monte Carlo y devuelve estadisticas agregadas.
+
+        Args:
+            seed: semilla maestra para reproducibilidad. Se aplica UNA SOLA VEZ
+                  antes del loop para que cada iteracion sea independiente pero
+                  la secuencia completa sea reproducible.
         """
+        if seed is not None:
+            random.seed(seed)
+            np.random.seed(seed)
+
         results = {
             "home_wins": 0,
             "away_wins": 0,

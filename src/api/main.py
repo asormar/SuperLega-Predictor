@@ -429,6 +429,7 @@ async def simular_partido(req: SimularPartidoRequest):
             away_strength=a_str,
             match_features=_point_mf,
             n_simulations=min(req.n_simulaciones_mc, MAX_MC_ITERATIONS),
+            seed=req.semilla,
         )
         return {
             "tipo": "monte_carlo",
