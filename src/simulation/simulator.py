@@ -11,6 +11,7 @@ Cada punto se decide probabilisticamente, considerando:
 
 import random
 import numpy as np
+import pandas as pd
 from typing import Optional
 from dataclasses import dataclass, field
 
@@ -326,8 +327,6 @@ class MatchSimulator:
         team_features: dict,
     ) -> dict:
         """Construye la parte estatica del contexto para SetPredictor."""
-        import pandas as pd
-
         is_tiebreak = (sets_home_antes == 2 and sets_away_antes == 2)
 
         feats = {
@@ -356,8 +355,6 @@ class MatchSimulator:
         sets_away_antes: int,
     ) -> Optional[float]:
         """Evalua el SetPredictor con el estado actual del set."""
-        import pandas as pd
-
         if set_context_base is None or set_predictor is None:
             return None
 
