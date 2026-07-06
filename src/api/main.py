@@ -222,8 +222,8 @@ async def listar_equipos():
 
         # Obtener roster si disponible
         roster = []
-        if player_gen and team in player_gen.team_rosters:
-            roster = player_gen.team_rosters[team]
+        if player_gen:
+            roster = player_gen.get_roster(team)
 
         equipos.append({
             "nombre": team,
@@ -248,8 +248,9 @@ async def detalle_equipo(nombre: str):
 
     # Roster con stats
     jugadores = []
-    if player_gen and team in player_gen.team_profiles:
-        for jugador, stats in player_gen.team_profiles[team].items():
+    if player_gen:
+        team_profile = player_gen.get_profile(team)
+        for jugador, stats in team_profile.items():
             jugador_info = {"nombre": jugador}
             for stat_key in ["puntos", "aces", "ataques_ganados", "bloqueos"]:
                 if stat_key in stats and isinstance(stats[stat_key], dict):

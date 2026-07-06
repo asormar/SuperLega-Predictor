@@ -29,8 +29,47 @@ class PlayerStatsGenerator:
                  "recepciones_exc", "errores_saque"]
 
     def __init__(self):
-        self.team_profiles = {}  # {equipo: {jugador: {stat: {mean, std}}}}
-        self.team_rosters = {}   # {equipo: [lista de jugadores]}
+        self.team_profiles = {}  # {equipo_id: {jugador: {stat: {mean, std}}}}
+        self.team_rosters = {}   # {equipo_id: [lista de jugadores]}
+        self._canonical_map = None  # cache: dict canonical_name -> equipo_id
+
+    def _build_canonical_map(self):
+        """Construye cache canonico -> equipo_id para busqueda rapida."""
+        from src.data.team_mapper import normalize_team_name
+        self._canonical_map = {}
+        for eid in self.team_profiles:
+            canonical = normalize_team_name(self._extract_team_name(eid))
+            if canonical not in self._canonical_map:
+                self._canonical_map[canonical] = eid
+            # Si hay colision (2 equipos con mismo canonico), quedarse con el
+            # que tenga mas jugadores (mas reciente)
+            else:
+                existing_id = self._canonical_map[canonical]
+                existing_roster = self.team_rosters.get(existing_id, [])
+                current_roster = self.team_rosters.get(eid, [])
+                if len(current_roster) > len(existing_roster):
+                    self._canonical_map[canonical] = eid
+
+    def _resolve_team_key(self, team_name: str) -> str:
+        """
+        Resuelve nombre de equipo (canonico o equipo_id) a la clave
+        interna de self.team_profiles / self.team_rosters.
+        """
+        # 1. Busqueda directa (ya es un equipo_id valido)
+        if team_name in self.team_profiles:
+            return team_name
+        # 2. Busqueda por canonico
+        if self._canonical_map is None:
+            self._build_canonical_map()
+        from src.data.team_mapper import normalize_team_name
+        canonical = normalize_team_name(team_name)
+        if canonical in self._canonical_map:
+            return self._canonical_map[canonical]
+        # 3. Fallback: iterar profiles
+        for eid in self.team_profiles:
+            if self._extract_team_name(eid) == canonical:
+                return eid
+        return team_name
 
     def fit(self, player_stats: pd.DataFrame, team_stats: pd.DataFrame):
         """
@@ -99,8 +138,8 @@ class PlayerStatsGenerator:
                 profile[jugador] = stats
                 roster.append(jugador)
 
-            self.team_profiles[equipo_name] = profile
-            self.team_rosters[equipo_name] = roster
+            self.team_profiles[equipo_id] = profile
+            self.team_rosters[equipo_id] = roster
             teams_processed.add(equipo_name)
 
         print(f"  [PlayerStats] {len(teams_processed)} equipos procesados, "
@@ -149,9 +188,9 @@ class PlayerStatsGenerator:
         if eid in id_map:
             return id_map[eid]
 
-        # Busqueda por substring (para variantes con prefijos/sufijos)
+        # Busqueda por prefijo/sufijo exacto (para variantes con prefijos/sufijos)
         for key, name in id_map.items():
-            if key in eid or eid in key:
+            if eid.startswith(key) or eid.endswith(key):
                 return name
 
         # Fallback: intentar normalizar
@@ -174,11 +213,11 @@ class PlayerStatsGenerator:
         Returns:
             Lista de dicts con stats por jugador
         """
-        if team_name not in self.team_profiles:
+        team_key = self._resolve_team_key(team_name)
+        profile = self.team_profiles.get(team_key)
+        roster = self.team_rosters.get(team_key)
+        if profile is None or roster is None:
             return []
-
-        profile = self.team_profiles[team_name]
-        roster = self.team_rosters[team_name]
 
         # Generar stats base para cada jugador
         player_stats = []
@@ -220,6 +259,16 @@ class PlayerStatsGenerator:
             player_stats.append(stats)
 
         return player_stats
+
+    def get_roster(self, team_name: str) -> list:
+        """Devuelve el roster de un equipo, buscando por nombre canonico o equipo_id."""
+        key = self._resolve_team_key(team_name)
+        return self.team_rosters.get(key, [])
+
+    def get_profile(self, team_name: str) -> dict:
+        """Devuelve el perfil de jugadores de un equipo."""
+        key = self._resolve_team_key(team_name)
+        return self.team_profiles.get(key, {})
 
     def save(self, path: Optional[Path] = None):
         """Guarda los perfiles de jugadores."""
