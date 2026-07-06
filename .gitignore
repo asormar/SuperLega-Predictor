@@ -1,0 +1,56 @@
+# ─── Python ───────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+*.egg
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Archivos de configuración local
+.env
+.env.local
+.env.*.local
+
+# ─── Modelos ML entrenados (se regeneran con `python -m src.models.train`) ─
+# Total: ~21MB de binarios no revisables. Regenerables con train.py
+models/*.joblib
+models/player_stats_params.json
+models/feature_cache/
+models/benchmark_results/
+models/plots/
+
+# ─── Frontend (regenerable con `npm install` y `npm run build`) ──────────
+src/web/node_modules/
+src/web/dist/
+
+# ─── Meta-herramientas del autor / IDE / orquestador (no son parte del TFG) ──
+.vscode/
+.atl/
+.opencode/
+.codegraph/
+.idea/
+src/web/.agent/
+
+# ─── Logs y outputs de entrenamiento ─────────────────────────────────────
+*.log
+*.log.err
+train_output.log
+train_output.log.err
+
+# ─── Sistema operativo ──────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+$RECYCLE.BIN/
+
+# ─── Notebooks vacíos (preservar la carpeta con .gitkeep en su lugar) ────
+# (no ignorar notebooks/ — contiene .gitkeep)
