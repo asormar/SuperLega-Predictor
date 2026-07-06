@@ -23,6 +23,8 @@ export default function SimularTemporada() {
   const [currentPlayerStats, setCurrentPlayerStats] = useState([])
   const [jornadaHistory, setJornadaHistory] = useState([])
   const [selectedJornadaIndex, setSelectedJornadaIndex] = useState(null)
+  // Evita que fetchJornada auto-seleccione la última jornada cuando
+  // el usuario ya eligió manualmente una distinta via selectJornada().
   const userSelectedJornadaRef = useRef(false)
   const [isPaused, setIsPaused] = useState(false)
   const [isLoadingJornada, setIsLoadingJornada] = useState(false)
