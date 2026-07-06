@@ -5,7 +5,6 @@ Todos los datasets usan nombres distintos para el mismo equipo.
 Este módulo unifica todos los alias a un nombre canónico.
 """
 
-import re
 from typing import Optional
 
 # ─────────────────────────────────────────────────────────────

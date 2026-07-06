@@ -13,9 +13,6 @@ import random
 import numpy as np
 from typing import Optional
 from dataclasses import dataclass, field
-from pathlib import Path
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 from src.simulation.constants import (
     DEFAULT_CLAMP_RANGE, CLAMP_MARGIN,
