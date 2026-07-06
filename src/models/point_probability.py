@@ -146,8 +146,8 @@ class PointProbabilityModel:
         )
 
         # Clamp para evitar probabilidades extremas
-        p_home_serving = np.clip(p_home_serving, POINT_PROB_CLIP[0], POINT_PROB_CLIP[1])
-        p_home_receiving = np.clip(p_home_receiving, POINT_PROB_CLIP[0], POINT_PROB_CLIP[1])
+        p_home_serving = np.clip(p_home_serving, self.POINT_PROB_CLIP[0], self.POINT_PROB_CLIP[1])
+        p_home_receiving = np.clip(p_home_receiving, self.POINT_PROB_CLIP[0], self.POINT_PROB_CLIP[1])
 
         return {
             "p_home_serving": p_home_serving,
