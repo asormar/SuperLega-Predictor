@@ -14,6 +14,39 @@ from typing import Optional
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
+# Feature keys esperados por el modelo entrenado
+_FEATURE_KEYS = [
+    "elo_diff", "diff_win_rate_global", "diff_set_win_rate",
+    "diff_dominancia", "diff_set_ratio", "diff_forma_efectiva",
+]
+
+
+def build_features_from_strengths(home_strength: float, away_strength: float) -> dict:
+    """
+    Construye el dict de features minimo para PointProbabilityModel
+    a partir de las fuerzas relativas de los equipos.
+
+    Todas las features derivan de la misma diferencia de fuerza porque
+    durante un partido individual no hay contexto adicional disponible
+    (sin historial de sets, sin racha reciente, etc.).
+
+    Args:
+        home_strength: fuerza del local [0, 1]
+        away_strength: fuerza del visitante [0, 1]
+
+    Returns:
+        dict con las 6 features que espera el modelo entrenado.
+    """
+    diff = home_strength - away_strength
+    return {
+        "elo_diff": diff * 200,
+        "diff_win_rate_global": diff,
+        "diff_set_win_rate": diff,
+        "diff_dominancia": diff,
+        "diff_set_ratio": diff,
+        "diff_forma_efectiva": diff,
+    }
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MODELS_DIR = BASE_DIR / "models"
 

@@ -30,7 +30,7 @@ from src.simulation.feature_builder import RuntimeFeatureBuilder
 from src.simulation.constants import MAX_MC_ITERATIONS
 from src.models.set_predictor import SetPredictor
 from src.models.match_predictor import MatchPredictor
-from src.models.point_probability import PointProbabilityModel
+from src.models.point_probability import PointProbabilityModel, build_features_from_strengths
 from src.models.player_stats_generator import PlayerStatsGenerator
 
 # ─────────────────────────────────────────────────────────────
@@ -154,22 +154,6 @@ TEAM_COLORS = {
     "Acicastello": {"primary": "#0D47A1", "secondary": "#F44336", "accent": "#FFFFFF"},
     "Cuneo": {"primary": "#283593", "secondary": "#FFFFFF", "accent": "#E53935"},
 }
-
-
-def _build_point_features(h_str: float, a_str: float) -> dict:
-    """
-    Construye dict de features minimo para PointProbabilityModel
-    a partir de las fuerzas relativas de los equipos.
-    """
-    diff = h_str - a_str
-    return {
-        "elo_diff": diff * 200,
-        "diff_win_rate_global": diff,
-        "diff_set_win_rate": diff,
-        "diff_dominancia": diff,
-        "diff_set_ratio": diff,
-        "diff_forma_efectiva": diff,
-    }
 
 
 # ─────────────────────────────────────────────────────────────
@@ -418,7 +402,7 @@ async def simular_partido(req: SimularPartidoRequest):
     a_str = req.fuerza_visitante or TEAM_STRENGTHS.get(visitante, 0.5)
 
     # Construir match_features minimo para PointProbabilityModel
-    _point_mf = _build_point_features(h_str, a_str)
+    _point_mf = build_features_from_strengths(h_str, a_str)
 
     # Si piden Monte Carlo
     if req.n_simulaciones_mc and req.n_simulaciones_mc > 0:
