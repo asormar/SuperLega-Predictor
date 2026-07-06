@@ -6,6 +6,7 @@ combina con features estaticas (roster, team stats) para generar las 87
 features que necesita el MatchPredictor en cada partido.
 """
 
+import threading
 from pathlib import Path
 from collections import defaultdict
 from typing import Optional
@@ -57,8 +58,17 @@ class RuntimeFeatureBuilder:
         if csv_path is None:
             csv_path = BASE_DIR / "DB" / "features" / "match_features.csv"
 
+        self._lock = threading.Lock()
         self._load_static_profiles(csv_path)
         self._init_dynamic_state()
+
+    # NOTE: build_features() and update() are called from FastAPI's threadpool
+    # (sync endpoints run via run_in_executor).  The lock prevents concurrent
+    # mutations to shared dynamic state (elo, results, streaks, h2h, etc.)
+    # when multiple season simulations run in parallel.
+    # Lock granularity: per-method, released between successive calls within
+    # the same simulation loop.  No deadlock risk since callers never nest
+    # both methods in a single lock acquisition.
 
     def _load_static_profiles(self, csv_path: Path):
         """Carga perfiles estaticos de equipo desde el CSV historico."""
@@ -132,145 +142,121 @@ class RuntimeFeatureBuilder:
         Returns:
             DataFrame de 1 fila listo para MatchPredictor.predict_proba()
         """
-        self.current_jornada = jornada
+        with self._lock:
+            self.current_jornada = jornada
+            features = {}
 
-        features = {}
+            for prefix, team in [("h", local), ("a", visitante)]:
+                # Features estaticas (media historica)
+                for feat_name, team_vals in self.static_profiles.items():
+                    col = f"{prefix}_{feat_name}"
+                    features[col] = team_vals.get(team, self._default_for(feat_name))
 
-        for prefix, team in [("h", local), ("a", visitante)]:
-            # Features estaticas (media historica)
-            for feat_name, team_vals in self.static_profiles.items():
-                col = f"{prefix}_{feat_name}"
-                features[col] = team_vals.get(team, self._default_for(feat_name))
+                # Win rates dinamicos
+                results = self.results.get(team, [])
+                total = len(results)
+                if total > 0:
+                    wins = sum(1 for w, _, _, _, _, _ in results if w)
+                    features[f"{prefix}_win_rate_global"] = wins / total
+                    last5 = results[-5:]
+                    features[f"{prefix}_win_rate_last5"] = (
+                        sum(1 for w, _, _, _, _, _ in last5 if w) / len(last5)
+                    )
+                    home_results = [r for r in results if r[1]]
+                    away_results = [r for r in results if not r[1]]
+                    features[f"{prefix}_win_rate_home"] = (
+                        sum(1 for w, _, _, _, _, _ in home_results if w) / max(len(home_results), 1)
+                    )
+                    features[f"{prefix}_win_rate_away"] = (
+                        sum(1 for w, _, _, _, _, _ in away_results if w) / max(len(away_results), 1)
+                    )
+                    sf = sum(sf for _, _, sf, _, _, _ in results)
+                    sc = sum(sc for _, _, _, sc, _, _ in results)
+                    total_sets = sf + sc
+                    features[f"{prefix}_set_win_rate"] = sf / max(total_sets, 1)
+                    features[f"{prefix}_set_diff_exp"] = (sf - sc) / max(total, 1)
+                    pf = sum(pf for _, _, _, _, pf, _ in results)
+                    pc = sum(pc for _, _, _, _, _, pc in results)
+                    features[f"{prefix}_pts_fav_exp"] = pf / max(total, 1)
+                    features[f"{prefix}_pts_con_exp"] = pc / max(total, 1)
+                    features[f"{prefix}_forma_home"] = (
+                        sum(1 for w, _, _, _, _, _ in home_results if w) / max(len(home_results), 1)
+                    ) if home_results else wins / total
+                    features[f"{prefix}_forma_away"] = (
+                        sum(1 for w, _, _, _, _, _ in away_results if w) / max(len(away_results), 1)
+                    ) if away_results else wins / total
+                    features[f"{prefix}_racha"] = self.streaks.get(team, 0)
+                    features[f"{prefix}_ultimo_set_diff"] = (
+                        results[-1][2] - results[-1][3] if results else 0
+                    )
+                    features[f"{prefix}_rank_season"] = self.standings_points.get(team, 0)
+                else:
+                    features[f"{prefix}_win_rate_global"] = 0.5
+                    features[f"{prefix}_win_rate_last5"] = 0.5
+                    features[f"{prefix}_win_rate_home"] = 0.5
+                    features[f"{prefix}_win_rate_away"] = 0.5
+                    features[f"{prefix}_set_win_rate"] = 0.5
+                    features[f"{prefix}_set_diff_exp"] = 0.0
+                    features[f"{prefix}_pts_fav_exp"] = AVG_POINTS_PER_SET
+                    features[f"{prefix}_pts_con_exp"] = AVG_POINTS_PER_SET
+                    features[f"{prefix}_forma_home"] = 0.5
+                    features[f"{prefix}_forma_away"] = 0.5
+                    features[f"{prefix}_racha"] = 0
+                    features[f"{prefix}_ultimo_set_diff"] = 0
+                    features[f"{prefix}_rank_season"] = 0
 
-            # Win rates dinamicos
-            # results entries: (win_bool, is_home, sets_favor, sets_contra, pts_favor, pts_contra)
-            results = self.results.get(team, [])
-            total = len(results)
-            if total > 0:
-                wins = sum(1 for w, _, _, _, _, _ in results if w)
-                # Win rate global
-                features[f"{prefix}_win_rate_global"] = wins / total
-                # Win rate last 5
-                last5 = results[-5:]
-                features[f"{prefix}_win_rate_last5"] = (
-                    sum(1 for w, _, _, _, _, _ in last5 if w) / len(last5)
-                )
-                # Win rate home/away (con localia real)
-                home_results = [r for r in results if r[1]]  # is_home=True
-                away_results = [r for r in results if not r[1]]  # is_home=False
-                features[f"{prefix}_win_rate_home"] = (
-                    sum(1 for w, _, _, _, _, _ in home_results if w) / max(len(home_results), 1)
-                )
-                features[f"{prefix}_win_rate_away"] = (
-                    sum(1 for w, _, _, _, _, _ in away_results if w) / max(len(away_results), 1)
-                )
-                # Set win rate
-                sf = sum(sf for _, _, sf, _, _, _ in results)
-                sc = sum(sc for _, _, _, sc, _, _ in results)
-                total_sets = sf + sc
-                features[f"{prefix}_set_win_rate"] = sf / max(total_sets, 1)
-                # Set diff exp
-                features[f"{prefix}_set_diff_exp"] = (sf - sc) / max(total, 1)
-                # Puntos fav/contra (usando puntos reales, no sets)
-                pf = sum(pf for _, _, _, _, pf, _ in results)
-                pc = sum(pc for _, _, _, _, _, pc in results)
-                features[f"{prefix}_pts_fav_exp"] = pf / max(total, 1)
-                features[f"{prefix}_pts_con_exp"] = pc / max(total, 1)
-                # Forma (home/away real)
-                features[f"{prefix}_forma_home"] = (
-                    sum(1 for w, _, _, _, _, _ in home_results if w) / max(len(home_results), 1)
-                ) if home_results else wins / total
-                features[f"{prefix}_forma_away"] = (
-                    sum(1 for w, _, _, _, _, _ in away_results if w) / max(len(away_results), 1)
-                ) if away_results else wins / total
-                # Racha
-                features[f"{prefix}_racha"] = self.streaks.get(team, 0)
-                features[f"{prefix}_ultimo_set_diff"] = (
-                    results[-1][2] - results[-1][3] if results else 0
-                )
-                # Ranking (por puntos SuperLega)
-                features[f"{prefix}_rank_season"] = (
-                    self.standings_points.get(team, 0)
-                )
-            else:
-                features[f"{prefix}_win_rate_global"] = 0.5
-                features[f"{prefix}_win_rate_last5"] = 0.5
-                features[f"{prefix}_win_rate_home"] = 0.5
-                features[f"{prefix}_win_rate_away"] = 0.5
-                features[f"{prefix}_set_win_rate"] = 0.5
-                features[f"{prefix}_set_diff_exp"] = 0.0
-                features[f"{prefix}_pts_fav_exp"] = AVG_POINTS_PER_SET
-                features[f"{prefix}_pts_con_exp"] = AVG_POINTS_PER_SET
-                features[f"{prefix}_forma_home"] = 0.5
-                features[f"{prefix}_forma_away"] = 0.5
-                features[f"{prefix}_racha"] = 0
-                features[f"{prefix}_ultimo_set_diff"] = 0
-                features[f"{prefix}_rank_season"] = 0
+                features[f"{prefix}_descanso"] = 7
+                features[f"elo_{prefix}"] = self.elo.get(team, ELO_BASE)
 
-            # Descanso (simplificado: asumimos 7 dias entre jornadas)
-            features[f"{prefix}_descanso"] = 7
+            # Diffs dinamicos
+            for feat in ["win_rate_global", "win_rate_last5", "set_win_rate",
+                         "set_diff_exp", "pts_fav_exp", "pts_con_exp",
+                         "racha", "ultimo_set_diff", "descanso", "rank_season",
+                         "forma_efectiva"]:
+                h_val = features.get(f"h_{feat}", 0)
+                a_val = features.get(f"a_{feat}", 0)
+                features[f"diff_{feat}"] = h_val - a_val
 
-            # Elo
-            features[f"elo_{prefix}"] = self.elo.get(team, ELO_BASE)
+            features["elo_diff"] = features["elo_h"] - features["elo_a"]
+            p_home = _elo_expected(features["elo_h"] + ELO_HOME_ADV, features["elo_a"])
+            features["elo_win_prob_h"] = p_home
+            features["elo_h_home"] = features["elo_h"] + ELO_HOME_ADV
+            features["elo_a_away"] = features["elo_a"]
 
-        # Diffs dinamicos
-        for feat in ["win_rate_global", "win_rate_last5", "set_win_rate",
-                     "set_diff_exp", "pts_fav_exp", "pts_con_exp",
-                     "racha", "ultimo_set_diff", "descanso", "rank_season",
-                     "forma_efectiva"]:
-            h_val = features.get(f"h_{feat}", 0)
-            a_val = features.get(f"a_{feat}", 0)
-            features[f"diff_{feat}"] = h_val - a_val
+            h2h_key = (local, visitante)
+            hist = self.historical_h2h.get(h2h_key, {"wins_h": 0, "total": 0})
+            sim = self.h2h.get(h2h_key, {"wins_h": 0, "total": 0})
+            total_h2h = hist["total"] + sim["total"]
+            wins_h2h = hist["wins_h"] + sim["wins_h"]
+            h2h_rate = wins_h2h / max(total_h2h, 1)
+            features["h_h2h_win_rate"] = h2h_rate if total_h2h > 0 else 0.5
+            features["h_h2h_set_diff_exp"] = (h2h_rate - 0.5) * 2.0
 
-        # Elo diffs
-        features["elo_diff"] = features["elo_h"] - features["elo_a"]
-        p_home = _elo_expected(features["elo_h"] + ELO_HOME_ADV, features["elo_a"])
-        features["elo_win_prob_h"] = p_home
-        features["elo_h_home"] = features["elo_h"] + ELO_HOME_ADV
-        features["elo_a_away"] = features["elo_a"]
+            features["set_ratio_h"] = features.get("h_set_win_rate", 0.5)
+            features["set_ratio_a"] = features.get("a_set_win_rate", 0.5)
+            features["diff_set_ratio"] = features["set_ratio_h"] - features["set_ratio_a"]
 
-        # H2H (combinar historico con simulado)
-        h2h_key = (local, visitante)
-        hist = self.historical_h2h.get(h2h_key, {"wins_h": 0, "total": 0})
-        sim = self.h2h.get(h2h_key, {"wins_h": 0, "total": 0})
-        total_h2h = hist["total"] + sim["total"]
-        wins_h2h = hist["wins_h"] + sim["wins_h"]
-        h2h_rate = wins_h2h / max(total_h2h, 1)
-        features["h_h2h_win_rate"] = h2h_rate if total_h2h > 0 else 0.5
-        features["h_h2h_set_diff_exp"] = (h2h_rate - 0.5) * 2.0
+            features["point_ratio_h"] = features.get("h_point_ratio_h", 0.53)
+            features["point_ratio_a"] = features.get("a_point_ratio_a", 0.52)
+            features["dominancia_h"] = features.get("h_set_win_rate", 0.5) - 0.5
+            features["dominancia_a"] = features.get("a_set_win_rate", 0.5) - 0.5
+            features["diff_dominancia"] = features["dominancia_h"] - features["dominancia_a"]
 
-        # Set ratios y dominancia (estaticos)
-        features["set_ratio_h"] = features.get("h_set_win_rate", 0.5)
-        features["set_ratio_a"] = features.get("a_set_win_rate", 0.5)
-        features["diff_set_ratio"] = features["set_ratio_h"] - features["set_ratio_a"]
+            features["sos_h"] = 0.5
+            features["sos_a"] = 0.5
+            features["diff_sos"] = 0.0
+            features["jornada_num"] = jornada
 
-        # point_ratio (estatico desde perfil)
-        features["point_ratio_h"] = features.get("h_point_ratio_h", 0.53)
-        features["point_ratio_a"] = features.get("a_point_ratio_a", 0.52)
+            all_needed = (
+                [c for c in MATCH_FEATURE_COLS] +
+                [c for c in ENRICHED_MATCH_COLS] +
+                [c for c in ROSTER_BASIC_COLS]
+            )
+            for col in all_needed:
+                if col not in features:
+                    features[col] = 0.0
 
-        features["dominancia_h"] = features.get("h_set_win_rate", 0.5) - 0.5
-        features["dominancia_a"] = features.get("a_set_win_rate", 0.5) - 0.5
-        features["diff_dominancia"] = features["dominancia_h"] - features["dominancia_a"]
-
-        # SOS (estatico)
-        features["sos_h"] = 0.5
-        features["sos_a"] = 0.5
-        features["diff_sos"] = 0.0
-
-        # Jornada
-        features["jornada_num"] = jornada
-
-        # Rellenar cualquier feature faltante con 0
-        all_needed = (
-            [c for c in MATCH_FEATURE_COLS] +
-            [c for c in ENRICHED_MATCH_COLS] +
-            [c for c in ROSTER_BASIC_COLS]
-        )
-        for col in all_needed:
-            if col not in features:
-                features[col] = 0.0
-
-        return pd.DataFrame([features])
+            return pd.DataFrame([features])
 
     def update(
         self,
@@ -294,66 +280,61 @@ class RuntimeFeatureBuilder:
             points_local: puntos de volleyball del local (si se conocen)
             points_visitante: puntos de volleyball del visitante
         """
-        home_won = (winner == "home")
+        with self._lock:
+            home_won = (winner == "home")
 
-        # Elo
-        elo_h = self.elo.get(local, ELO_BASE)
-        elo_a = self.elo.get(visitante, ELO_BASE)
-        expected_h = _elo_expected(elo_h + ELO_HOME_ADV, elo_a)
-        self.elo[local] = _elo_update(elo_h, expected_h, 1.0 if home_won else 0.0)
-        self.elo[visitante] = _elo_update(elo_a, 1 - expected_h, 0.0 if home_won else 1.0)
+            elo_h = self.elo.get(local, ELO_BASE)
+            elo_a = self.elo.get(visitante, ELO_BASE)
+            expected_h = _elo_expected(elo_h + ELO_HOME_ADV, elo_a)
+            self.elo[local] = _elo_update(elo_h, expected_h, 1.0 if home_won else 0.0)
+            self.elo[visitante] = _elo_update(elo_a, 1 - expected_h, 0.0 if home_won else 1.0)
 
-        # Resultados: (win_bool, is_home, sets_favor, sets_contra, pts_favor, pts_contra)
-        self.results[local].append((home_won, True, sets_local, sets_visitante,
-                                    points_local, points_visitante))
-        self.results[visitante].append((not home_won, False, sets_visitante, sets_local,
-                                        points_visitante, points_local))
+            self.results[local].append((home_won, True, sets_local, sets_visitante,
+                                        points_local, points_visitante))
+            self.results[visitante].append((not home_won, False, sets_visitante, sets_local,
+                                            points_visitante, points_local))
 
-        # Rachas
-        if home_won:
-            if self.streaks[local] >= 0:
-                self.streaks[local] += 1
+            if home_won:
+                if self.streaks[local] >= 0:
+                    self.streaks[local] += 1
+                else:
+                    self.streaks[local] = 1
+                if self.streaks[visitante] <= 0:
+                    self.streaks[visitante] -= 1
+                else:
+                    self.streaks[visitante] = -1
             else:
-                self.streaks[local] = 1
-            if self.streaks[visitante] <= 0:
-                self.streaks[visitante] -= 1
-            else:
-                self.streaks[visitante] = -1
-        else:
-            if self.streaks[visitante] >= 0:
-                self.streaks[visitante] += 1
-            else:
-                self.streaks[visitante] = 1
-            if self.streaks[local] <= 0:
-                self.streaks[local] -= 1
-            else:
-                self.streaks[local] = -1
+                if self.streaks[visitante] >= 0:
+                    self.streaks[visitante] += 1
+                else:
+                    self.streaks[visitante] = 1
+                if self.streaks[local] <= 0:
+                    self.streaks[local] -= 1
+                else:
+                    self.streaks[local] = -1
 
-        # H2H
-        h2h_key = (local, visitante)
-        if h2h_key not in self.h2h:
-            self.h2h[h2h_key] = {"wins_h": 0, "total": 0}
-        self.h2h[h2h_key]["total"] += 1
-        if home_won:
-            self.h2h[h2h_key]["wins_h"] += 1
+            h2h_key = (local, visitante)
+            if h2h_key not in self.h2h:
+                self.h2h[h2h_key] = {"wins_h": 0, "total": 0}
+            self.h2h[h2h_key]["total"] += 1
+            if home_won:
+                self.h2h[h2h_key]["wins_h"] += 1
 
-        # Puntos SuperLega (para ranking)
-        if sets_local == 3 and sets_visitante <= 1:
-            self.standings_points[local] += 3
-        elif sets_local == 3 and sets_visitante == 2:
-            self.standings_points[local] += 2
-            self.standings_points[visitante] += 1
-        elif sets_visitante == 3 and sets_local <= 1:
-            self.standings_points[visitante] += 3
-        else:
-            self.standings_points[visitante] += 2
-            self.standings_points[local] += 1
+            if sets_local == 3 and sets_visitante <= 1:
+                self.standings_points[local] += 3
+            elif sets_local == 3 and sets_visitante == 2:
+                self.standings_points[local] += 2
+                self.standings_points[visitante] += 1
+            elif sets_visitante == 3 and sets_local <= 1:
+                self.standings_points[visitante] += 3
+            else:
+                self.standings_points[visitante] += 2
+                self.standings_points[local] += 1
 
-        # Sets totales
-        self.sets_won_total[local] += sets_local
-        self.sets_lost_total[local] += sets_visitante
-        self.sets_won_total[visitante] += sets_visitante
-        self.sets_lost_total[visitante] += sets_local
+            self.sets_won_total[local] += sets_local
+            self.sets_lost_total[local] += sets_visitante
+            self.sets_won_total[visitante] += sets_visitante
+            self.sets_lost_total[visitante] += sets_local
 
     @staticmethod
     def _default_for(feat_name: str) -> float:
