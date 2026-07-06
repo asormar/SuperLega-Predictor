@@ -105,11 +105,11 @@ def run_roster_comparison():
     print(f"  Delta BASICO -> COMPLETO:        AUC {full_auc - basic_auc:>+.4f}")
 
     if full_auc > basic_auc:
-        print("\n  ✅ Bloqueos/recepciones MEJORAN el modelo")
+        print("\n  [OK] Bloqueos/recepciones MEJORAN el modelo")
     elif full_auc == basic_auc:
-        print("\n  ➖ Bloqueos/recepciones no tienen efecto significativo")
+        print("\n  - Bloqueos/recepciones no tienen efecto significativo")
     else:
-        print("\n  ❌ Bloqueos/recepciones NO mejoran (posible overfitting)")
+        print("\n  [BAD] Bloqueos/recepciones NO mejoran (posible overfitting)")
 
     # Guardar
     out_dir = BASE_DIR / "models" / "benchmark_results"
