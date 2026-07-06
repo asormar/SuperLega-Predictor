@@ -43,7 +43,12 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS para el frontend
+# CORS para el frontend (solo desarrollo)
+# ADVERTENCIA: La configuracion allow_origins=["*"] es insegura para produccion.
+# Para deploy seguro:
+#   1. Restringir allow_origins a la URL del frontend (ej. ["https://dominio.com"]).
+#   2. Agregar autenticacion (API key via header o JWT).
+#   3. Agregar rate limiting (slowapi o middleware propio) para proteger /api/simular/*.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
