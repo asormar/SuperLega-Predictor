@@ -418,7 +418,11 @@ class SeasonSimulator:
             self._accumulate_player_stats(player_season_stats, match, away, "away")
 
             if self.feature_builder and hasattr(self.feature_builder, 'update'):
-                self.feature_builder.update(home, away, match.sets_home, match.sets_away, match.winner)
+                pts_home = sum(s.score_home for s in match.sets)
+                pts_away = sum(s.score_away for s in match.sets)
+                self.feature_builder.update(home, away, match.sets_home, match.sets_away,
+                                            match.winner, points_local=pts_home,
+                                            points_visitante=pts_away)
 
         sorted_standings = sorted(
             standings.values(),
@@ -575,10 +579,14 @@ class SeasonSimulator:
 
             # Actualizar feature builder
             if self.feature_builder and hasattr(self.feature_builder, 'update'):
+                pts_home = sum(s.score_home for s in match.sets)
+                pts_away = sum(s.score_away for s in match.sets)
                 self.feature_builder.update(
                     home, away,
                     match.sets_home, match.sets_away,
                     match.winner,
+                    points_local=pts_home,
+                    points_visitante=pts_away,
                 )
 
         # Ordenar clasificacion
