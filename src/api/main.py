@@ -19,7 +19,7 @@ sys.path.insert(0, str(BASE_DIR))
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 import json
 
@@ -185,6 +185,38 @@ class SimularPartidoRequest(BaseModel):
     generar_stats_jugadores: bool = Field(True, description="Generar stats de jugadores")
     n_simulaciones_mc: Optional[int] = Field(None, description="Si >0, ejecutar Monte Carlo")
 
+    @field_validator("local", "visitante")
+    @classmethod
+    def _val_team(cls, v):
+        if not v or not isinstance(v, str):
+            raise ValueError(f"Nombre de equipo invalido: {v!r}")
+        from src.data.team_mapper import normalize_team_name
+        name = normalize_team_name(v)
+        if name not in TEAM_STRENGTHS:
+            raise ValueError(f"Equipo '{v}' no reconocido en la base de datos")
+        return v
+
+    @field_validator("fuerza_local", "fuerza_visitante")
+    @classmethod
+    def _val_strength(cls, v):
+        if v is not None and not (0.0 <= v <= 1.0):
+            raise ValueError(f"La fuerza debe estar en [0, 1]: {v}")
+        return v
+
+    @field_validator("semilla")
+    @classmethod
+    def _val_seed(cls, v):
+        if v is not None and v < 0:
+            raise ValueError(f"La semilla debe ser >= 0: {v}")
+        return v
+
+    @model_validator(mode="after")
+    def _val_diff_teams(self):
+        from src.data.team_mapper import normalize_team_name
+        if normalize_team_name(self.local) == normalize_team_name(self.visitante):
+            raise ValueError("Los equipos local y visitante deben ser distintos")
+        return self
+
 
 class SimularTemporadaRequest(BaseModel):
     equipos: list[str] = Field(..., description="Lista de equipos")
@@ -196,12 +228,71 @@ class SimularTemporadaRequest(BaseModel):
     use_match_predictor: bool = Field(True, description="Calibrar fuerzas con MatchPredictor ML")
     use_set_calibration: bool = Field(True, description="Calibrar clamp punto a punto con SetPredictor")
 
+    @field_validator("semilla")
+    @classmethod
+    def _val_seed(cls, v):
+        if v is not None and v < 0:
+            raise ValueError(f"La semilla debe ser >= 0: {v}")
+        return v
+
+    @field_validator("equipos")
+    @classmethod
+    def _val_equipos(cls, v):
+        if not v or len(v) < 2:
+            raise ValueError("Se necesitan al menos 2 equipos")
+        if len(v) > 12:
+            raise ValueError("Maximo 12 equipos por temporada")
+        from src.data.team_mapper import normalize_team_name
+        normalized = [normalize_team_name(e) for e in v]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("Equipos duplicados en la lista")
+        for name in normalized:
+            if name not in TEAM_STRENGTHS:
+                raise ValueError(f"Equipo '{name}' no reconocido")
+        return v
+
+    @field_validator("half")
+    @classmethod
+    def _val_half(cls, v):
+        if v is not None and v not in ("first", "second"):
+            raise ValueError("half debe ser 'first' o 'second'")
+        return v
+
+    @model_validator(mode="after")
+    def _val_half_state(self):
+        if self.half == "second" and self.first_half_state is None:
+            raise ValueError("half='second' requiere first_half_state")
+        return self
+
 
 class IniciarTemporadaRequest(BaseModel):
     equipos: list[str] = Field(..., description="Lista de equipos")
     doble_vuelta: bool = Field(True, description="Ida y vuelta")
     semilla: Optional[int] = Field(None, description="Semilla para reproducibilidad")
     fuerzas: Optional[dict[str, float]] = Field(None, description="Fuerzas personalizadas")
+
+    @field_validator("semilla")
+    @classmethod
+    def _val_seed(cls, v):
+        if v is not None and v < 0:
+            raise ValueError(f"La semilla debe ser >= 0: {v}")
+        return v
+
+    @field_validator("equipos")
+    @classmethod
+    def _val_equipos(cls, v):
+        if not v or len(v) < 2:
+            raise ValueError("Se necesitan al menos 2 equipos")
+        if len(v) > 12:
+            raise ValueError("Maximo 12 equipos por temporada")
+        from src.data.team_mapper import normalize_team_name
+        normalized = [normalize_team_name(e) for e in v]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("Equipos duplicados en la lista")
+        for name in normalized:
+            if name not in TEAM_STRENGTHS:
+                raise ValueError(f"Equipo '{name}' no reconocido")
+        return v
 
 
 class SimularJornadaRequest(BaseModel):
@@ -221,6 +312,36 @@ class SimularJornadaRequest(BaseModel):
     fuerzas: Optional[dict[str, float]] = Field(None, description="Fuerzas personalizadas")
     use_match_predictor: bool = Field(True, description="Calibrar fuerzas con MatchPredictor ML")
     use_set_calibration: bool = Field(True, description="Calibrar clamp con SetPredictor")
+
+    @field_validator("semilla")
+    @classmethod
+    def _val_seed(cls, v):
+        if v is not None and v < 0:
+            raise ValueError(f"La semilla debe ser >= 0: {v}")
+        return v
+
+    @field_validator("equipos")
+    @classmethod
+    def _val_equipos(cls, v):
+        if not v or len(v) < 2:
+            raise ValueError("Se necesitan al menos 2 equipos")
+        if len(v) > 12:
+            raise ValueError("Maximo 12 equipos por temporada")
+        from src.data.team_mapper import normalize_team_name
+        normalized = [normalize_team_name(e) for e in v]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("Equipos duplicados en la lista")
+        for name in normalized:
+            if name not in TEAM_STRENGTHS:
+                raise ValueError(f"Equipo '{name}' no reconocido")
+        return v
+
+    @field_validator("jornada_index")
+    @classmethod
+    def _val_jornada_idx(cls, v):
+        if v is not None and v < 0:
+            raise ValueError(f"jornada_index debe ser >= 0: {v}")
+        return v
 
 
 # ─────────────────────────────────────────────────────────────
