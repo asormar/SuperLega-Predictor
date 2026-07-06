@@ -163,7 +163,7 @@ def _build_point_features(h_str: float, a_str: float) -> dict:
     """
     diff = h_str - a_str
     return {
-        "elo_diff": diff * 3000,
+        "elo_diff": diff * 200,
         "diff_win_rate_global": diff,
         "diff_set_win_rate": diff,
         "diff_dominancia": diff,
