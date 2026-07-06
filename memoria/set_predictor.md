@@ -1,0 +1,181 @@
+# Set Predictor — Predicción del Ganador de un Set
+
+## Descripción
+
+El `SetPredictor` (`src/models/set_predictor.py`) es un clasificador binario que predice la probabilidad de que el equipo local gane un set individual de volleyball. Es uno de los tres modelos entrenados en el pipeline; junto con el `MatchPredictor` forma el núcleo de la calibración ML del simulador.
+
+*Salida: P(local gana set) ∈ [0, 1] · Usado por: `MatchSimulator` (clamp adaptativo) y `RuntimeFeatureBuilder` (features in-match)*
+
+---
+
+## 1. Pipeline de Entrenamiento
+
+```
+match_features.csv  →  feature_store.get_set_splits()  →  train / val / test
+   (3032 sets)              (split temporal)             (1345 / 352 / 482)
+                                                            ↓
+                                                  SetPredictor.train()
+                                                            ↓
+                                              6 modelos candidatos
+                                              + selección por AUC
+                                              + calibración isotonic
+                                                            ↓
+                                              set_predictor.joblib
+```
+
+El predictor sigue la estrategia estándar de la librería:
+
+1. Carga features desde `feature_store.get_set_splits()` (split temporal: train 2016-2022, val 2023, test 2024).
+2. Entrena **6 modelos candidatos** sobre el set de train.
+3. Evalúa cada candidato en el set de validación y selecciona el de **mayor AUC-ROC**.
+4. Calibra el modelo campeón con `CalibratedClassifierCV(cv=3, method="isotonic")` para que las probabilidades reflejen frecuencias reales.
+5. Evalúa en el set de test (datos no vistos durante entrenamiento/calibración).
+6. Serializa el predictor completo (scaler + best_model + calibrated_model + feature_names) en `models/set_predictor.joblib`.
+
+---
+
+## 2. Candidatos Comparados
+
+| Modelo | Hiperparámetros principales |
+|---|---|
+| LogisticRegression | `max_iter=2000, C=1.0, solver="lbfgs"` |
+| RandomForest | `n_estimators=300, max_depth=10, min_samples_leaf=4` |
+| **ExtraTrees** (champion) | `n_estimators=300, max_depth=10, min_samples_leaf=4` |
+| GradientBoosting | `n_estimators=200, max_depth=4, learning_rate=0.05, subsample=0.8` |
+| XGBoost | `n_estimators=300, max_depth=5, learning_rate=0.05, reg_alpha=0.1` |
+| LightGBM | `n_estimators=300, max_depth=5, learning_rate=0.05, reg_alpha=0.1` |
+
+Todos los modelos usan `random_state=42` para reproducibilidad. La función `get_candidate_models()` (`set_predictor.py:37`) devuelve el diccionario con los seis.
+
+---
+
+## 3. Resultados de Validación (selección de champion)
+
+Métricas en el set de validación (año 2023, 352 sets, balance de clases ≈ 52/48):
+
+| Modelo | Acc | AUC | Brier | Prec | Rec |
+|---|---:|---:|---:|---:|---:|
+| LogisticRegression | 0.571 | 0.580 | 0.2511 | 0.573 | 0.571 |
+| RandomForest | 0.599 | 0.621 | 0.2401 | 0.602 | 0.599 |
+| **ExtraTrees** | 0.588 | **0.6275** | 0.2380 | 0.589 | 0.588 |
+| GradientBoosting | 0.562 | 0.597 | 0.2531 | 0.562 | 0.562 |
+| XGBoost | 0.540 | 0.556 | 0.2703 | 0.538 | 0.540 |
+| LightGBM | 0.548 | 0.563 | 0.2696 | 0.547 | 0.548 |
+
+**Modelo campeón: ExtraTrees** (AUC = 0.6275). Es elegido por AUC porque es invariante al threshold y captura el ordenamiento de probabilidades, que es lo que el simulador necesita para el clamp adaptativo.
+
+---
+
+## 4. Resultados en Test (datos 2024, no vistos)
+
+Evaluación del modelo calibrado sobre 482 sets de la temporada 2024 (balance 56/44 a favor del local):
+
+| Métrica | Valor |
+|---|---:|
+| **Accuracy** | 0.6224 |
+| **AUC-ROC** | 0.6542 |
+| **Brier Score** | 0.2289 |
+
+Reporte de clasificación:
+
+| Clase | Precision | Recall | F1 | Support |
+|---|---:|---:|---:|---:|
+| Visitante | 0.62 | 0.39 | 0.48 | 214 |
+| Local | 0.62 | 0.81 | 0.70 | 268 |
+| **macro avg** | 0.62 | 0.60 | 0.59 | 482 |
+| **weighted avg** | 0.62 | 0.62 | 0.60 | 482 |
+
+El modelo tiene **alto recall para el local (0.81)** pero bajo recall para el visitante (0.39), lo que sugiere que tiende a sobre-predecir victorias del local. Esto es esperable porque (a) hay leve home advantage en los datos (56% gana_local) y (b) las features reflejan ese sesgo.
+
+---
+
+## 5. Top 10 Features Más Importantes
+
+Importancia según `ExtraTrees.feature_importances_`:
+
+| Rank | Feature | Importancia | Interpretación |
+|---:|---|---:|---|
+| 1 | `diff_sets_antes` | 0.0892 | Diferencia de sets ganados antes del set actual |
+| 2 | `momentum_h` | 0.0890 | Momentum reciente del local en el partido |
+| 3 | `sets_a_antes` | 0.0809 | Sets ganados por el visitante antes del set actual |
+| 4 | `sets_h_antes` | 0.0721 | Sets ganados por el local antes del set actual |
+| 5 | `h2h_diff` | 0.0636 | Diferencia de H2H win rate |
+| 6 | `set_num_norm` | 0.0636 | Número de set normalizado (1-5) |
+| 7 | `diff_set_wr` | 0.0421 | Diferencia de set win rate histórico |
+| 8 | `forma_a` | 0.0411 | Forma reciente del visitante |
+| 9 | `forma_h` | 0.0398 | Forma reciente del local |
+| 10 | `set_wr_h` | 0.0394 | Set win rate histórico del local |
+
+**Hallazgo clave**: las 4 features más importantes son **in-match features** (momentum y score parcial de sets). Esto confirma que la dinámica del partido en curso pesa más que los features pre-partido (Elo, forma, H2H). El modelo está capturando bien la lógica "si voy 2-0 arriba, gano el 3er set con alta probabilidad".
+
+---
+
+## 6. Uso en el Simulador
+
+El `SetPredictor` se usa en el simulador de temporadas (no en el simulador de partido suelto) para **relajar el clamp de probabilidad punto a punto** del Markov chain. El flujo es:
+
+```python
+# src/simulation/simulator.py + season_simulator.py
+match_features_df = self.feature_builder.build_features(home, away, jornada)
+team_feats = self._extract_set_team_features(match_features_df)
+
+# Al inicio de cada set, en MatchSimulator.simulate_match()
+p_set_home = set_predictor.predict_proba(set_context_df)[0, 1]
+margin = 0.20
+clamp_low = max(0.10, p_set_home - margin)
+clamp_high = min(0.90, p_set_home + margin)
+# El clamp ahora es [clamp_low, clamp_high] en vez de [0.20, 0.80]
+```
+
+### 6.1. Limitación actual
+
+En las **primeras jornadas** de la temporada, las features de equipo están en valores por defecto (los equipos aún no han jugado en la simulación, así que el `feature_builder` no tiene datos de `results`, `streaks`, `elo` actualizados). En ese caso, el `SetPredictor` predice ~0.5 para todos los partidos, y el clamp no se desvía del rango por defecto `[0.20, 0.80]`.
+
+**El efecto del SetPredictor aumenta a medida que avanza la temporada**, cuando las features de equipo se van "calentando" con resultados simulados.
+
+---
+
+## 7. Persistencia y Carga
+
+### Guardado (`save`)
+
+```python
+# set_predictor.py:252
+save_data = {
+    "scaler": self.scaler,
+    "best_model_name": self.best_model_name,
+    "best_model": self.best_model,
+    "calibrated_model": self.calibrated_model,
+    "feature_names": self.feature_names,
+    "results": self.results,
+}
+joblib.dump(save_data, path)
+```
+
+El predictor completo pesa **~19 MB** (el `ExtraTrees` con 300 estimadores es el componente dominante).
+
+### Carga (`load`)
+
+```python
+# src/api/main.py:58
+set_predictor = SetPredictor.load(MODELS_DIR / "set_predictor.joblib")
+```
+
+Si la carga falla (archivo corrupto o ausente), la API arranca en modo degraded: el `set_predictor` queda en `None` y el simulador usa el clamp por defecto `[0.20, 0.80]` sin calibración ML.
+
+---
+
+## 8. Limitaciones y Trabajo Futuro
+
+1. **Recall bajo para visitante (0.39)**: el modelo sub-predice victorias visitantes. Podría corregirse con class_weight, oversampling o features que capten mejor el "away upset".
+2. **Features frías al inicio de temporada**: el `SetPredictor` no aporta valor hasta la jornada 5-6 de la simulación. Un fix sería inicializar las features con valores históricos del `match_features.csv` en vez de defaults.
+3. **Sin features de momentum entre sets**: el modelo usa `momentum_h` intra-set pero no captura momentum entre sets (racha de sets ganados/perdidos).
+4. **Calibración isotonic puede sobre-ajustar**: con `cv=3` y 1345 sets de train, hay riesgo de sobrecalibración. Una alternativa es Platt scaling o `cv=5`.
+
+---
+
+## 9. Conclusión
+
+El `SetPredictor` implementa un patrón estándar de **comparar 6 modelos, seleccionar el mejor por AUC, y calibrar con isotonic**. El champion (ExtraTrees) alcanza un AUC de 0.65 en test, lo que está por encima del azar pero lejos de un predictor fuerte — lo cual es esperable porque la varianza intra-partido es alta y el volleyball tiene mucho "ruido" (puntos i.i.d. en rallies cortos).
+
+La integración con el simulador (clamp adaptativo) le da un rol práctico: relaja el clamp cuando el modelo está seguro de quién gana el set, y lo mantiene estricto cuando no. Esto reduce la varianza del simulador sin sobre-ajustar.
