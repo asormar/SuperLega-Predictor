@@ -644,6 +644,7 @@ class SeasonSimulator:
                         "jugador": name,
                         "partidos": 0,
                         "sets": 0,
+                        "rotaciones": 0,
                         "puntos": 0,
                         "aces": 0,
                         "ataques_ganados": 0,
@@ -653,6 +654,7 @@ class SeasonSimulator:
                     }
                 ps = season_stats[key]
                 ps["sets"] += 1
+                ps["rotaciones"] += 1
                 ps["puntos"] += p.get("puntos", 0)
                 ps["aces"] += p.get("aces", 0)
                 ps["ataques_ganados"] += p.get("ataques_ganados", 0)
