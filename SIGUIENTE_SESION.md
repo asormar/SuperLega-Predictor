@@ -156,3 +156,66 @@ curl -X POST http://localhost:8000/api/simular/partido -H "Content-Type: applica
 | `e6620d8` | docs | Restaura ~20 comentarios inline perdidos en el fix de thread-safety (5198f00). Extrae `7` a constante `ASSUMED_REST_DAYS` |
 
 **Estado**: Batch 2a completo con 13 commits totales en main. Sin reentrenamiento.
+
+## Batch 2b — Tests (en progreso, sesión 2026-07-06-2b)
+
+**Fase actual**: explore + propose completos. Spec phase lanzado pero cancelado por el usuario a mitad de ejecución. **Punto de reanudación**: `sdd-spec` con el prompt ya preparado (decisiones autónomas baked in).
+
+### Inventario final acordado
+
+| Archivo | LoC | Scope |
+|---|---|---|
+| `pyproject.toml` | ~25 | pytest config minimal (`[project.optional-dependencies] test = ["pytest", "httpx"]`, `[tool.pytest.ini_options]`) |
+| `tests/__init__.py` | 0 | vacío |
+| `tests/conftest.py` | ~80 | fixtures: synthetic df + 4 modelos sintéticos + `feature_builder` override + autouse seed + tmp CSV |
+| `tests/test_team_mapper.py` | ~140 | `normalize_team_name` 12+ dedup cases + **constantes pineadas (incluye DEFAULT_SIDEOUT_RATE×2, clamp ranges, MOMENTUM_*, ASSUMED_REST_DAYS, TEMPORAL_SPLITS)** |
+| `tests/test_api_validation.py` | ~140 | 13 Pydantic 422 + 4 happy-path 200 |
+| `tests/test_simulator.py` | ~150 | match shape, **AMBOS clamp ranges** `(0.20, 0.80)` y `(0.10, 0.90)`, MC determinismo, sideout math, feature_names=None guard (N14) |
+| `tests/test_season_simulator.py` | ~90 | `_generate_return_leg` (N3), `_accumulate_player_stats` no-rotaciones (N2 revert), standings round-trip, two-pass half flow |
+| `tests/test_models.py` | ~110 | 4 modelos smoke (SetPredictor / MatchPredictor / PointProbabilityModel / PlayerStatsGenerator) con `.fit()` sintético + Brier-score sanity |
+| `tests/test_feature_builder.py` | ~80 | win_rate asymmetry, `pts_fav_exp`, `ASSUMED_REST_DAYS=7` (e6620d8), build_features schema, `elo_diff = diff * 200` (Batch 1.1) |
+| `tests/test_data_pipeline.py` | ~60 | CSV loaders + normalize_team_name round-trip |
+
+**Total: ~790 LoC** (debajo del budget de 800).
+
+### Decisiones autónomas del orchestrator (auto mode)
+
+1. **FOLD** `test_constants.py` → `test_team_mapper.py`. Ahorra ~40 líneas, total queda bajo 800.
+2. **NO** arreglar la duplicación de `DEFAULT_SIDEOUT_RATE` (`point_probability.py:71` y `constants.py:15` ambos en 0.62). Defer a Batch 2c. En 2b solo se pinean ambos valores.
+
+### Gotchas descubiertos (el spec los cubre)
+
+1. `models/*.joblib` está en `.gitignore` — los tests deben correr en un clone fresco sin artefactos. Fixtures sintéticos son obligatorios.
+2. Singletons a nivel de módulo en `src/api/main.py:64-97` — usar `app.dependency_overrides` exclusivamente.
+3. `RuntimeFeatureBuilder` tiene `threading.Lock` pero es SINGLETON — el lock evita data races, no mezcla lógica de estado entre requests. Los tests NO deben depender de cross-request state.
+4. **DOS clamp ranges**: `DEFAULT_CLAMP_RANGE = (0.20, 0.80)` (sin SetPredictor) Y `POINT_PROB_CLIP_ADAPTIVE_HARD = (0.10, 0.90)` con `CLAMP_MARGIN = 0.20` (con SetPredictor). Testear AMBOS.
+5. `DEFAULT_SIDEOUT_RATE` duplicado: pinear AMBOS valores en `test_team_mapper.py`.
+6. Inconsistencia Pydantic: `_val_team` devuelve el string original, `_val_diff_teams` compara normalizado. `"Diatec Trentino"` vs `"Trento"` es ACEPTADO. Testear explícitamente.
+7. `player_stats_params.json` (~300KB, gitignored) — `PlayerStatsGenerator.load()` falla en clone fresco; tests usan `.fit()` con stats sintéticos.
+8. `set_predictor.feature_names` guard (N14) — testear que con `feature_names=None` devuelve `None` y se skipea en `simulate_season`.
+9. `build_features_from_strengths` escala `elo_diff * 200` (otros `diff_*` quedan sin escalar) — pinear.
+
+### Guardrails para el sdd-apply (lección del Batch 2a)
+
+El prompt del apply tiene que decir explícitamente:
+- **"Do NOT modify any file under `src/`. Batch 2b adds `pyproject.toml` and `tests/` only."**
+- **"No drive-by refactors. Test files are new files; there is nothing to delete."**
+- **"One commit per test file. First commit: `pyproject.toml + conftest.py`. Last commit: `@pytest.mark.slow` integration test."**
+- Si un test revela un bug real en `src/`, frenar y surfacear como cambio separado.
+
+### Reanudación (próxima sesión)
+
+1. Re-launch `sdd-spec` con el prompt que ya tengo en el historial de la sesión `predictor-tfg-2026-07-06-2b`. Topic key: `sdd/predictor-2b-batch/spec`.
+2. `sdd-design` (diseño técnico): contenido exacto de `pyproject.toml`, estructura de `conftest.py`, contratos de fixtures, listas de parametrización.
+3. `sdd-tasks` (un task por archivo de test + pyproject.toml/conftest + slow integration test).
+4. `sdd-apply` (implementación con los guardrails de arriba).
+5. `sdd-verify` (`pip install -e ".[test]" && pytest`, REQ-1..40 verde).
+6. `sdd-archive`.
+
+### Engram references (resumir con `mem_get_observation`)
+
+- `#72` — `sdd-init/predictor(2)` contexto del proyecto
+- `#79` — Session summary Batch 2a (lista los 13 fixes que el test suite debe cubrir)
+- `#81` — Batch 2b explore (source map + risk surface)
+- `#82` — Batch 2b propose (plan completo)
+- Session id actual: `predictor-tfg-2026-07-06-2b`
