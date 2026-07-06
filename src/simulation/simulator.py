@@ -68,10 +68,19 @@ class MatchSimulator:
     Las transiciones estan determinadas por P(home gana el punto).
     """
 
-    # Parametros de momentum
-    MOMENTUM_BONUS = 0.015      # Bonus por cada punto consecutivo
-    MOMENTUM_MAX_STREAK = 4     # Maximo de puntos para acumular bonus
-    MOMENTUM_DECAY = 0.5        # Decay del momentum al cambiar de set
+    # Parametros de momentum (desde constants.py)
+    from src.simulation.constants import (
+        MOMENTUM_BONUS as _MOMENTUM_BONUS,
+        MOMENTUM_MAX_STREAK as _MOMENTUM_MAX_STREAK,
+        MOMENTUM_DECAY as _MOMENTUM_DECAY,
+        DEFAULT_CLAMP_RANGE, CLAMP_MARGIN,
+        POINT_PROB_CLIP_ADAPTIVE_HARD, DEFAULT_SIDEOUT_RATE,
+        POINT_PROB_CLIP,
+        GLOBAL_MOMENTUM_FACTOR,
+    )
+    MOMENTUM_BONUS = _MOMENTUM_BONUS
+    MOMENTUM_MAX_STREAK = _MOMENTUM_MAX_STREAK
+    MOMENTUM_DECAY = _MOMENTUM_DECAY
 
     def __init__(
         self,
@@ -228,7 +237,7 @@ class MatchSimulator:
         point_num = 0
 
         # Clamp adaptativo via SetPredictor: se evalua una vez al inicio del set
-        clamp_low, clamp_high = 0.20, 0.80
+        clamp_low, clamp_high = DEFAULT_CLAMP_RANGE
 
         # Evaluar SetPredictor una vez al inicio para ajustar el clamp
         if set_predictor is not None and set_context_base is not None:
@@ -238,9 +247,8 @@ class MatchSimulator:
                 sets_home_antes, sets_away_antes,
             )
             if p_set_home is not None:
-                margin = 0.20
-                clamp_low = max(0.10, p_set_home - margin)
-                clamp_high = min(0.90, p_set_home + margin)
+                clamp_low = max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], p_set_home - CLAMP_MARGIN)
+                clamp_high = min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], p_set_home + CLAMP_MARGIN)
 
         while True:
             point_num += 1
@@ -257,7 +265,7 @@ class MatchSimulator:
                 - min(streak_away, self.MOMENTUM_MAX_STREAK) * self.MOMENTUM_BONUS
             )
             # Ajuste adicional por momentum global del partido
-            momentum_adj += (momentum_home - momentum_away) * 0.01
+            momentum_adj += (momentum_home - momentum_away) * GLOBAL_MOMENTUM_FACTOR
 
             p_home_wins = np.clip(base_p + momentum_adj, clamp_low, clamp_high)
 
@@ -389,19 +397,18 @@ class MatchSimulator:
             p_base = home_strength / total
 
         # Ajustar por sideout (equipo recibiendo tiene ventaja)
-        sideout = 0.62
-        p_serving = p_base * (1 - sideout) / (
-            p_base * (1 - sideout) + (1 - p_base) * sideout
+        p_serving = p_base * (1 - DEFAULT_SIDEOUT_RATE) / (
+            p_base * (1 - DEFAULT_SIDEOUT_RATE) + (1 - p_base) * DEFAULT_SIDEOUT_RATE
         )
-        p_receiving = p_base * sideout / (
-            p_base * sideout + (1 - p_base) * (1 - sideout)
+        p_receiving = p_base * DEFAULT_SIDEOUT_RATE / (
+            p_base * DEFAULT_SIDEOUT_RATE + (1 - p_base) * (1 - DEFAULT_SIDEOUT_RATE)
         )
 
         return {
-            "p_home_serving": np.clip(p_serving, 0.25, 0.75),
-            "p_home_receiving": np.clip(p_receiving, 0.25, 0.75),
-            "p_away_serving": np.clip(1 - p_receiving, 0.25, 0.75),
-            "p_away_receiving": np.clip(1 - p_serving, 0.25, 0.75),
+            "p_home_serving": np.clip(p_serving, POINT_PROB_CLIP[0], POINT_PROB_CLIP[1]),
+            "p_home_receiving": np.clip(p_receiving, POINT_PROB_CLIP[0], POINT_PROB_CLIP[1]),
+            "p_away_serving": np.clip(1 - p_receiving, POINT_PROB_CLIP[0], POINT_PROB_CLIP[1]),
+            "p_away_receiving": np.clip(1 - p_serving, POINT_PROB_CLIP[0], POINT_PROB_CLIP[1]),
         }
 
     def monte_carlo_simulate(

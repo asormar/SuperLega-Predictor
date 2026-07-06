@@ -15,6 +15,7 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 from src.data.team_mapper import normalize_team_name
+from src.simulation.constants import AVG_POINTS_PER_SET
 from src.data.feature_store import (
     MATCH_FEATURE_COLS, ENRICHED_MATCH_COLS, ROSTER_BASIC_COLS,
 )
@@ -198,8 +199,8 @@ class RuntimeFeatureBuilder:
                 features[f"{prefix}_win_rate_away"] = 0.5
                 features[f"{prefix}_set_win_rate"] = 0.5
                 features[f"{prefix}_set_diff_exp"] = 0.0
-                features[f"{prefix}_pts_fav_exp"] = 23.5
-                features[f"{prefix}_pts_con_exp"] = 23.5
+                features[f"{prefix}_pts_fav_exp"] = AVG_POINTS_PER_SET
+                features[f"{prefix}_pts_con_exp"] = AVG_POINTS_PER_SET
                 features[f"{prefix}_forma_home"] = 0.5
                 features[f"{prefix}_forma_away"] = 0.5
                 features[f"{prefix}_racha"] = 0

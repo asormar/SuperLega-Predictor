@@ -27,6 +27,7 @@ from src.data.team_mapper import get_superliga_teams, get_all_viable_teams, norm
 from src.simulation.simulator import MatchSimulator
 from src.simulation.season_simulator import SeasonSimulator, generate_jornadas
 from src.simulation.feature_builder import RuntimeFeatureBuilder
+from src.simulation.constants import MAX_MC_ITERATIONS
 from src.models.set_predictor import SetPredictor
 from src.models.match_predictor import MatchPredictor
 from src.models.point_probability import PointProbabilityModel
@@ -427,7 +428,7 @@ async def simular_partido(req: SimularPartidoRequest):
             home_strength=h_str,
             away_strength=a_str,
             match_features=_point_mf,
-            n_simulations=min(req.n_simulaciones_mc, 5000),
+            n_simulations=min(req.n_simulaciones_mc, MAX_MC_ITERATIONS),
         )
         return {
             "tipo": "monte_carlo",

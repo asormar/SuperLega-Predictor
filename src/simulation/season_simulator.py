@@ -10,6 +10,11 @@ import random
 from typing import Optional
 from dataclasses import dataclass, field
 from src.simulation.simulator import MatchSimulator, MatchResult
+from src.simulation.constants import (
+    HOME_ADVANTAGE_STRENGTH_BONUS,
+    STRENGTH_CLAMP_RANGE,
+    MATCH_PREDICTOR_DAMPING,
+)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -361,7 +366,7 @@ class SeasonSimulator:
         for home, away in schedule[jornada_index]:
             h_str = self.team_strengths.get(home, 0.5)
             a_str = self.team_strengths.get(away, 0.5)
-            h_str_adj = min(h_str + 0.03, 1.0)
+            h_str_adj = min(h_str + HOME_ADVANTAGE_STRENGTH_BONUS, 1.0)
 
             match_features_df = None
             set_pred = None
@@ -384,7 +389,7 @@ class SeasonSimulator:
                     import sys
                     print(f"  [WARN] MatchPredictor fallo para {home} vs {away}: {e}",
                           file=sys.stderr)
-                    h_str_adj = min(h_str + 0.03, 1.0)
+                    h_str_adj = min(h_str + HOME_ADVANTAGE_STRENGTH_BONUS, 1.0)
                     match_features_df = None
 
             if use_set_calibration and self.set_predictor:
@@ -510,7 +515,7 @@ class SeasonSimulator:
 
             h_str = self.team_strengths.get(home, 0.5)
             a_str = self.team_strengths.get(away, 0.5)
-            h_str_adj = min(h_str + 0.03, 1.0)  # ventaja de campo
+            h_str_adj = min(h_str + HOME_ADVANTAGE_STRENGTH_BONUS, 1.0)  # ventaja de campo
 
             # Calibrar fuerzas con MatchPredictor
             match_features_df = None
@@ -542,7 +547,7 @@ class SeasonSimulator:
                     import sys
                     print(f"  [WARN] MatchPredictor fallo para {home} vs {away}: {e}",
                           file=sys.stderr)
-                    h_str_adj = min(h_str + 0.03, 1.0)
+                    h_str_adj = min(h_str + HOME_ADVANTAGE_STRENGTH_BONUS, 1.0)
                     match_features_df = None
 
             if use_set_calibration and self.set_predictor:
@@ -735,7 +740,7 @@ class SeasonSimulator:
         h_str: float,
         a_str: float,
         p_target: float,
-        damping: float = 0.5,
+        damping: float = MATCH_PREDICTOR_DAMPING,
     ) -> tuple[float, float]:
         """
         Ajusta h_str para que la probabilidad base del Markov
@@ -761,7 +766,7 @@ class SeasonSimulator:
         k_damped = k ** damping
 
         h_new = h_str * k_damped
-        h_new = max(0.05, min(0.95, h_new))
+        h_new = max(STRENGTH_CLAMP_RANGE[0], min(STRENGTH_CLAMP_RANGE[1], h_new))
         return h_new, a_str
 
     @staticmethod

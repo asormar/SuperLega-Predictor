@@ -36,6 +36,7 @@ class PointProbabilityModel:
 
     # Sideout rate promedio en SuperLega (estimado de datos históricos)
     DEFAULT_SIDEOUT_RATE = 0.62
+    POINT_PROB_CLIP = (0.25, 0.75)
 
     def __init__(self):
         self.model = None
@@ -145,8 +146,8 @@ class PointProbabilityModel:
         )
 
         # Clamp para evitar probabilidades extremas
-        p_home_serving = np.clip(p_home_serving, 0.25, 0.75)
-        p_home_receiving = np.clip(p_home_receiving, 0.25, 0.75)
+        p_home_serving = np.clip(p_home_serving, POINT_PROB_CLIP[0], POINT_PROB_CLIP[1])
+        p_home_receiving = np.clip(p_home_receiving, POINT_PROB_CLIP[0], POINT_PROB_CLIP[1])
 
         return {
             "p_home_serving": p_home_serving,
