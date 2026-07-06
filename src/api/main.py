@@ -155,6 +155,22 @@ TEAM_COLORS = {
 }
 
 
+def _build_point_features(h_str: float, a_str: float) -> dict:
+    """
+    Construye dict de features minimo para PointProbabilityModel
+    a partir de las fuerzas relativas de los equipos.
+    """
+    diff = h_str - a_str
+    return {
+        "elo_diff": diff * 3000,
+        "diff_win_rate_global": diff,
+        "diff_set_win_rate": diff,
+        "diff_dominancia": diff,
+        "diff_set_ratio": diff,
+        "diff_forma_efectiva": diff,
+    }
+
+
 # ─────────────────────────────────────────────────────────────
 # Schemas Pydantic
 # ─────────────────────────────────────────────────────────────
@@ -279,6 +295,9 @@ async def simular_partido(req: SimularPartidoRequest):
     h_str = req.fuerza_local or TEAM_STRENGTHS.get(local, 0.5)
     a_str = req.fuerza_visitante or TEAM_STRENGTHS.get(visitante, 0.5)
 
+    # Construir match_features minimo para PointProbabilityModel
+    _point_mf = _build_point_features(h_str, a_str)
+
     # Si piden Monte Carlo
     if req.n_simulaciones_mc and req.n_simulaciones_mc > 0:
         mc = simulator.monte_carlo_simulate(
@@ -286,6 +305,7 @@ async def simular_partido(req: SimularPartidoRequest):
             away_team=visitante,
             home_strength=h_str,
             away_strength=a_str,
+            match_features=_point_mf,
             n_simulations=min(req.n_simulaciones_mc, 5000),
         )
         return {
@@ -298,12 +318,13 @@ async def simular_partido(req: SimularPartidoRequest):
             "n_simulaciones": req.n_simulaciones_mc,
         }
 
-    # Simulación individual
+    # Simulacion individual
     match = simulator.simulate_match(
         home_team=local,
         away_team=visitante,
         home_strength=h_str,
         away_strength=a_str,
+        match_features=_point_mf,
         generate_points=req.generar_puntos,
         generate_player_stats=req.generar_stats_jugadores,
         seed=req.semilla,

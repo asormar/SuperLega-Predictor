@@ -382,18 +382,30 @@ class SeasonSimulator:
                     team_feats = self._extract_set_team_features(match_features_df)
                 except Exception as e:
                     import sys
-                    print(f"  [WARN] MatchPredictor falló para {home} vs {away}: {e}",
+                    print(f"  [WARN] MatchPredictor fallo para {home} vs {away}: {e}",
                           file=sys.stderr)
                     h_str_adj = min(h_str + 0.03, 1.0)
+                    match_features_df = None
 
             if use_set_calibration and self.set_predictor:
                 set_pred = self.set_predictor
+
+            # Extraer features para PointProbabilityModel
+            point_match_features = None
+            if match_features_df is not None and not match_features_df.empty:
+                _row = match_features_df.iloc[0]
+                point_match_features = {
+                    f: float(_row[f]) if f in match_features_df.columns else 0.0
+                    for f in ["elo_diff", "diff_win_rate_global", "diff_set_win_rate",
+                              "diff_dominancia", "diff_set_ratio", "diff_forma_efectiva"]
+                }
 
             match = self.simulator.simulate_match(
                 home_team=home,
                 away_team=away,
                 home_strength=h_str_adj,
                 away_strength=a_str,
+                match_features=point_match_features,
                 generate_points=False,
                 generate_player_stats=True,
                 set_predictor=set_pred,
@@ -524,18 +536,30 @@ class SeasonSimulator:
                     )
                 except Exception as e:
                     import sys
-                    print(f"  [WARN] MatchPredictor falló para {home} vs {away}: {e}",
+                    print(f"  [WARN] MatchPredictor fallo para {home} vs {away}: {e}",
                           file=sys.stderr)
                     h_str_adj = min(h_str + 0.03, 1.0)
+                    match_features_df = None
 
             if use_set_calibration and self.set_predictor:
                 set_pred = self.set_predictor
+
+            # Extraer features para PointProbabilityModel
+            point_match_features = None
+            if match_features_df is not None and not match_features_df.empty:
+                _row = match_features_df.iloc[0]
+                point_match_features = {
+                    f: float(_row[f]) if f in match_features_df.columns else 0.0
+                    for f in ["elo_diff", "diff_win_rate_global", "diff_set_win_rate",
+                              "diff_dominancia", "diff_set_ratio", "diff_forma_efectiva"]
+                }
 
             match = self.simulator.simulate_match(
                 home_team=home,
                 away_team=away,
                 home_strength=h_str_adj,
                 away_strength=a_str,
+                match_features=point_match_features,
                 generate_points=False,
                 generate_player_stats=True,
                 set_predictor=set_pred,

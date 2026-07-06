@@ -173,3 +173,36 @@ El `PointProbabilityModel` es el componente más "artesanal" del proyecto: una f
 Es el modelo con menos AUC (no se reporta explícitamente porque no es un clasificador puro, es un regresor) pero **el más estable**: sus predicciones son siempre sensatas gracias al clamp y al sideout hardcodeado, y la `LogisticRegression` aporta una corrección pequeña pero calibrada.
 
 Para el TFG, este modelo es interesante porque muestra que **no siempre se necesita un modelo complejo**: a veces un modelo paramétrico simple con buenos priors (sideout=0.62) supera a un modelo "data-driven" sin esas restricciones.
+
+---
+
+## 7. Carencias Conocidas y Roadmap de Mejora
+
+El `PointProbabilityModel` actual tiene estas limitaciones que lo dejan sub-utilizado:
+
+1. **Solo 6 features**: el modelo usa `elo_diff` y diferencias de win rate, pero ignora features in-match (momentum, score parcial, cansancio), features de roster (top scorer) y features de superficie/condiciones.
+
+2. **Mapping conservador [0.45, 0.55]**: la LogisticRegression predice P(point_ratio_h > 0.5) pero se mapea a un rango muy estrecho. Esto mata la capacidad discriminativa del modelo. Deberia devolver P(point_ratio_h) directamente sin truncar.
+
+3. **Sideout rate constante (0.62)**: no modela que equipos con mejor recepcion tienen sideout mas alto. Deberia ser un feature aprendido.
+
+4. **Target binarizado**: en `fit()` (point_probability.py:81), se binariza `y = (point_ratio_h > 0.5)`. Esto pierde informacion sobre la magnitud de la dominancia. Deberia ser una regresion logistica continua.
+
+5. **No captura el efecto de "estar 24-20"**: la probabilidad de ganar el ultimo punto de un set es MUY distinta segun el marcador. El modelo no tiene features in-set.
+
+### Roadmap de mejora
+
+**Corto plazo (1-2h)**:
+- [ ] Pasar `match_features` a `simulate_match` en los 3 call sites para que el modelo se use de verdad.
+- [ ] Ampliar features a las 15 que el `SetPredictor` consume.
+- [ ] Eliminar el mapping conservador [0.45, 0.55] y devolver la probabilidad cruda.
+
+**Mediano plazo (4-6h)**:
+- [ ] Sideout rate aprendido por equipo: feature `sideout_rate_h` calculado de los ultimos N sets.
+- [ ] Regresion continua (no binarizada).
+- [ ] Validacion cruzada temporal (no un solo split).
+
+**Largo plazo (TFG siguiente)**:
+- [ ] Features in-set: score parcial, momentum, jugador al saque.
+- [ ] Modelo jerarquico: P(ganar_set) y P(ganar_punto | estado_set) acoplados.
+- [ ] Comparar con un modelo transformer / LSTM que consuma secuencias de puntos.
