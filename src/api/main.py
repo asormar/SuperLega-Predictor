@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 import json
+import pandas as pd
 
 from src.data.team_mapper import get_superliga_teams, get_all_viable_teams, normalize_team_name, TEAM_ALIASES
 from src.simulation.simulator import MatchSimulator
@@ -104,12 +105,10 @@ simulator = MatchSimulator(
 # ─── Fuerzas de equipos (calculadas desde match_features) ───
 def _compute_team_strengths() -> dict:
     """Calcula la fuerza de cada equipo desde sus win rates en match_features."""
-    import pandas as pd
     try:
         mf = pd.read_csv(BASE_DIR / "DB" / "features" / "match_features.csv", encoding="utf-8")
-        from src.data.team_mapper import normalize_team_name as _norm
-        mf["local"] = mf["local"].apply(_norm)
-        mf["visitante"] = mf["visitante"].apply(_norm)
+        mf["local"] = mf["local"].apply(normalize_team_name)
+        mf["visitante"] = mf["visitante"].apply(normalize_team_name)
         all_teams = set(mf["local"].unique()) | set(mf["visitante"].unique())
         strengths = {}
         for team in all_teams:
