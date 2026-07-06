@@ -193,7 +193,7 @@ El `PointProbabilityModel` actual tiene estas limitaciones que lo dejan sub-util
 ### Roadmap de mejora
 
 **Corto plazo (1-2h)**:
-- [ ] Pasar `match_features` a `simulate_match` en los 3 call sites para que el modelo se use de verdad.
+- [x] Pasar `match_features` a `simulate_match` en los 3 call sites para que el modelo se use de verdad. (commit a1b3701)
 - [ ] Ampliar features a las 15 que el `SetPredictor` consume.
 - [ ] Eliminar el mapping conservador [0.45, 0.55] y devolver la probabilidad cruda.
 
