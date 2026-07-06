@@ -611,24 +611,17 @@ class SeasonSimulator:
         }
 
     def _generate_return_leg(self, teams: list[str]) -> list[tuple[str, str]]:
-        """Genera solo los partidos de vuelta (invertidos respecto a ida)."""
-        matches = []
-        for home, away in itertools.permutations(teams, 2):
-            # Solo incluir si (away, home) sería la ida
-            if home < away:
-                matches.append((away, home))
-            else:
-                matches.append((home, away))
-        # Eliminar duplicados de la lógica — usar permutations directamente
-        matches = list(itertools.permutations(teams, 2))
-        # Filtrar: solo la mitad "de vuelta" (invertimos los de ida)
-        ida = set()
+        """Genera solo los partidos de vuelta (invertidos respecto a ida).
+
+        Para cada par (A, B) que aparece en la ida, genera (B, A) como vuelta.
+        """
+        seen = set()
         vuelta = []
         for home, away in itertools.permutations(teams, 2):
-            if (away, home) not in ida:
-                ida.add((home, away))
-            else:
+            if (away, home) in seen:
                 vuelta.append((home, away))
+            else:
+                seen.add((home, away))
         random.shuffle(vuelta)
         return vuelta
 
