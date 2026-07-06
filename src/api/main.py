@@ -712,7 +712,7 @@ async def modelo_info():
     if set_predictor:
         info["set_predictor"] = {
             "modelo": set_predictor.best_model_name,
-            "features": set_predictor.feature_names,
+            "features": set_predictor.feature_names or [],
             "resultados_validacion": {
                 name: {
                     "accuracy": round(r["accuracy"], 4),
