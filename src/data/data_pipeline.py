@@ -296,7 +296,7 @@ def run_pipeline() -> dict[str, pd.DataFrame]:
     Devuelve un diccionario con todos los DataFrames limpios.
     """
     print("=" * 60)
-    print("PIPELINE DE DATOS — SuperLega Volleyball Simulator")
+    print("PIPELINE DE DATOS - SuperLega Volleyball Simulator")
     print("=" * 60)
 
     data = {}
@@ -324,7 +324,7 @@ def run_pipeline() -> dict[str, pd.DataFrame]:
     print("RESUMEN DEL PIPELINE")
     print("=" * 60)
     for name, df in data.items():
-        print(f"  {name:20s} → {len(df):>6} filas, {len(df.columns):>3} columnas")
+        print(f"  {name:20s} -> {len(df):>6} filas, {len(df.columns):>3} columnas")
 
     return data
 

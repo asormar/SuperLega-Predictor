@@ -28,7 +28,7 @@ def train_all():
     """Entrena todos los modelos del sistema."""
 
     print("=" * 70)
-    print("  ENTRENAMIENTO DE MODELOS — SuperLega Volleyball Simulator")
+    print("  ENTRENAMIENTO DE MODELOS - SuperLega Volleyball Simulator")
     print("=" * 70)
 
     # ─── 1. Cargar datos ───

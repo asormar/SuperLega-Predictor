@@ -293,6 +293,6 @@ if __name__ == "__main__":
         status = "OK" if result == expected else "FAIL"
         if result != expected:
             all_ok = False
-        print(f"  {status} '{raw}' → '{result}' (esperado: '{expected}')")
+        print(f"  {status} '{raw}' -> '{result}' (esperado: '{expected}')")
 
     print(f"\n{'Todos los tests pasaron!' if all_ok else 'ALGUNOS TESTS FALLARON'}")

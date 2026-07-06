@@ -207,7 +207,7 @@ def run_full_benchmark():
     from src.data.feature_store import prepare_set_data, prepare_match_data
 
     print("=" * 90)
-    print("  BENCHMARK COMPLETO — SuperLega Volleyball Simulator")
+    print("  BENCHMARK COMPLETO - SuperLega Volleyball Simulator")
     print("=" * 90)
 
     data = run_pipeline()

@@ -81,7 +81,7 @@ def print_calibration_analysis(y_true, y_prob, name, n_bins=10):
     bin_edges = np.linspace(0.0, 1.0, n_bins + 1)
 
     print(f"\n  {'='*68}")
-    print(f"  ANALISIS POR BIN DE PROBABILIDAD — {name}")
+    print(f"  ANALISIS POR BIN DE PROBABILIDAD - {name}")
     print(f"  {'='*68}")
     print(f"  {'Rango prob':>18} {'N':>6} {'%total':>7} "
           f"{'Pred_avg':>9} {'Real_avg':>9} {'Gap':>8} {'Diagnostico'}")
@@ -103,15 +103,15 @@ def print_calibration_analysis(y_true, y_prob, name, n_bins=10):
         pct = 100 * n_bin / len(y_true)
 
         if abs(gap) < 0.03:
-            diag = "✓ Bien calibrado"
+            diag = "[OK] Bien calibrado"
         elif gap > 0.08:
-            diag = "⚠ SOBRECONFIANZA"
+            diag = "[WARN] SOBRECONFIANZA"
         elif gap > 0.03:
-            diag = "↘ Ligera sobreconfianza"
+            diag = "- Ligera sobreconfianza"
         elif gap < -0.08:
-            diag = "⚠ SUBCONFIANZA"
+            diag = "[WARN] SUBCONFIANZA"
         elif gap < -0.03:
-            diag = "↗ Ligera subconfianza"
+            diag = "+ Ligera subconfianza"
         else:
             diag = ""
 
@@ -273,7 +273,7 @@ def train_and_evaluate_gb_model(
 
 def main():
     print("=" * 75)
-    print("  CURVA DE FIABILIDAD — GradientBoosting (Set y Match)")
+    print("  CURVA DE FIABILIDAD - GradientBoosting (Set y Match)")
     print("=" * 75)
 
     # 1. Cargar datos
@@ -303,13 +303,13 @@ def main():
     )
 
     print_calibration_analysis(y_te, probs_set["GradientBoosting (crudo)"],
-                               "GB SET — Crudo")
+                               "GB SET - Crudo")
     print_calibration_analysis(y_te, probs_set["GradientBoosting (calibrado)"],
-                               "GB SET — Calibrado")
+                               "GB SET - Calibrado")
 
     plot_reliability_diagram(
         y_te, probs_set,
-        title="Diagrama de Fiabilidad — GradientBoosting en SET",
+        title="Diagrama de Fiabilidad - GradientBoosting en SET",
         filename="reliability_set.png",
         n_bins=15,
     )
@@ -343,13 +343,13 @@ def main():
     )
 
     print_calibration_analysis(y_te_m, probs_match["GradientBoosting (crudo)"],
-                               "GB MATCH — Crudo")
+                               "GB MATCH - Crudo")
     print_calibration_analysis(y_te_m, probs_match["GradientBoosting (calibrado)"],
-                               "GB MATCH — Calibrado")
+                               "GB MATCH - Calibrado")
 
     plot_reliability_diagram(
         y_te_m, probs_match,
-        title="Diagrama de Fiabilidad — GradientBoosting en PARTIDOS",
+        title="Diagrama de Fiabilidad - GradientBoosting en PARTIDOS",
         filename="reliability_match.png",
         n_bins=15,
     )
@@ -358,7 +358,7 @@ def main():
     #  C) Solo modelo calibrado (mas limpio para el TFG)
     # ────────────────────────────────────────────────────────
     print("\n" + "-" * 75)
-    print("  C) GRAFICO LIMPIO — Solo calibrado (Set + Match)")
+    print("  C) GRAFICO LIMPIO - Solo calibrado (Set + Match)")
     print("-" * 75)
 
     probs_set_cal = {"GradientBoosting (calibrado)": probs_set["GradientBoosting (calibrado)"]}
@@ -366,14 +366,14 @@ def main():
 
     plot_reliability_diagram(
         y_te, probs_set_cal,
-        title="Diagrama de Fiabilidad — GradientBoosting Calibrado en SET",
+        title="Diagrama de Fiabilidad - GradientBoosting Calibrado en SET",
         filename="reliability_set_calibrado.png",
         n_bins=15,
     )
 
     plot_reliability_diagram(
         y_te_m, probs_match_cal,
-        title="Diagrama de Fiabilidad — GradientBoosting Calibrado en PARTIDOS",
+        title="Diagrama de Fiabilidad - GradientBoosting Calibrado en PARTIDOS",
         filename="reliability_match_calibrado.png",
         n_bins=15,
     )

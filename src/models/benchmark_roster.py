@@ -61,7 +61,7 @@ def run_roster_comparison():
     results_summary = []
     for name, df, cols in configs:
         print(f"\n{'=' * 90}")
-        print(f"  MATCH PREDICTOR — {name}")
+        print(f"  MATCH PREDICTOR - {name}")
         print(f"  Features: {len(cols)}")
         print(f"{'=' * 90}")
 
@@ -84,7 +84,7 @@ def run_roster_comparison():
 
     # ─── RESUMEN ───
     print("\n" + "=" * 90)
-    print("  RESUMEN — IMPACTO DE FEATURES DE ROSTER")
+    print("  RESUMEN - IMPACTO DE FEATURES DE ROSTER")
     print("=" * 90)
 
     print(f"\n  {'Configuracion':<32s} {'Features':>8} {'Modelo':<18} {'AUC':>8} {'Acc':>8} {'Brier':>8}")
@@ -100,9 +100,9 @@ def run_roster_comparison():
     basic_auc = results_summary[1]["auc_test"]
     full_auc = results_summary[2]["auc_test"]
 
-    print(f"\n  Delta BASE → +ROSTER BASICO:    AUC {basic_auc - base_auc:>+.4f}")
-    print(f"  Delta BASE → +ROSTER COMPLETO:  AUC {full_auc - base_auc:>+.4f}")
-    print(f"  Delta BASICO → COMPLETO:        AUC {full_auc - basic_auc:>+.4f}")
+    print(f"\n  Delta BASE -> +ROSTER BASICO:    AUC {basic_auc - base_auc:>+.4f}")
+    print(f"  Delta BASE -> +ROSTER COMPLETO:  AUC {full_auc - base_auc:>+.4f}")
+    print(f"  Delta BASICO -> COMPLETO:        AUC {full_auc - basic_auc:>+.4f}")
 
     if full_auc > basic_auc:
         print("\n  ✅ Bloqueos/recepciones MEJORAN el modelo")

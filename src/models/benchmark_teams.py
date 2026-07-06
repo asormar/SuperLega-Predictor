@@ -45,7 +45,7 @@ def run_comparison():
 
     # ─── SET PREDICTOR ───
     print("\n" + "=" * 90)
-    print("  SET PREDICTOR — 12 EQUIPOS (baseline)")
+    print("  SET PREDICTOR - 12 EQUIPOS (baseline)")
     print("=" * 90)
 
     sf_12 = filter_set_features(sf, mf, CURRENT_12)
@@ -58,7 +58,7 @@ def run_comparison():
     )
 
     print("\n" + "=" * 90)
-    print("  SET PREDICTOR — 16 EQUIPOS (expandido)")
+    print("  SET PREDICTOR - 16 EQUIPOS (expandido)")
     print("=" * 90)
 
     sf_16 = filter_set_features(sf, mf, ALL_16)
@@ -72,7 +72,7 @@ def run_comparison():
 
     # ─── MATCH PREDICTOR ───
     print("\n" + "=" * 90)
-    print("  MATCH PREDICTOR — 12 EQUIPOS (baseline)")
+    print("  MATCH PREDICTOR - 12 EQUIPOS (baseline)")
     print("=" * 90)
 
     mf_12 = filter_match_features(mf, CURRENT_12)
@@ -85,7 +85,7 @@ def run_comparison():
     )
 
     print("\n" + "=" * 90)
-    print("  MATCH PREDICTOR — 16 EQUIPOS (expandido)")
+    print("  MATCH PREDICTOR - 16 EQUIPOS (expandido)")
     print("=" * 90)
 
     mf_16 = filter_match_features(mf, ALL_16)
