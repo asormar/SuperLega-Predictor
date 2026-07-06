@@ -144,3 +144,15 @@ curl -X POST http://localhost:8000/api/simular/partido -H "Content-Type: applica
 - **Datos**: 22 CSVs en `DB/`, ~5 MB
 - **Commits**: 18 (3 docs + 13 fixes + 2 fixups)
 - **Issues pendientes**: 11 (Batch 2a) + tests (Batch 2b) + linter/CI (Batch 2c)
+
+## Batch 2a — Re-run correctivo
+
+3 commits correctivos sobre primeros commits defectuosos del Batch 2a original.
+
+| Commit | Tipo | Descripción |
+|--------|------|-------------|
+| `97f4f51` | revert | Elimina campo `rotaciones` de `_accumulate_player_stats` (siempre igual a `sets`, engañoso) |
+| `48e5b9e` | refactor | Hoistea `import pandas as pd` a nivel de módulo en `main.py`, elimina inner import duplicado de `normalize_team_name` |
+| `e6620d8` | docs | Restaura ~20 comentarios inline perdidos en el fix de thread-safety (5198f00). Extrae `7` a constante `ASSUMED_REST_DAYS` |
+
+**Estado**: Batch 2a completo con 13 commits totales en main. Sin reentrenamiento.
