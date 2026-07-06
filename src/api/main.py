@@ -438,7 +438,9 @@ async def simular_partido(req: SimularPartidoRequest):
             "prob_local": mc["home_win_prob"],
             "prob_visitante": mc["away_win_prob"],
             "distribucion": mc["score_distribution"],
-            "n_simulaciones": req.n_simulaciones_mc,
+            "n_solicitadas": req.n_simulaciones_mc,
+            "n_ejecutadas": min(req.n_simulaciones_mc, MAX_MC_ITERATIONS),
+            "n_simulaciones": min(req.n_simulaciones_mc, MAX_MC_ITERATIONS),
         }
 
     # Simulacion individual
