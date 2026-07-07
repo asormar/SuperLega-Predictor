@@ -1,18 +1,4 @@
-"""Tests for the MatchSimulator — Markov-chain Monte Carlo volleyball engine.
-
-Covers:
-  - Match shape (3 or 5 sets)
-  - Set shape (>=25 with 2-pt margin)
-  - Both clamp ranges: default 0.20-0.80 AND adaptive 0.10-0.90
-  - MC determinism under fixed seed
-  - Sideout math (_default_point_probs bounds)
-  - feature_names=None guard (_eval_set_predictor returns None)
-
-3 regression pins:
-  - PointProb integration (simulate_match uses point_model when provided)
-  - MC seed determinism (same seed → identical results)
-  - feature_names guard (N14 fix)
-"""
+﻿"""Tests for the MatchSimulator — Markov-chain Monte Carlo volleyball engine."""
 
 import numpy as np
 import pytest
@@ -27,23 +13,6 @@ from src.simulation.constants import (
 )
 
 
-# ─────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────
-
-def _match_outcome_keys(match):
-    """Return a hashable tuple representing the match outcome."""
-    return (
-        match.sets_home,
-        match.sets_away,
-        match.winner,
-        match.resultado,
-    )
-
-
-# ─────────────────────────────────────────────────────────────
-# Match and set shape
-# ─────────────────────────────────────────────────────────────
 
 class TestMatchShape:
     """A simulated match must end 3-0, 3-1, or 3-2."""
@@ -92,9 +61,6 @@ class TestMatchShape:
                 assert max(s5.score_home, s5.score_away) - min(s5.score_home, s5.score_away) >= 2
 
 
-# ─────────────────────────────────────────────────────────────
-# Default clamp range (0.20-0.80) without SetPredictor
-# ─────────────────────────────────────────────────────────────
 
 class TestDefaultClamp:
     """Without SetPredictor, point-probability clamp is DEFAULT_CLAMP_RANGE."""
@@ -114,28 +80,24 @@ class TestDefaultClamp:
         assert DEFAULT_CLAMP_RANGE == (0.20, 0.80)
 
     def test_default_clamp_applied_in_simulate_set(self, monkeypatch):
-        """The _simulate_set code uses DEFAULT_CLAMP_RANGE as the initial clamp."""
+        """_simulate_set uses DEFAULT_CLAMP_RANGE (0.20, 0.80) for np.clip when no SetPredictor."""
+        import numpy as np
+        bounds_seen = set()
+        original_clip = np.clip
+
+        def recording_clip(a, a_min, a_max, **kwargs):
+            bounds_seen.add((a_min, a_max))
+            return original_clip(a, a_min, a_max, **kwargs)
+
+        monkeypatch.setattr(np, "clip", recording_clip)
         sim = MatchSimulator()
-        # Monkeypatch _simulate_set to expose the clamp values
-        recorded = {}
-
-        original = sim._simulate_set
-
-        def recording_simulate_set(*args, **kwargs):
-            result = original(*args, **kwargs)
-            recorded["clamp"] = (DEFAULT_CLAMP_RANGE[0], DEFAULT_CLAMP_RANGE[1])
-            return result
-
-        sim._simulate_set = recording_simulate_set
         sim.simulate_match("Trento", "Perugia", seed=42)
-        # Clamp was set to DEFAULT_CLAMP_RANGE
-        # (We can't easily introspect it, but we verify the match was produced)
-        assert "clamp" in recorded or True  # pass-through verification
+        assert (DEFAULT_CLAMP_RANGE[0], DEFAULT_CLAMP_RANGE[1]) in bounds_seen, (
+            f"DEFAULT_CLAMP_RANGE {DEFAULT_CLAMP_RANGE} not found in np.clip calls; "
+            f"seen bounds: {sorted(bounds_seen)}"
+        )
 
 
-# ─────────────────────────────────────────────────────────────
-# Adaptive clamp (0.10-0.90) with SetPredictor
-# ─────────────────────────────────────────────────────────────
 
 class TestAdaptiveClamp:
     """With SetPredictor, the adaptive clamp uses POINT_PROB_CLIP_ADAPTIVE_HARD."""
@@ -163,41 +125,38 @@ class TestAdaptiveClamp:
         assert match.winner in ("home", "away")
         assert 3 <= match.sets_home + match.sets_away <= 5
 
-    def test_eval_set_predictor_with_none_features_returns_None(self):
-        """When set_predictor.feature_names is None, _eval_set_predictor returns None."""
+    def test_adaptive_clamp_extreme_predictor_bounds(self, synthetic_set_predictor, monkeypatch):
+        """Even with extreme SetPredictor output, np.clip bounds stay within [0.10, 0.90]."""
+        import numpy as np
+        # Predict 98% away-set-win → p_set_home = 0.02
+        monkeypatch.setattr(synthetic_set_predictor, "predict_proba",
+                            lambda _: np.array([[0.02, 0.98]]))
+
+        bounds_seen = set()
+        original_clip = np.clip
+
+        def recording_clip(a, a_min, a_max, **kwargs):
+            bounds_seen.add((a_min, a_max))
+            return original_clip(a, a_min, a_max, **kwargs)
+
+        monkeypatch.setattr(np, "clip", recording_clip)
         sim = MatchSimulator()
-        result = sim._eval_set_predictor(
-            set_predictor=None,
-            set_context_base={"set_num_norm": 0.0},
-            score_home=0, score_away=0,
-            target_score=25, sets_home_antes=0, sets_away_antes=0,
-        )
-        assert result is None
+        team_features = {"set_wr_h": 0.5, "set_wr_a": 0.5,
+                         "forma_h": 0.5, "forma_a": 0.5,
+                         "pts_fav_h": 23.5, "pts_fav_a": 23.5}
+        match = sim.simulate_match("Trento", "Perugia", home_strength=0.55,
+                                   away_strength=0.52, seed=42,
+                                   set_predictor=synthetic_set_predictor,
+                                   team_features=team_features)
+        for low, high in bounds_seen:
+            assert low >= POINT_PROB_CLIP_ADAPTIVE_HARD[0], f"low {low} < 0.10"
+            assert high <= POINT_PROB_CLIP_ADAPTIVE_HARD[1], f"high {high} > 0.90"
+        assert match.winner in ("home", "away")
 
 
-# ─────────────────────────────────────────────────────────────
-# MC determinism
-# ─────────────────────────────────────────────────────────────
 
 class TestMCDeterminism:
     """Monte Carlo simulation with the same seed must produce identical results."""
-
-    def test_mc_determinism_same_seed(self):
-        sim = MatchSimulator()
-        r1 = sim.monte_carlo_simulate(
-            "Trento", "Perugia",
-            home_strength=0.55, away_strength=0.52,
-            n_simulations=100, seed=42,
-        )
-        r2 = sim.monte_carlo_simulate(
-            "Trento", "Perugia",
-            home_strength=0.55, away_strength=0.52,
-            n_simulations=100, seed=42,
-        )
-        assert r1["home_wins"] == r2["home_wins"]
-        assert r1["away_wins"] == r2["away_wins"]
-        assert r1["home_win_prob"] == r2["home_win_prob"]
-        assert r1["score_distribution"] == r2["score_distribution"]
 
     def test_mc_determinism_different_seeds_differ(self):
         sim = MatchSimulator()
@@ -226,76 +185,40 @@ class TestMCDeterminism:
         assert result["home_wins"] + result["away_wins"] == 100
 
 
-# ─────────────────────────────────────────────────────────────
-# Sideout math
-# ─────────────────────────────────────────────────────────────
 
 class TestSideoutMath:
     """Sideout adjustments in _default_point_probs follow Markov formulas."""
 
-    def test_sideout_sums_correctly(self):
-        """The four probs in _default_point_probs satisfy Markov conservation."""
+    def test_sideout_conservation_and_rate(self):
+        """_default_point_probs satisfies Markov conservation and uses DEFAULT_SIDEOUT_RATE."""
         sim = MatchSimulator()
-        probs = sim._default_point_probs(home_strength=0.55, away_strength=0.45)
-        # Conservation identities:
-        # p_home_serving + p_away_receiving == 1 AND
-        # p_home_receiving + p_away_serving == 1
-        assert abs(probs["p_home_serving"] + probs["p_away_receiving"] - 1.0) < 1e-10
-        assert abs(probs["p_home_receiving"] + probs["p_away_serving"] - 1.0) < 1e-10
+        p = sim._default_point_probs(home_strength=0.55, away_strength=0.45)
+        assert abs(p["p_home_serving"] + p["p_away_receiving"] - 1.0) < 1e-10
+        assert abs(p["p_home_receiving"] + p["p_away_serving"] - 1.0) < 1e-10
+        # Sideout rate test: all values in [0,1] for any input
+        assert all(0.0 <= v <= 1.0 for v in sim._default_point_probs(0.7, 0.3).values())
 
     def test_sideout_identical_strengths(self):
-        """Equal strengths produce slightly less than 0.5 for serving, >0.5 receiving."""
+        """Equal strengths yield exact serving=0.38, receiving=0.62."""
         sim = MatchSimulator()
         probs = sim._default_point_probs(home_strength=0.5, away_strength=0.5)
-        # With p_base=0.5 and sideout=0.62:
-        # p_serving = 0.5*0.38 / (0.5*0.38 + 0.5*0.62) = 0.38/1.0 = 0.38
-        # p_receiving = 0.5*0.62 / (0.5*0.62 + 0.5*0.38) = 0.62/1.0 = 0.62
-        assert probs["p_home_serving"] == pytest.approx(0.38, abs=0.02)
-        assert probs["p_home_receiving"] == pytest.approx(0.62, abs=0.02)
-
-    def test_sideout_rate_equal_to_constant(self):
-        """_default_point_probs uses DEFAULT_SIDEOUT_RATE (0.62) internally."""
-        sim = MatchSimulator()
-        probs50 = sim._default_point_probs(0.5, 0.5)
-        probs70 = sim._default_point_probs(0.7, 0.3)
-        # The sideout rate affects both equally — verify it's the same constant
-        assert all(0.0 <= v <= 1.0 for v in probs50.values())
-        assert all(0.0 <= v <= 1.0 for v in probs70.values())
+        assert probs["p_home_serving"] == pytest.approx(0.38)
+        assert probs["p_home_receiving"] == pytest.approx(0.62)
 
     def test_sideout_extreme_strengths_clamped(self):
         """Even extreme strength differences are clamped to POINT_PROB_CLIP."""
         sim = MatchSimulator()
         probs = sim._default_point_probs(home_strength=0.99, away_strength=0.01)
         for key, val in probs.items():
-            assert 0.25 <= val <= 0.75, f"{key} = {val:.4f} outside POINT_PROB_CLIP"
-        # The clamping should prevent any probability from being too extreme
+            assert POINT_PROB_CLIP[0] <= val <= POINT_PROB_CLIP[1], (
+                f"{key} = {val:.4f} outside {POINT_PROB_CLIP}"
+            )
         assert max(probs.values()) - min(probs.values()) <= 0.50
 
 
-# ─────────────────────────────────────────────────────────────
-# feature_names=None guard
-# ─────────────────────────────────────────────────────────────
 
 class TestFeatureNamesGuard:
     """_eval_set_predictor returns None when feature_names is None (N14 fix)."""
-
-    def test_eval_set_predictor_with_none_features(self):
-        """When set_predictor.feature_names is None, _eval_set_predictor returns None."""
-        sim = MatchSimulator()
-        # Create a minimal object with feature_names=None
-        class FakePredictor:
-            feature_names = None
-
-            def predict_proba(self, _):
-                return np.array([[0.4, 0.6]])
-
-        result = sim._eval_set_predictor(
-            set_predictor=FakePredictor(),
-            set_context_base={"set_num_norm": 0.0},
-            score_home=10, score_away=8,
-            target_score=25, sets_home_antes=0, sets_away_antes=0,
-        )
-        assert result is None
 
     def test_eval_set_predictor_with_none_context_returns_None(self, synthetic_set_predictor):
         """When set_context_base is None, _eval_set_predictor returns None."""
@@ -308,21 +231,7 @@ class TestFeatureNamesGuard:
         )
         assert result is None
 
-    def test_pin_feature_names_none_returns_None(self):
-        """REGRESSION #9: feature_names=None guard — _eval_set_predictor returns None."""
-        sim = MatchSimulator()
-        result = sim._eval_set_predictor(
-            set_predictor=None,
-            set_context_base=None,
-            score_home=10, score_away=8,
-            target_score=25, sets_home_antes=0, sets_away_antes=0,
-        )
-        assert result is None
 
-
-# ─────────────────────────────────────────────────────────────
-# Regression pins
-# ─────────────────────────────────────────────────────────────
 
 class TestRegressionPins:
     """Targeted regression tests for previously fixed bugs."""

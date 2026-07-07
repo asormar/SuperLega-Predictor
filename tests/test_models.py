@@ -1,15 +1,4 @@
-"""Smoke tests for the four ML models used in the backend.
-
-All tests use synthetic-fit model fixtures from conftest.py so they
-pass on a fresh clone without models/*.joblib.
-
-Covers:
-  - SetPredictor, MatchPredictor predict_proba bounds [0,1] + no NaN
-  - PointProbabilityModel get_point_probabilities returns valid dict
-  - PlayerStatsGenerator generate_set_stats returns list of dicts
-  - One @pytest.mark.slow real-artifact integration test
-  - W2 gate-review: synthetic-fixture instantiation smoke (test_synthetic_fixtures_smoke)
-"""
+﻿"""Smoke tests for the four ML models — synthetic fixtures, no models/*.joblib needed."""
 
 from pathlib import Path
 
@@ -24,9 +13,6 @@ from src.models.player_stats_generator import PlayerStatsGenerator
 from src.simulation.feature_builder import RuntimeFeatureBuilder
 
 
-# ─────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────
 
 def _assert_proba_bounded(proba: np.ndarray, label: str):
     """Assert that a predict_proba output is in [0,1] with no NaN."""
@@ -36,16 +22,9 @@ def _assert_proba_bounded(proba: np.ndarray, label: str):
     assert np.all(proba <= 1.0), f"{label}: probabilities > 1.0 found"
 
 
-# ─────────────────────────────────────────────────────────────
-# W2 gate review: synthetic fixture instantiation smoke
-# ─────────────────────────────────────────────────────────────
 
 class TestSyntheticFixturesSmoke:
-    """Every fixture in conftest.py instantiates cleanly and has the right shape.
-
-    This test explicitly addresses WARNING #2 from PR1's gate review:
-    "synthetic fixtures are defined but not exercised by PR1 tests."
-    """
+    """Every fixture in conftest.py instantiates cleanly (W2 gate-review closure)."""
 
     def test_synthetic_set_predictor(self, synthetic_set_predictor: SetPredictor):
         pred = synthetic_set_predictor
@@ -112,63 +91,52 @@ class TestSyntheticFixturesSmoke:
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 1
 
+    def test_synthetic_set_predictor_brier(self):
+        """Synthetic SetPredictor has Brier score < 0.30 on its training data."""
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.calibration import CalibratedClassifierCV
+        from src.models.set_predictor import SetPredictor
 
-# ─────────────────────────────────────────────────────────────
-# SetPredictor smoke
-# ─────────────────────────────────────────────────────────────
+        feat_names = ["f1", "f2", "f3"]
+        X = pd.DataFrame({f: np.random.uniform(-1, 1, 30) for f in feat_names})
+        y = pd.Series(np.random.randint(0, 2, 30))
+        lr = LogisticRegression(max_iter=500, random_state=42)
+        cal = CalibratedClassifierCV(lr, cv=2, method="isotonic")
+        cal.fit(X.values, y.values)
+        proba = cal.predict_proba(X.values)
+        brier = float(np.mean((proba[:, 1] - y.values) ** 2))
+        assert brier < 0.30, f"Brier score {brier:.4f} >= 0.30"
+
+
 
 class TestSetPredictorSmoke:
     """SetPredictor with synthetic data — calibrated, bounded, no NaN."""
 
-    def test_predict_proba_bounds(self, synthetic_set_predictor: SetPredictor):
-        feat_df = pd.DataFrame(
-            [{f: 0.5 for f in synthetic_set_predictor.feature_names}],
-        )
+    def test_predict_proba_bounds_and_sum(self, synthetic_set_predictor: SetPredictor):
+        feat_df = pd.DataFrame([{f: 0.5 for f in synthetic_set_predictor.feature_names}])
         proba = synthetic_set_predictor.predict_proba(feat_df)
         _assert_proba_bounded(proba, "SetPredictor")
         assert proba.shape == (1, 2)
-
-    def test_predict_proba_sums_to_one(self, synthetic_set_predictor: SetPredictor):
-        feat_df = pd.DataFrame(
-            [{f: 0.3 for f in synthetic_set_predictor.feature_names}],
-        )
-        proba = synthetic_set_predictor.predict_proba(feat_df)
         np.testing.assert_allclose(proba.sum(axis=1), 1.0, rtol=1e-5)
 
     def test_predict_returns_int(self, synthetic_set_predictor: SetPredictor):
-        feat_df = pd.DataFrame(
-            [{f: 0.3 for f in synthetic_set_predictor.feature_names}],
-        )
+        feat_df = pd.DataFrame([{f: 0.3 for f in synthetic_set_predictor.feature_names}])
         preds = synthetic_set_predictor.predict(feat_df)
         assert preds.dtype == np.int_ or preds.dtype == np.int64
 
 
-# ─────────────────────────────────────────────────────────────
-# MatchPredictor smoke
-# ─────────────────────────────────────────────────────────────
 
 class TestMatchPredictorSmoke:
     """MatchPredictor with synthetic data."""
 
-    def test_predict_proba_bounds(self, synthetic_match_predictor: MatchPredictor):
-        feat_df = pd.DataFrame(
-            [{f: 0.5 for f in synthetic_match_predictor.feature_names}],
-        )
+    def test_predict_proba_bounds_and_sum(self, synthetic_match_predictor: MatchPredictor):
+        feat_df = pd.DataFrame([{f: 0.5 for f in synthetic_match_predictor.feature_names}])
         proba = synthetic_match_predictor.predict_proba(feat_df)
         _assert_proba_bounded(proba, "MatchPredictor")
         assert proba.shape == (1, 2)
-
-    def test_predict_proba_sums_to_one(self, synthetic_match_predictor: MatchPredictor):
-        feat_df = pd.DataFrame(
-            [{f: 0.3 for f in synthetic_match_predictor.feature_names}],
-        )
-        proba = synthetic_match_predictor.predict_proba(feat_df)
         np.testing.assert_allclose(proba.sum(axis=1), 1.0, rtol=1e-5)
 
 
-# ─────────────────────────────────────────────────────────────
-# PointProbabilityModel smoke
-# ─────────────────────────────────────────────────────────────
 
 class TestPointProbabilityModelSmoke:
     """PointProbabilityModel with synthetic data."""
@@ -206,36 +174,18 @@ class TestPointProbabilityModelSmoke:
         assert PointProbabilityModel.DEFAULT_SIDEOUT_RATE == 0.62
 
 
-# ─────────────────────────────────────────────────────────────
-# PlayerStatsGenerator smoke
-# ─────────────────────────────────────────────────────────────
 
 class TestPlayerStatsGeneratorSmoke:
     """PlayerStatsGenerator with synthetic data (no player_stats_params.json)."""
 
     def test_generate_set_stats_shape(self, synthetic_player_gen: PlayerStatsGenerator):
-        stats = synthetic_player_gen.generate_set_stats(
-            "Trento", team_score=25, opponent_score=23,
-        )
+        stats = synthetic_player_gen.generate_set_stats("Trento", team_score=25, opponent_score=23)
         assert isinstance(stats, list)
         if stats:
             for entry in stats:
-                assert "jugador" in entry
-                assert "puntos" in entry
-
-    def test_get_roster(self, synthetic_player_gen: PlayerStatsGenerator):
-        roster = synthetic_player_gen.get_roster("Trento")
-        assert isinstance(roster, list)
-
-    def test_get_profile(self, synthetic_player_gen: PlayerStatsGenerator):
-        profile = synthetic_player_gen.get_profile("Trento")
-        assert isinstance(profile, dict)
-
-    def test_generate_set_stats_returns_list(self, synthetic_player_gen: PlayerStatsGenerator):
-        stats = synthetic_player_gen.generate_set_stats(
-            "Trento", team_score=21, opponent_score=25,
-        )
-        assert isinstance(stats, list)
+                assert "jugador" in entry and "puntos" in entry
+        assert isinstance(synthetic_player_gen.get_roster("Trento"), list)
+        assert isinstance(synthetic_player_gen.get_profile("Trento"), dict)
 
     def test_generate_set_stats_unknown_team(self, synthetic_player_gen: PlayerStatsGenerator):
         """Unknown team returns empty list."""
@@ -245,72 +195,42 @@ class TestPlayerStatsGeneratorSmoke:
         assert stats == []
 
 
-# ─────────────────────────────────────────────────────────────
-# Slow: real artifact integration (opt-in)
-# ─────────────────────────────────────────────────────────────
 
 @pytest.mark.slow
 class TestRealArtifacts:
-    """Integration tests requiring actual models/*.joblib + player_stats_params.json.
+    """Integration tests requiring actual models/*.joblib (opt-in via ``pytest -m slow``)."""
 
-    Skipped by default on a fresh clone.  Opt in with ``pytest -m slow``.
-    """
+    MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 
-    BASE_DIR = Path(__file__).resolve().parent.parent
-    MODELS_DIR = BASE_DIR / "models"
-
-    def test_real_set_predictor_loads_and_predicts(self):
-        set_path = self.MODELS_DIR / "set_predictor.joblib"
-        if not set_path.exists():
-            pytest.skip("set_predictor.joblib not found — install model artifacts first")
-
-        pred = SetPredictor.load(set_path)
+    @pytest.mark.parametrize("name,cls", [
+        ("set_predictor", SetPredictor),
+        ("match_predictor", MatchPredictor),
+    ])
+    def test_predictor_loads(self, name, cls):
+        path = self.MODELS_DIR / f"{name}.joblib"
+        if not path.exists():
+            pytest.skip(f"{name}.joblib not found")
+        pred = cls.load(path)
         assert pred.feature_names is not None
-        feat_df = pd.DataFrame(
-            [{f: 0.5 for f in pred.feature_names}],
-        )
-        proba = pred.predict_proba(feat_df)
-        _assert_proba_bounded(proba, "real SetPredictor")
-
-    def test_real_match_predictor_loads_and_predicts(self):
-        match_path = self.MODELS_DIR / "match_predictor.joblib"
-        if not match_path.exists():
-            pytest.skip("match_predictor.joblib not found")
-
-        pred = MatchPredictor.load(match_path)
-        assert pred.feature_names is not None
-        feat_df = pd.DataFrame(
-            [{f: 0.5 for f in pred.feature_names}],
-        )
-        proba = pred.predict_proba(feat_df)
-        _assert_proba_bounded(proba, "real MatchPredictor")
+        _assert_proba_bounded(pred.predict_proba(
+            pd.DataFrame([{f: 0.5 for f in pred.feature_names}])), name)
 
     def test_real_point_model_get_probs(self):
-        pp_path = self.MODELS_DIR / "point_probability.joblib"
-        if not pp_path.exists():
+        path = self.MODELS_DIR / "point_probability.joblib"
+        if not path.exists():
             pytest.skip("point_probability.joblib not found")
-
-        model = PointProbabilityModel.load(pp_path)
-        probs = model.get_point_probabilities(
-            match_features={
-                "elo_diff": 0.0,
-                "diff_win_rate_global": 0.0,
-                "diff_set_win_rate": 0.0,
-                "diff_dominancia": 0.0,
-                "diff_set_ratio": 0.0,
-                "diff_forma_efectiva": 0.0,
-            },
+        probs = PointProbabilityModel.load(path).get_point_probabilities(
+            match_features={k: 0.0 for k in ("elo_diff", "diff_win_rate_global", "diff_set_win_rate",
+                                             "diff_dominancia", "diff_set_ratio", "diff_forma_efectiva")},
         )
         for val in probs.values():
             assert 0.0 <= val <= 1.0
 
     def test_real_player_gen_fit(self):
-        params_path = self.MODELS_DIR / "player_stats_params.json"
-        if not params_path.exists():
+        path = self.MODELS_DIR / "player_stats_params.json"
+        if not path.exists():
             pytest.skip("player_stats_params.json not found")
-
-        gen = PlayerStatsGenerator.load(params_path)
-        assert len(gen.team_profiles) > 0
+        assert len(PlayerStatsGenerator.load(path).team_profiles) > 0
 
 
 
