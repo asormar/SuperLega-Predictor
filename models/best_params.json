@@ -12,17 +12,17 @@
     }
   },
   "match_xgboost": {
-    "default_auc": 0.42716049382716054,
-    "optuna_auc": 0.4654320987654321,
-    "delta": 0.038271604938271586,
+    "default_auc": 0.47530864197530864,
+    "optuna_auc": 0.5574074074074074,
+    "delta": 0.08209876543209871,
     "best_params": {
-      "n_estimators": 266,
-      "max_depth": 4,
-      "learning_rate": 0.03954814563006844,
-      "subsample": 0.6995853901025451,
-      "colsample_bytree": 0.8089412711855998,
-      "reg_alpha": 0.19435637491184,
-      "reg_lambda": 0.051730294147620405
+      "n_estimators": 300,
+      "max_depth": 3,
+      "learning_rate": 0.13721505616406968,
+      "subsample": 0.9860930071516778,
+      "colsample_bytree": 0.7060253839673185,
+      "reg_alpha": 0.7401557916294317,
+      "reg_lambda": 1.4754402432310645
     }
   }
 }

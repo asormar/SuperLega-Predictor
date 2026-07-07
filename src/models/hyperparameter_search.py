@@ -17,6 +17,7 @@ import json
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import optuna
@@ -30,7 +31,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from src.data.data_pipeline import run_pipeline
-from src.data.feature_store import prepare_set_data, prepare_match_data
+from src.data.feature_store import (
+    prepare_set_data, prepare_match_data,
+    enrich_with_team_stats, compute_roster_features,
+    MATCH_FEATURE_COLS, ENRICHED_MATCH_COLS, ROSTER_BASIC_COLS,
+)
 
 MODELS_DIR = BASE_DIR / "models"
 BEST_PARAMS_PATH = MODELS_DIR / "best_params.json"
@@ -131,6 +136,9 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
 
     Returns dict with best params, default AUC, Optuna AUC, and delta for each model.
     """
+    # Public loader used by set_predictor / match_predictor at train time
+    # (re-exported via BEST_PARAMS_PATH + load_best_params below).
+
     print("=" * 70)
     print("  OPTUNA HYPERPARAMETER SEARCH — SET + MATCH")
     print("=" * 70)
@@ -140,7 +148,19 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
 
     print("\n[2/4] Preparing splits (train 2016-2022, val 2023)...")
     X_set, y_set = prepare_set_data(data["set_features"])
-    X_match, y_match = prepare_match_data(data["match_features"])
+
+    # MATCH: enrich with team stats + roster, same as train.py (87 features total).
+    # Earlier runs used basic features only; we re-run with production-grade data
+    # so Optuna's params match what the actual MatchPredictor sees at inference time.
+    match_df = data["match_features"].copy()
+    match_df = enrich_with_team_stats(match_df, data["team_stats"])
+    match_df = compute_roster_features(match_df, data["player_stats"])
+    match_cols = [
+        c for c in MATCH_FEATURE_COLS + ENRICHED_MATCH_COLS + ROSTER_BASIC_COLS
+        if c in match_df.columns
+    ]
+    print(f"  [match] {len(match_cols)} features (enriched = base + team stats + roster)")
+    X_match, y_match = prepare_match_data(match_df, feature_cols=match_cols)
 
     # Optuna should not print per-trial
     optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -231,6 +251,37 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
               f"({d:+.4f})  {verdict}")
 
     return results
+
+
+# ─────────────────────────────────────────────────────────────
+# Public loader (used by set_predictor / match_predictor at train time)
+# ─────────────────────────────────────────────────────────────
+
+def load_best_params(model_key: Optional[str] = None):
+    """
+    Load Optuna best params from models/best_params.json.
+
+    Args:
+        model_key: e.g. "set_extratrees" or "match_xgboost".
+                   If None, returns the full results dict.
+
+    Returns:
+        The best_params dict for that model, or None if the JSON is missing
+        or the key isn't present. Callers should fall back to defaults.
+    """
+    if not BEST_PARAMS_PATH.exists():
+        return None
+    try:
+        with open(BEST_PARAMS_PATH) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if model_key is None:
+        return data
+    entry = data.get(model_key)
+    if entry is None:
+        return None
+    return entry.get("best_params")
 
 
 if __name__ == "__main__":

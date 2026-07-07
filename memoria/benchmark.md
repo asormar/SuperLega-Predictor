@@ -362,8 +362,52 @@ python -m src.models.hyperparameter_search
 - `models/best_params.json` — mejores hiperparámetros + comparación con defaults.
 - `tests/test_models.py::TestOptunaSearchArtifacts` — smoke tests del módulo y del JSON.
 
+### Validación en test 2024 — la ganancia NO se transfirió
+
+Se intentó promover los params de Optuna a producción cableándolos en `set_predictor.get_candidate_models()` y `match_predictor.get_match_candidate_models()` mediante un loader dinámico (`hyperparameter_search.load_best_params`) que lee `best_params.json` y sobrescribe los defaults cuando existe. Se reentrenó con `python -m src.models.train` y se midió el AUC en test 2024 (no visto durante Optuna).
+
+**SET (ExtraTrees, mismas features)**:
+
+| Métrica | Default | Optuna (basic, primera run) | Delta |
+|---|---:|---:|---:|
+| Val 2023 | 0.6275 | 0.6471 | +0.020 ✅ |
+| **Test 2024** | **0.6542** | **0.643** | **−0.011** ⚠️ |
+
+El val improvement se revirtió en test. El modelo quedó sobreajustado a quirks de 2023 (352 sets); test 2024 (482 sets) no los comparte.
+
+**MATCH (XGBoost, 87 features enriched)**:
+
+| Métrica | Default XGBoost | Optuna XGB (basic, 60 feat) | Optuna XGB (enriched, 87 feat) |
+|---|---:|---:|---:|
+| Val 2023 | 0.4753 | 0.4654 | 0.5574 |
+| **Test 2024 (con su Optuna)** | **0.7070** | — | **0.6472** ⚠️ |
+| **Test 2024 (con GB ganando)** | 0.685 (GB ganó) | — | — |
+
+Dos cosas notables:
+1. **Mismatch de features**: el primer Optuna se hizo sobre 60 features básicas (sin roster ni team stats), pero producción usa 87. Cuando se re-ejecutó Optuna sobre las 87 features, el val improvement fue MUCHO mayor (+0.08 vs +0.04), pero igual no transfirió a test (−0.06).
+2. **Champion cambió**: con Optuna para XGB, GradientBoosting ganó la carrera de val AUC y se quedó con Test AUC=0.685 — también peor que el XGBoost default (0.7070).
+
+### Reversión
+
+Se revirtieron los cambios en `set_predictor.py` y `match_predictor.py` a los defaults inline (sin loader dinámico). Se reentrenó para restaurar el estado original. AUCs de test 2024 confirmados:
+
+| Modelo | Champion | Test AUC (post-revert) | Estado |
+|---|---|---:|---|
+| SetPredictor    | ExtraTrees  | 0.654 | Restaurado |
+| MatchPredictor  | XGBoost     | 0.707 | Restaurado |
+
+### Lecciones aprendidas
+
+1. **Val no es test**. La diferencia entre val 2023 y test 2024 es grande en este dataset (82 vs 111 partidos, 不同 temporada con dinámicas de juego distintas). Optuna maximiza val; eso no garantiza generalización a temporadas futuras.
+2. **El AUC "champion" es una lotería pequeña**. En MATCH, con Optuna para XGB, GradientBoosting ganó por un pelo (0.4710 vs 0.4710) — al estar los XGB params tuneados para overfit, abrieron la puerta a un modelo distinto.
+3. **Para producción, los defaults son defendibles**. El benchmark original usó estos params porque eran razonables y bien documentados. Optuna encontró que se puede mejorar val, pero los nuevos params son frágiles.
+4. **El script y la infra quedan como activos**. `hyperparameter_search.py`, `load_best_params()` y `best_params.json` se mantienen — es investigación válida, documentada, reproducible. La producción simplemente decide no usarlos hoy.
+5. **Próximo paso lógico** (no en este batch): si se quiere volver a intentar Optuna en serio, usar **time-series cross-validation** (3-fold: 2017-19 / 2020-22 / 2023) y promediar el AUC en lugar de un solo split temporal. Eso daría params más robustos a la variabilidad entre temporadas.
+
 ---
 
 ## 8. Conclusión
 
-Los benchmarks muestran que los modelos ensemble (ExtraTrees para SET, XGBoost para MATCH) son consistentemente superiores a las alternativas más simples. Las features de roster aportan una mejora marginal pero real (~+0.002 AUC), mientras que expandir a 16 equipos degrada ligeramente la precisión. La arquitectura de benchmark es extensible: añadir un nuevo modelo requiere solo agregarlo al diccionario de `get_all_models()`. La búsqueda con Optuna (sección 7) demuestra que los hiperparámetros por defecto estaban subóptimos: se logra +0.02 AUC en SET y +0.04 AUC en MATCH sin cambiar el tipo de modelo. **Próximo paso lógico**: validar los nuevos hiperparámetros en test 2024 y, si la mejora se transfiere, promoverlos a `train.py` y re-entrenar `models/*.joblib`.
+Los benchmarks muestran que los modelos ensemble (ExtraTrees para SET, XGBoost para MATCH) son consistentemente superiores a las alternativas más simples. Las features de roster aportan una mejora marginal pero real (~+0.002 AUC), mientras que expandir a 16 equipos degrada ligeramente la precisión. La arquitectura de benchmark es extensible: añadir un nuevo modelo requiere solo agregarlo al diccionario de `get_all_models()`.
+
+La búsqueda con Optuna (sección 7) y su posterior intento de promoción a producción (sección 7.1) ilustran una tensión clásica: **la optimización en validación no implica generalización a datos futuros**. En este dataset, con un solo split temporal (train 2016-22 / val 2023 / test 2024), los Optuna params sobreajustan a 2023 y degradan en 2024. Los defaults de `benchmark.py` se mantienen en producción por defecto; `hyperparameter_search.py` queda como herramienta documentada para futuros experimentos con time-series CV.
