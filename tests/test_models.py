@@ -1,5 +1,6 @@
 ﻿"""Smoke tests for the four ML models — synthetic fixtures, no models/*.joblib needed."""
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -233,5 +234,39 @@ class TestRealArtifacts:
             pytest.skip("player_stats_params.json not found")
         assert len(PlayerStatsGenerator.load(path).team_profiles) > 0
 
+
+class TestOptunaSearchArtifacts:
+    """Smoke tests for the Optuna hyperparameter search output (models/best_params.json)."""
+
+    JSON_PATH = Path("models/best_params.json")
+    EXPECTED_KEYS = {"set_extratrees", "match_xgboost"}
+    EXPECTED_SUBKEYS = {"default_auc", "optuna_auc", "delta", "best_params"}
+
+    def test_best_params_json_exists_and_valid(self):
+        if not self.JSON_PATH.exists():
+            pytest.skip(
+                "models/best_params.json not yet generated; "
+                "run `python -m src.models.hyperparameter_search` to create it"
+            )
+        with open(self.JSON_PATH) as f:
+            data = json.load(f)
+        assert isinstance(data, dict)
+        assert self.EXPECTED_KEYS.issubset(data.keys()), (
+            f"Missing keys: {self.EXPECTED_KEYS - set(data.keys())}"
+        )
+        for model_key in self.EXPECTED_KEYS:
+            for sub in self.EXPECTED_SUBKEYS:
+                assert sub in data[model_key], f"Missing {sub} in {model_key}"
+            # Delta is best - default; sanity-check the sign convention
+            assert abs(
+                data[model_key]["delta"]
+                - (data[model_key]["optuna_auc"] - data[model_key]["default_auc"])
+            ) < 1e-9
+
+    def test_search_module_imports(self):
+        """The hyperparameter_search module is importable and exposes run_search."""
+        from src.models import hyperparameter_search
+        assert hasattr(hyperparameter_search, "run_search")
+        assert callable(hyperparameter_search.run_search)
 
 
