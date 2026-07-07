@@ -154,7 +154,7 @@ Si `point_probability.joblib` falta o está corrupto, la API pone `point_model =
 
 ## 5. Limitaciones
 
-1. **Sideout rate constante (0.62)**: el modelo asume que TODOS los equipos tienen el mismo sideout rate. En realidad, los equipos con mejor recepción tienen sideout más alto (Perugia, Trento ~65%) y los débiles más bajo (~58%). Una mejora sería hacer el sideout rate por equipo.
+1. **~~Sideout rate constante (0.62)~~ → Per-team sideout proxy** (Batch 3 mid-effort): el modelo ahora acepta `home_sideout` y `away_sideout` como parámetros. El `MatchSimulator` los resuelve desde `src/data/team_sideout.py`, que computa por equipo el ratio de puntos ganados (proxy de sideout) desde `DB/sets_partidos.csv` y cachea el resultado. Equipos sin datos suficientes caen al fallback `DEFAULT_SIDEOUT_RATE = 0.62`. **Limitación residual**: no hay point-level data, así que el "sideout" real (P(ganar recibiendo)) no se puede medir directo; usamos el point-ratio agregado como aproximación. La mejora es real pero no es el sideout canónico de la literatura.
 
 2. **Probabilidad de punto fija en el set**: el modelo devuelve un set de 4 probabilidades al inicio del partido y no las actualiza durante el set. No modela fatiga, cambios tácticos, ni el efecto del marcador parcial (estar 24-20 vs. 0-0 se trata igual).
 
@@ -163,6 +163,34 @@ Si `point_probability.joblib` falta o está corrupto, la API pone `point_model =
 4. **Features limitadas (6)**: el modelo solo usa diferencias de stats agregadas, no features in-match (momentum, score parcial, cansancio). Para el partido suelto, esto es suficiente. Para la temporada, podría complementarse con features de `RuntimeFeatureBuilder`.
 
 5. **Sin reentrenamiento periódico**: el modelo se entrena una vez con todos los datos históricos. Si la liga cambia (nuevo equipo, regla nueva), el modelo se desactualiza.
+
+### 5.1. Per-team sideout — implementación y validación
+
+**Motivación** (de la sección 7 original, ahora atacada): la literatura reporta que equipos como Perugia/Trento tienen sideout ~65% y los débiles ~58%. Con el 0.62 global se borraba la señal de habilidad por recepción.
+
+**Implementación** (Batch 3 mid-effort):
+- `src/data/team_sideout.py`: lee `sets_partidos.csv`, agrega puntos ganados / jugados por equipo (como local Y visitante), normaliza nombres con `team_mapper.normalize_team_name`, filtra equipos con <50 sets históricos, cachea el resultado en memoria.
+- `PointProbabilityModel.get_point_probabilities()` ahora acepta `home_sideout` y `away_sideout` (defaults al global). Las fórmulas de `p_home_serving` y `p_home_receiving` usan el sideout del equipo que RECIBE en cada rally (no del que saca), respetando la simetría de Markov: `p_home_serving + p_away_receiving = 1` y `p_home_receiving + p_away_serving = 1`.
+- `MatchSimulator.simulate_match` llama a `get_sideout_rates(home_team, away_team)` y pasa los valores al `point_model` o al fallback `_default_point_probs`.
+- Equipos sin datos suficientes (ej: nuevos en la liga) caen al `DEFAULT_SIDEOUT_RATE = 0.62`.
+
+**Datos observados** (34 equipos con datos suficientes):
+- Top: Perugia 0.530, Lube 0.520, Trento 0.519
+- Bottom: Grottazzolina 0.471, Cuneo 0.474, Cantù 0.475
+- Rango ~0.06 (menor al reportado por la literatura 0.07, pero consistente con la dirección: tops sideoutean más, débiles menos).
+
+**Validación cualitativa** (500 simulaciones MC por matchup con `home_strength=0.55, away_strength=0.45`):
+
+| Matchup | Sideout (h/a) | 3-0% | 3-1% | 3-2% |
+|---|---|---:|---:|---:|
+| Perugia vs Grottazzolina (mismatch grande) | 0.530 / 0.471 | 70.6 | 23.2 | 6.2 |
+| Trento vs Padova (mismatch moderado)    | 0.519 / 0.476 | 66.8 | 23.8 | 9.4 |
+| Perugia vs Trento (top vs top)           | 0.530 / 0.519 | 55.4 | 30.6 | 14.0 |
+| Modena vs Lube (mid vs mid)              | 0.504 / 0.520 | 46.6 | 32.6 | 20.8 |
+
+El patrón es el esperado: mismatch grande → muchos 3-0, matchup equilibrado → distribución más uniforme con 3-2. Antes (con 0.62 global y sin distinguir equipos) la varianza entre matchups era menor.
+
+**Limitación residual**: el proxy point-ratio no separa "sideout" (ganar recibiendo) de "winning when serving". El verdadero sideout de la literatura solo se puede medir con point-level data, que no tenemos. La mejora es una aproximación, no la solución completa.
 
 ---
 
@@ -184,7 +212,7 @@ El `PointProbabilityModel` actual tiene estas limitaciones que lo dejan sub-util
 
 2. **Mapping conservador [0.45, 0.55]**: la LogisticRegression predice P(point_ratio_h > 0.5) pero se mapea a un rango muy estrecho. Esto mata la capacidad discriminativa del modelo. Deberia devolver P(point_ratio_h) directamente sin truncar.
 
-3. **Sideout rate constante (0.62)**: no modela que equipos con mejor recepcion tienen sideout mas alto. Deberia ser un feature aprendido.
+3. **~~Sideout rate constante (0.62)~~ → Per-team sideout proxy** (Batch 3 mid-effort, ver sección 5.1). Implementado como proxy point-ratio, no como feature aprendido de verdad. Limitación residual: no separa "sideout" de "win when serving" sin point-level data.
 
 4. **Target binarizado**: en `fit()` (point_probability.py:81), se binariza `y = (point_ratio_h > 0.5)`. Esto pierde informacion sobre la magnitud de la dominancia. Deberia ser una regresion logistica continua.
 
@@ -194,11 +222,12 @@ El `PointProbabilityModel` actual tiene estas limitaciones que lo dejan sub-util
 
 **Corto plazo (1-2h)**:
 - [x] Pasar `match_features` a `simulate_match` en los 3 call sites para que el modelo se use de verdad. (commit a1b3701)
+- [x] **Per-team sideout proxy** (Batch 3 mid-effort): implementado vía `src/data/team_sideout.py`, validado cualitativamente (3-0 distribution).
 - [ ] Ampliar features a las 15 que el `SetPredictor` consume.
 - [ ] Eliminar el mapping conservador [0.45, 0.55] y devolver la probabilidad cruda.
 
 **Mediano plazo (4-6h)**:
-- [ ] Sideout rate aprendido por equipo: feature `sideout_rate_h` calculado de los ultimos N sets.
+- [ ] Sideout rate **aprendido** (no proxy): feature `sideout_rate_h` calculado de los ultimos N sets como `P(ganar_punto | recibiendo)`, idealmente desde point-level data.
 - [ ] Regresion continua (no binarizada).
 - [ ] Validacion cruzada temporal (no un solo split).
 

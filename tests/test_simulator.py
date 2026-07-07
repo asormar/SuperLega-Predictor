@@ -215,6 +215,108 @@ class TestSideoutMath:
             )
         assert max(probs.values()) - min(probs.values()) <= 0.50
 
+    def test_per_team_sideout_changes_receiving_prob(self):
+        """Equal strengths + asymmetric per-team sideout should give p_home_receiving != p_home_serving."""
+        sim = MatchSimulator()
+        # When home is a strong sideoutter (0.65) and away is weak (0.50),
+        # p_home_receiving (home winning when receiving) should be HIGH
+        # and p_home_serving (home winning when serving) should be LOWER
+        # than the symmetric case (where both sideout at 0.55).
+        asymmetric = sim._default_point_probs(
+            home_strength=0.5, away_strength=0.5,
+            home_sideout=0.65, away_sideout=0.50,
+        )
+        symmetric = sim._default_point_probs(
+            home_strength=0.5, away_strength=0.5,
+            home_sideout=0.55, away_sideout=0.55,
+        )
+        # Home is the better sideoutter → home_receiving should be higher than symmetric
+        assert asymmetric["p_home_receiving"] > symmetric["p_home_receiving"]
+        # Conversely, away is the worse sideoutter → home_serving should be
+        # higher (when home serves, away is receiving, away's lower sideout
+        # means home wins more often).
+        assert asymmetric["p_home_serving"] > symmetric["p_home_serving"]
+
+    def test_per_team_sideout_markov_conservation(self):
+        """Per-team sideout must still satisfy p_home_serving + p_away_receiving = 1."""
+        sim = MatchSimulator()
+        for home_sideout, away_sideout in [(0.55, 0.55), (0.65, 0.50), (0.50, 0.65)]:
+            probs = sim._default_point_probs(
+                home_strength=0.5, away_strength=0.5,
+                home_sideout=home_sideout, away_sideout=away_sideout,
+            )
+            assert abs(probs["p_home_serving"] + probs["p_away_receiving"] - 1.0) < 1e-10
+            assert abs(probs["p_home_receiving"] + probs["p_away_serving"] - 1.0) < 1e-10
+
+
+class TestPerTeamSideoutIntegration:
+    """simulate_match wires per-team sideout through the simulation loop."""
+
+    def test_simulate_match_with_known_teams_uses_data(self, monkeypatch):
+        """When team names resolve to known sideout rates, the simulator pulls them."""
+        from src.simulation import simulator as sim_mod
+
+        captured = {}
+
+        def fake_get_probs(self, **kwargs):
+            captured["home_sideout"] = kwargs.get("home_sideout")
+            captured["away_sideout"] = kwargs.get("away_sideout")
+            # Return a deterministic dict so the simulation can run
+            return {
+                "p_home_serving": 0.5,
+                "p_home_receiving": 0.5,
+                "p_away_serving": 0.5,
+                "p_away_receiving": 0.5,
+            }
+
+        # Build a minimal point_model that exposes get_point_probabilities
+        class FakePointModel:
+            get_point_probabilities = fake_get_probs
+
+        sim = MatchSimulator(point_model=FakePointModel())
+        sim.simulate_match(
+            home_team="Perugia", away_team="Grottazzolina",
+            home_strength=0.5, away_strength=0.5,
+            match_features={"elo_diff": 0.0},
+            generate_points=False, generate_player_stats=False,
+            seed=42,
+        )
+        # Perugia sideout (~0.530) > Grottazzolina sideout (~0.471)
+        assert captured["home_sideout"] > 0.45
+        assert captured["away_sideout"] > 0.45
+        assert captured["home_sideout"] > captured["away_sideout"], (
+            f"Perugia home_sideout {captured['home_sideout']:.3f} should beat "
+            f"Grottazzolina away_sideout {captured['away_sideout']:.3f}"
+        )
+
+    def test_simulate_match_unknown_teams_use_default(self):
+        """Unknown team names fall back to DEFAULT_SIDEOUT_RATE (0.62)."""
+        from src.simulation import simulator as sim_mod
+
+        captured = {}
+
+        def fake_get_probs(self, **kwargs):
+            captured["home_sideout"] = kwargs.get("home_sideout")
+            captured["away_sideout"] = kwargs.get("away_sideout")
+            return {
+                "p_home_serving": 0.5, "p_home_receiving": 0.5,
+                "p_away_serving": 0.5, "p_away_receiving": 0.5,
+            }
+
+        class FakePointModel:
+            get_point_probabilities = fake_get_probs
+
+        sim = MatchSimulator(point_model=FakePointModel())
+        sim.simulate_match(
+            home_team="Foo", away_team="Bar",
+            home_strength=0.5, away_strength=0.5,
+            match_features={"elo_diff": 0.0},
+            generate_points=False, generate_player_stats=False,
+            seed=42,
+        )
+        assert captured["home_sideout"] == DEFAULT_SIDEOUT_RATE
+        assert captured["away_sideout"] == DEFAULT_SIDEOUT_RATE
+
 
 
 class TestFeatureNamesGuard:

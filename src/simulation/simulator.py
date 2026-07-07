@@ -122,15 +122,25 @@ class MatchSimulator:
             random.seed(seed)
             np.random.seed(seed)
 
+        # Per-team sideout rates (Batch 3 mid-effort). Falls back to
+        # DEFAULT_SIDEOUT_RATE for unknown teams via get_team_sideout.
+        from src.data.team_sideout import get_sideout_rates
+        home_sideout, away_sideout = get_sideout_rates(home_team, away_team)
+
         # Obtener probabilidades de punto
         if self.point_model and match_features:
             point_probs = self.point_model.get_point_probabilities(
                 match_features=match_features,
                 home_strength=home_strength,
                 away_strength=away_strength,
+                home_sideout=home_sideout,
+                away_sideout=away_sideout,
             )
         else:
-            point_probs = self._default_point_probs(home_strength, away_strength)
+            point_probs = self._default_point_probs(
+                home_strength, away_strength,
+                home_sideout=home_sideout, away_sideout=away_sideout,
+            )
 
         sets_home = 0
         sets_away = 0
@@ -381,6 +391,8 @@ class MatchSimulator:
 
     def _default_point_probs(
         self, home_strength: float, away_strength: float,
+        home_sideout: float = DEFAULT_SIDEOUT_RATE,
+        away_sideout: float = DEFAULT_SIDEOUT_RATE,
     ) -> dict:
         """Probabilidades por defecto basadas en la fuerza relativa."""
         total = home_strength + away_strength
@@ -389,12 +401,14 @@ class MatchSimulator:
         else:
             p_base = home_strength / total
 
-        # Ajustar por sideout (equipo recibiendo tiene ventaja)
-        p_serving = p_base * (1 - DEFAULT_SIDEOUT_RATE) / (
-            p_base * (1 - DEFAULT_SIDEOUT_RATE) + (1 - p_base) * DEFAULT_SIDEOUT_RATE
+        # Ajustar por sideout (equipo recibiendo tiene ventaja).
+        # Per-team: when home serves, depends on away's sideout;
+        # when away serves, depends on home's sideout.
+        p_serving = p_base * (1 - away_sideout) / (
+            p_base * (1 - away_sideout) + (1 - p_base) * away_sideout
         )
-        p_receiving = p_base * DEFAULT_SIDEOUT_RATE / (
-            p_base * DEFAULT_SIDEOUT_RATE + (1 - p_base) * (1 - DEFAULT_SIDEOUT_RATE)
+        p_receiving = p_base * home_sideout / (
+            p_base * home_sideout + (1 - p_base) * (1 - home_sideout)
         )
 
         return {

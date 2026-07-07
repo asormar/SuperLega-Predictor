@@ -127,6 +127,8 @@ class PointProbabilityModel:
         match_features: Optional[dict] = None,
         home_strength: float = 0.5,
         away_strength: float = 0.5,
+        home_sideout: float = DEFAULT_SIDEOUT_RATE,
+        away_sideout: float = DEFAULT_SIDEOUT_RATE,
     ) -> dict:
         """
         Calcula las probabilidades de ganar un punto para ambos equipos,
@@ -136,6 +138,10 @@ class PointProbabilityModel:
             match_features: dict con features del partido (elo_diff, etc.)
             home_strength: fuerza relativa del local [0, 1]
             away_strength: fuerza relativa del visitante [0, 1]
+            home_sideout: per-team sideout rate of the local team [0, 1].
+                Falls back to DEFAULT_SIDEOUT_RATE if unknown.
+            away_sideout: per-team sideout rate of the visitor team [0, 1].
+                Falls back to DEFAULT_SIDEOUT_RATE if unknown.
 
         Returns:
             dict con:
@@ -163,20 +169,18 @@ class PointProbabilityModel:
 
         p_away_point = 1.0 - p_home_point
 
-        # Ajustar por sideout rate
-        # En volleyball, el equipo que recibe gana ~62% de los rallies
-        # porque puede organizar un ataque combinado.
-        # Cuando un equipo saca, su probabilidad de ganar el punto es menor.
-        sideout = DEFAULT_SIDEOUT_RATE
-
-        # P(local gana | local saca) = p_home_point * (1 - sideout_advantage)
-        # P(local gana | visitante saca) = p_home_point * sideout_advantage
-        # La idea: si sacas, tu probabilidad base se reduce; si recibes, aumenta
-        p_home_serving = p_home_point * (1 - sideout) / (
-            p_home_point * (1 - sideout) + p_away_point * sideout
+        # Ajustar por sideout rate PER-TEAM (Batch 3 mid-effort).
+        # En volleyball, el equipo que recibe gana ~60-65% de los rallies
+        # porque puede organizar un ataque combinado. Cuando un equipo
+        # saca, su probabilidad de ganar el punto es menor.
+        # - Cuando LOCAL saca, la probabilidad depende del AWAY sideout
+        #   (qué tan bueno es el visitante recibiendo).
+        # - Cuando VISITANTE saca, depende del HOME sideout.
+        p_home_serving = p_home_point * (1 - away_sideout) / (
+            p_home_point * (1 - away_sideout) + p_away_point * away_sideout
         )
-        p_home_receiving = p_home_point * sideout / (
-            p_home_point * sideout + p_away_point * (1 - sideout)
+        p_home_receiving = p_home_point * home_sideout / (
+            p_home_point * home_sideout + p_away_point * (1 - home_sideout)
         )
 
         # Clamp para evitar probabilidades extremas
