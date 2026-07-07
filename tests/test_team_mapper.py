@@ -84,21 +84,18 @@ class TestViableTeamsThreshold:
 # ─────────────────────────────────────────────────────────────
 
 class TestDefaultSideoutRate:
-    """DEFAULT_SIDEOUT_RATE is duplicated in two modules — flag, don't fix."""
-
-    def test_point_probability_sideout(self):
-        from src.models.point_probability import PointProbabilityModel
-        assert PointProbabilityModel.DEFAULT_SIDEOUT_RATE == 0.62
+    """DEFAULT_SIDEOUT_RATE centralized in src.simulation.constants (was duplicated in point_probability.py before Batch 3)."""
 
     def test_constants_module_sideout(self):
         from src.simulation.constants import DEFAULT_SIDEOUT_RATE
         assert DEFAULT_SIDEOUT_RATE == 0.62
 
-    def test_both_definitions_equal(self):
-        """DUPLICATION FLAGGED: both sources should eventually be centralized."""
+    def test_point_probability_no_longer_has_class_attr(self):
+        """The class-level duplicate was removed; only the central constant remains."""
         from src.models.point_probability import PointProbabilityModel
-        from src.simulation.constants import DEFAULT_SIDEOUT_RATE
-        assert PointProbabilityModel.DEFAULT_SIDEOUT_RATE == DEFAULT_SIDEOUT_RATE == 0.62
+        assert not hasattr(PointProbabilityModel, "DEFAULT_SIDEOUT_RATE"), (
+            "DEFAULT_SIDEOUT_RATE was deduplicated; the class attribute should be removed."
+        )
 
 
 class TestClampRanges:

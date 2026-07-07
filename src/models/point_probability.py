@@ -14,6 +14,8 @@ from typing import Optional
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
+from src.simulation.constants import DEFAULT_SIDEOUT_RATE, POINT_PROB_CLIP
+
 # Feature keys esperados por el modelo entrenado
 _FEATURE_KEYS = [
     "elo_diff", "diff_win_rate_global", "diff_set_win_rate",
@@ -67,9 +69,8 @@ class PointProbabilityModel:
       profesional — el equipo que recibe gana el punto más a menudo).
     """
 
-    # Sideout rate promedio en SuperLega (estimado de datos históricos)
-    DEFAULT_SIDEOUT_RATE = 0.62
-    POINT_PROB_CLIP = (0.25, 0.75)
+    # DEFAULT_SIDEOUT_RATE y POINT_PROB_CLIP ahora viven en src.simulation.constants
+    # (centralizados en Batch 3 para evitar duplicación).
 
     def __init__(self):
         self.model = None
@@ -119,7 +120,7 @@ class PointProbabilityModel:
 
         print(f"  [PointProbability] Base home point prob: {self.base_home_point_prob:.4f}")
         print(f"  [PointProbability] Base away point prob: {self.base_away_point_prob:.4f}")
-        print(f"  [PointProbability] Default sideout rate: {self.DEFAULT_SIDEOUT_RATE:.2f}")
+        print(f"  [PointProbability] Default sideout rate: {DEFAULT_SIDEOUT_RATE:.2f}")
 
     def get_point_probabilities(
         self,
@@ -166,7 +167,7 @@ class PointProbabilityModel:
         # En volleyball, el equipo que recibe gana ~62% de los rallies
         # porque puede organizar un ataque combinado.
         # Cuando un equipo saca, su probabilidad de ganar el punto es menor.
-        sideout = self.DEFAULT_SIDEOUT_RATE
+        sideout = DEFAULT_SIDEOUT_RATE
 
         # P(local gana | local saca) = p_home_point * (1 - sideout_advantage)
         # P(local gana | visitante saca) = p_home_point * sideout_advantage
@@ -179,8 +180,8 @@ class PointProbabilityModel:
         )
 
         # Clamp para evitar probabilidades extremas
-        p_home_serving = np.clip(p_home_serving, self.POINT_PROB_CLIP[0], self.POINT_PROB_CLIP[1])
-        p_home_receiving = np.clip(p_home_receiving, self.POINT_PROB_CLIP[0], self.POINT_PROB_CLIP[1])
+        p_home_serving = np.clip(p_home_serving, POINT_PROB_CLIP[0], POINT_PROB_CLIP[1])
+        p_home_receiving = np.clip(p_home_receiving, POINT_PROB_CLIP[0], POINT_PROB_CLIP[1])
 
         return {
             "p_home_serving": p_home_serving,

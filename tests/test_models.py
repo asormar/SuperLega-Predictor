@@ -171,7 +171,8 @@ class TestPointProbabilityModelSmoke:
             assert 0.0 <= probs[key] <= 1.0
 
     def test_default_sideout_rate_is_62(self):
-        assert PointProbabilityModel.DEFAULT_SIDEOUT_RATE == 0.62
+        from src.simulation.constants import DEFAULT_SIDEOUT_RATE
+        assert DEFAULT_SIDEOUT_RATE == 0.62
 
 
 
