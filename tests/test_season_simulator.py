@@ -3,6 +3,13 @@
 import numpy as np
 import pytest
 
+from src.simulation.constants import (
+    MATCH_PREDICTOR_DAMPING,
+    adaptive_damping,
+    ADAPTIVE_DAMPING_START,
+    ADAPTIVE_DAMPING_END,
+    SUPERLEGA_TOTAL_JORNADAS,
+)
 from src.simulation.season_simulator import (
     SeasonSimulator,
     TeamStanding,
@@ -274,3 +281,64 @@ class TestPlayerStatsCollision:
         assert stats["Trento|PlayerA"]["partidos"] == 2
         # Puntos should be 5+3+2 + 4+3+2+1 = 20
         assert stats["Trento|PlayerA"]["puntos"] == 20
+
+
+class TestAdaptiveDamping:
+    """adaptive_damping() function and its use in simulate_season (Batch 3 mid-effort #3)."""
+
+    def test_adaptive_damping_linear(self):
+        """Linear interpolation from start to end over total_jornadas."""
+        # Start
+        assert adaptive_damping(0) == ADAPTIVE_DAMPING_START
+        # End (jornada >= total)
+        assert adaptive_damping(SUPERLEGA_TOTAL_JORNADAS) == ADAPTIVE_DAMPING_END
+        # Middle: linear interpolation
+        halfway = adaptive_damping(SUPERLEGA_TOTAL_JORNADAS // 2)
+        expected = (ADAPTIVE_DAMPING_START + ADAPTIVE_DAMPING_END) / 2
+        assert halfway == pytest.approx(expected, abs=1e-9)
+
+    def test_adaptive_damping_clamps_above_total(self):
+        """Jornadas above total stay at damping_end."""
+        assert adaptive_damping(100) == ADAPTIVE_DAMPING_END
+        assert adaptive_damping(1000) == ADAPTIVE_DAMPING_END
+
+    def test_adaptive_damping_clamps_below_zero(self):
+        """Negative jornadas stay at damping_start."""
+        assert adaptive_damping(-1) == ADAPTIVE_DAMPING_START
+
+    def test_adaptive_damping_custom_range(self):
+        """Custom start/end overrides defaults."""
+        assert adaptive_damping(0, damping_start=0.9, damping_end=0.1) == 0.9
+        assert adaptive_damping(10, total_jornadas=10, damping_start=0.9, damping_end=0.1) == 0.1
+
+    def test_adaptive_damping_higher_at_start(self):
+        """Adaptive should give LOWER damping early (more shrinkage when features are cold)."""
+        early = adaptive_damping(2)
+        late = adaptive_damping(SUPERLEGA_TOTAL_JORNADAS - 2)
+        assert early < late, (
+            f"Early-season damping {early} should be < late-season {late} "
+            f"(more shrinkage early, more trust in model late)"
+        )
+        # Sanity: early is below fixed default (0.5), late is above
+        assert early < MATCH_PREDICTOR_DAMPING
+        assert late > MATCH_PREDICTOR_DAMPING
+
+    def test_calibrate_strengths_responds_to_damping(self):
+        """_calibrate_strengths must respect the damping parameter (direct unit test)."""
+        sim = SeasonSimulator()
+        h_str, a_str = 0.5, 0.5
+        # Strong prediction: p_target = 0.7. Different dampings should give
+        # different h_str outputs (only at p_target != 0.5, since 0.5 is neutral).
+        # In the math k_damped = k ** damping, HIGHER damping = k closer to k
+        # (more change), LOWER damping = k^0 = 1 (no change).
+        h_low_damping, _ = sim._calibrate_strengths(h_str, a_str, p_target=0.7, damping=0.3)
+        h_high_damping, _ = sim._calibrate_strengths(h_str, a_str, p_target=0.7, damping=0.7)
+        # Higher damping = trust the model more = larger change
+        assert h_high_damping > h_low_damping, (
+            f"Higher damping {h_high_damping} should produce larger h_str shift "
+            f"than lower damping {h_low_damping}"
+        )
+        # Sanity: at p_target=0.5 (neutral), no change regardless of damping
+        h_neutral_low, _ = sim._calibrate_strengths(h_str, a_str, p_target=0.5, damping=0.3)
+        h_neutral_high, _ = sim._calibrate_strengths(h_str, a_str, p_target=0.5, damping=0.7)
+        assert h_neutral_low == h_neutral_high == 0.5

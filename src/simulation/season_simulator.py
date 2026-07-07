@@ -14,6 +14,7 @@ from src.simulation.constants import (
     HOME_ADVANTAGE_STRENGTH_BONUS,
     STRENGTH_CLAMP_RANGE,
     MATCH_PREDICTOR_DAMPING,
+    adaptive_damping,
 )
 
 
@@ -310,6 +311,7 @@ class SeasonSimulator:
         seed: Optional[int] = None,
         use_match_predictor: bool = True,
         use_set_calibration: bool = True,
+        damping: Optional[object] = None,
     ) -> dict:
         """
         Simula SOLO una jornada del calendario (modo dinamico para el frontend).
@@ -381,8 +383,16 @@ class SeasonSimulator:
                             columns=self.match_predictor.feature_names, fill_value=0.0,
                         )
                     p_match_home = self.match_predictor.predict_proba(match_features_df)[0, 1]
+                    # Resolve damping: None -> fixed, callable -> per-jornada
+                    if damping is None:
+                        current_damping = MATCH_PREDICTOR_DAMPING
+                    elif callable(damping):
+                        current_damping = damping(jornada_num)
+                    else:
+                        current_damping = float(damping)
                     h_str_adj, a_str = self._calibrate_strengths(
                         h_str_adj, a_str, float(p_match_home),
+                        damping=current_damping,
                     )
                     team_feats = self._extract_set_team_features(match_features_df)
                 except Exception as e:
@@ -452,6 +462,7 @@ class SeasonSimulator:
         first_half_state: Optional[dict] = None,
         use_match_predictor: bool = True,
         use_set_calibration: bool = True,
+        damping: Optional[object] = None,
     ) -> dict:
         """
         Simula una temporada completa o una mitad.
@@ -536,8 +547,16 @@ class SeasonSimulator:
                     p_match_home = self.match_predictor.predict_proba(
                         match_features_df
                     )[0, 1]
+                    # Resolve damping: None -> fixed, callable -> per-jornada
+                    if damping is None:
+                        current_damping = MATCH_PREDICTOR_DAMPING
+                    elif callable(damping):
+                        current_damping = damping(jornada_num)
+                    else:
+                        current_damping = float(damping)
                     h_str_adj, a_str = self._calibrate_strengths(
                         h_str_adj, a_str, float(p_match_home),
+                        damping=current_damping,
                     )
                     # Preparar team features para SetPredictor
                     team_feats = self._extract_set_team_features(

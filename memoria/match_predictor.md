@@ -185,6 +185,47 @@ El predictor pesa **~1.5 MB** (XGBoost con 300 estimadores es mucho más compact
 
 4. **Features frías al inicio de temporada**: igual que el `SetPredictor`, en las primeras jornadas las features de `elo`, `streaks`, `results` están en valores por defecto. El modelo predice ~0.5 y la calibración no tiene efecto hasta la jornada 5-6.
 
+### 8.2. Damping adaptativo (Batch 3 mid-effort #3)
+
+Para atacar la limitación #3 (damping fijo), se implementó `adaptive_damping()` en `src/simulation/constants.py` (interpolación lineal de 0.3 inicio → 0.7 final) y se agregó un parámetro `damping` opcional a `SeasonSimulator.simulate_season()` y `simulate_jornada()`. Cuando se pasa un callable como `damping`, se llama con la `jornada_num` actual para resolver el damping de esa jornada.
+
+**Convención importante** (descubierta durante la implementación): en el código, `damping` es el **exponente** en `k_damped = k ** odds_correction` dentro de `_calibrate_strengths`. Por lo tanto:
+- `damping = 0` → `k_damped = 1` → no se aplica la corrección del modelo (full shrinkage hacia 0.5)
+- `damping = 1` → `k_damped = k` → se aplica la corrección completa (sin shrinkage)
+- `damping = 0.5` (default actual) → mitad de cada uno
+
+El modo adaptativo arranca con `damping=0.3` (más shrinkage cuando las features están frías) y termina en `damping=0.7` (más confianza cuando el modelo tiene features cálidas).
+
+**A/B test** (100 MC runs por estrategia, 12 equipos SuperLega actuales, mismo seed):
+
+| Métrica | Fixed damping (0.5) | Adaptive (0.3→0.7) | Delta |
+|---|---:|---:|---:|
+| 3-0% | 34.89 | 34.89 | +0.00 |
+| 3-1% | 36.43 | 36.43 | +0.00 |
+| 3-2% | 28.67 | 28.67 | +0.00 |
+| L1 a ref 40/30/30 | 12.87 | 12.87 | tie |
+
+**Veredicto**: **marginal / no observable effect**. Ambos runs producen distribuciones IDÉNTICAS.
+
+**Por qué falla la hipótesis** (validado con test unitario directo en `test_season_simulator.py::TestAdaptiveDamping`):
+
+1. **La implementación es matemáticamente correcta**: el test `test_calibrate_strengths_responds_to_damping` confirma que con `p_target=0.7`, `damping=0.7` produce `h_str=0.905` mientras que `damping=0.3` produce `h_str=0.645`. La función responde al parámetro como se espera.
+2. **El problema es el modelo, no el damping**: el MatchPredictor tiene val AUC ≈ 0.51 en 2023 (esencialmente random) y test AUC ≈ 0.71. Después de la calibración isotonic, las predicciones en partidos típicos están concentradas cerca de 0.5. En `_calibrate_strengths`, cuando `p_target ≈ 0.5`, `odds_target ≈ 1`, `k ≈ 1`, y `k_damped = 1^damping = 1` para cualquier valor de damping. La función retorna las strengths sin cambios.
+3. **Conclusión**: con el modelo actual (débil en val, fuerte en test), la mayoría de las predicciones están en la zona neutral donde el damping es irrelevante. La mejora existe conceptualmente pero no se manifiesta en el season sim.
+
+**Decisión**:
+- **Mantener la implementación** (`adaptive_damping()` + parámetro `damping` opcional): es un patrón correcto y queda disponible para cuando el MatchPredictor mejore.
+- **No es el default**: `simulate_season(damping=None)` usa el constante `MATCH_PREDICTOR_DAMPING = 0.5` (backward compatible).
+- **Siguiente paso lógico** (no en este batch): mejorar el MatchPredictor (mejor calibración, features más discriminativas, time-series CV) para que sus predicciones salgan de la zona neutral, momento en el cual el damping adaptativo podría mostrar efecto.
+
+**Artefactos**:
+- `src/simulation/constants.py::adaptive_damping()` + `ADAPTIVE_DAMPING_START/END` + `SUPERLEGA_TOTAL_JORNADAS`
+- `src/simulation/season_simulator.py`: `damping` parameter en `simulate_season()` y `simulate_jornada()`; resolución de damping en los 2 call sites
+- `src/models/adaptive_damping_experiment.py`: A/B test runner con 100 MC por estrategia
+- `models/adaptive_damping_results.json`: resultados (idénticos entre estrategias, documenta el no-effect)
+- `tests/test_season_simulator.py::TestAdaptiveDamping`: 6 tests (linear, clamps, custom range, early<late, _calibrate_strengths response)
+- `tests/test_models.py::TestAdaptiveDampingArtifacts`: 2 smoke tests del JSON
+
 5. **Sin features de momentum reciente**: el modelo usa `h_racha` y `forma_h` pero no captura momentum del último set o del último partido con granularidad fina.
 
 6. **~~87 features es mucho para 319 muestras~~ → Feature selection NO ayudó** (Batch 3 mid-effort #2, ver sección 8.1). Probado con A/B test sobre test 2024: top-30 features da **peor** resultado (−0.09 AUC) que los 87 originales. La intuición de overfitting no se materializa con los defaults actuales de los modelos; el `CalibratedClassifierCV(cv=3)` ya provee regularización implícita. Limitación descartada por evidencia.

@@ -315,3 +315,49 @@ class TestFeatureSelectionArtifacts:
         assert callable(feature_selection_experiment.run_experiment)
 
 
+class TestAdaptiveDampingArtifacts:
+    """Smoke tests for the adaptive damping experiment (Batch 3 mid-effort #3)."""
+
+    JSON_PATH = Path("models/adaptive_damping_results.json")
+    EXPECTED_KEYS = {
+        "n_mc", "damping_fixed", "damping_adaptive_start", "damping_adaptive_end",
+        "fixed", "adaptive", "delta_3_0_pct", "delta_3_1_pct", "delta_3_2_pct",
+        "verdict", "recommendation",
+    }
+    EXPECTED_VERDICTS = {"improved", "marginal", "degraded"}
+
+    def test_results_json_exists_and_valid(self):
+        if not self.JSON_PATH.exists():
+            pytest.skip(
+                "models/adaptive_damping_results.json not yet generated; "
+                "run `python -m src.models.adaptive_damping_experiment` to create it"
+            )
+        with open(self.JSON_PATH) as f:
+            data = json.load(f)
+        assert isinstance(data, dict)
+        assert self.EXPECTED_KEYS.issubset(data.keys()), (
+            f"Missing keys: {self.EXPECTED_KEYS - set(data.keys())}"
+        )
+        # Both fixed and adaptive should have 3-0%/3-1%/3-2% + n
+        for strategy in ("fixed", "adaptive"):
+            for sub in ("3-0%", "3-1%", "3-2%", "n"):
+                assert sub in data[strategy], f"Missing {sub} in {strategy}"
+        # Adaptive params
+        assert data["damping_adaptive_start"] < data["damping_adaptive_end"], (
+            "Adaptive start should be < end (more shrinkage early, more trust late)"
+        )
+        # Deltas match the diff
+        assert abs(
+            data["delta_3_0_pct"]
+            - (data["adaptive"]["3-0%"] - data["fixed"]["3-0%"])
+        ) < 1e-9
+        assert data["verdict"] in self.EXPECTED_VERDICTS
+        assert data["recommendation"] in {"apply-adaptive", "keep-fixed"}
+
+    def test_experiment_module_imports(self):
+        """The adaptive_damping_experiment module is importable and exposes run_experiment."""
+        from src.models import adaptive_damping_experiment
+        assert hasattr(adaptive_damping_experiment, "run_experiment")
+        assert callable(adaptive_damping_experiment.run_experiment)
+
+

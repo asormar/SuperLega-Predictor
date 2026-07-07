@@ -17,6 +17,59 @@ DEFAULT_SIDEOUT_RATE = 0.62
 # Damping del MatchPredictor
 MATCH_PREDICTOR_DAMPING = 0.5
 
+# Damping adaptativo (Batch 3 mid-effort #3).
+# El damping es el exponente en `k_damped = k ** damping` dentro de
+# _calibrate_strengths. Convención: damping=0 → no se aplica la
+# corrección del MatchPredictor (full shrinkage hacia 0.5); damping=1
+# → se aplica la corrección completa (sin shrinkage). El modelo base
+# usa MATCH_PREDICTOR_DAMPING=0.5 (mitad de cada uno).
+#
+# Modo adaptativo: cuando las features están frías (inicio de temporada),
+# queremos MÁS shrinkage hacia 0.5 → damping BAJO. Cuando las features
+# están cálidas (final), queremos MÁS confianza en el modelo → damping
+# ALTO. Por eso START (inicio) < END (final).
+ADAPTIVE_DAMPING_START = 0.3  # early season: low damping = strong shrinkage
+ADAPTIVE_DAMPING_END = 0.7    # late season: high damping = trust the model
+SUPERLEGA_TOTAL_JORNADAS = 26  # ~13 equipos × 2 vueltas = 26 jornadas
+
+
+def adaptive_damping(
+    jornada: int,
+    total_jornadas: int = SUPERLEGA_TOTAL_JORNADAS,
+    damping_start: float = ADAPTIVE_DAMPING_START,
+    damping_end: float = ADAPTIVE_DAMPING_END,
+) -> float:
+    """
+    Linearly interpolate damping from `damping_start` (jornada 0) to
+    `damping_end` (jornada >= total_jornadas). Clamps outside the range.
+
+    Args:
+        jornada: current match day (1-indexed in the season loop).
+        total_jornadas: total jornadas in the season (default 26 for SuperLega).
+        damping_start: damping for early season (default 0.3, strong shrinkage
+                       when features are cold and the MatchPredictor is unreliable).
+        damping_end: damping for late season (default 0.7, more trust in the
+                      MatchPredictor once the FeatureBuilder has warmed up).
+
+    Note on the math: the damping is the exponent in `k ** damping` where
+    `k = odds_target / odds_base`. damping=0 means k^0 = 1 (no change to
+    base strengths); damping=1 means k^1 = k (apply the model's correction
+    in full). The intermediate values interpolate. So LOW damping = more
+    shrinkage toward the base strength, HIGH damping = trust the model.
+
+    Returns:
+        damping value in [damping_start, damping_end] (linear interpolation).
+    """
+    if total_jornadas <= 0:
+        return damping_start
+    if jornada <= 0:
+        return damping_start
+    if jornada >= total_jornadas:
+        return damping_end
+    progress = jornada / total_jornadas
+    return damping_start + (damping_end - damping_start) * progress
+
+
 # Promedio puntos por set (para features pts_fav_exp)
 AVG_POINTS_PER_SET = 23.5
 
