@@ -270,3 +270,48 @@ class TestOptunaSearchArtifacts:
         assert callable(hyperparameter_search.run_search)
 
 
+class TestFeatureSelectionArtifacts:
+    """Smoke tests for the feature selection experiment (Batch 3 mid-effort #2)."""
+
+    JSON_PATH = Path("models/feature_selection_results.json")
+    EXPECTED_KEYS = {
+        "n_top", "all_features", "top_features",
+        "variant_a", "variant_b", "delta_val", "delta_test",
+        "verdict", "recommendation",
+    }
+    EXPECTED_VERDICTS = {"improved", "marginal", "degraded"}
+
+    def test_results_json_exists_and_valid(self):
+        if not self.JSON_PATH.exists():
+            pytest.skip(
+                "models/feature_selection_results.json not yet generated; "
+                "run `python -m src.models.feature_selection_experiment` to create it"
+            )
+        with open(self.JSON_PATH) as f:
+            data = json.load(f)
+        assert isinstance(data, dict)
+        assert self.EXPECTED_KEYS.issubset(data.keys()), (
+            f"Missing keys: {self.EXPECTED_KEYS - set(data.keys())}"
+        )
+        # Variant A (87 features) and Variant B (top-N) structure
+        for variant_key in ("variant_a", "variant_b"):
+            for sub in ("val_auc", "test_auc", "best_model_name", "n_features"):
+                assert sub in data[variant_key], f"Missing {sub} in {variant_key}"
+        # Deltas match the diff
+        assert abs(
+            data["delta_test"]
+            - (data["variant_b"]["test_auc"] - data["variant_a"]["test_auc"])
+        ) < 1e-9
+        assert data["verdict"] in self.EXPECTED_VERDICTS
+        assert data["recommendation"] in {"apply-top-N", "keep-defaults"}
+        # Top-N is actually a subset of all features
+        assert set(data["top_features"]).issubset(set(data["all_features"]))
+        assert data["variant_b"]["n_features"] == data["n_top"]
+
+    def test_experiment_module_imports(self):
+        """The feature_selection_experiment module is importable and exposes run_experiment."""
+        from src.models import feature_selection_experiment
+        assert hasattr(feature_selection_experiment, "run_experiment")
+        assert callable(feature_selection_experiment.run_experiment)
+
+

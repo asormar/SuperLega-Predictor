@@ -187,7 +187,39 @@ El predictor pesa **~1.5 MB** (XGBoost con 300 estimadores es mucho más compact
 
 5. **Sin features de momentum reciente**: el modelo usa `h_racha` y `forma_h` pero no captura momentum del último set o del último partido con granularidad fina.
 
-6. **87 features es mucho para 319 muestras**: hay riesgo de overfitting. Un feature selection (e.g. top-30 por importance) podría mejorar la generalización.
+6. **~~87 features es mucho para 319 muestras~~ → Feature selection NO ayudó** (Batch 3 mid-effort #2, ver sección 8.1). Probado con A/B test sobre test 2024: top-30 features da **peor** resultado (−0.09 AUC) que los 87 originales. La intuición de overfitting no se materializa con los defaults actuales de los modelos; el `CalibratedClassifierCV(cv=3)` ya provee regularización implícita. Limitación descartada por evidencia.
+
+### 8.1. Feature selection experiment (A/B test)
+
+Para atacar directamente la limitación #6 ("87 features para 319 muestras"), se implementó `src/models/feature_selection_experiment.py` con un A/B test estricto:
+
+- **Mismo pipeline que `train.py`**: 87 features (base + team stats + roster), mismo split temporal 2016-22 / 2023 / 2024.
+- **Variant A** (baseline): MatchPredictor con los 87 features. Champion = XGBoost.
+- **Variant B**: tomar las top-30 features por importance del Variant A, re-entrenar MatchPredictor. Champion = GradientBoosting.
+- **Métrica**: AUC en val 2023 y test 2024 (ambos, no solo val).
+
+**Resultados**:
+
+| Métrica | Variant A (87 feat, XGBoost) | Variant B (top-30, GB) | Delta |
+|---|---:|---:|---:|
+| Val AUC 2023   | 0.5086 | 0.3694 | **−0.1392** ⚠️ |
+| **Test AUC 2024** | **0.7070** | 0.6189 | **−0.0882** ⚠️ |
+| Test Accuracy  | 0.5135 | 0.5495 | +0.0360 |
+| Test Brier     | 0.2452 | 0.2491 | +0.0039 |
+
+**Veredicto**: **degraded**. La feature selection NO ayuda — empéora val y test. La intuición de overfitting no se materializa.
+
+**Por qué falla**:
+1. El `CalibratedClassifierCV(cv=3, method="isotonic")` que ya aplicamos al champion provee regularización implícita que mitiga el overfitting de los 87 features.
+2. Las features "menos importantes" según importance siguen conteniendo señal útil que se pierde al descartarlas (variant B pasa de 0.7070 a 0.6189 en test).
+3. Eliminar features cambia el champion de XGBoost a GradientBoosting, lo que añade varianza adicional (el "champion noise" del benchmark).
+
+**Decisión**: mantener los 87 features en producción. El experimento queda como artefacto (`models/feature_selection_results.json` + script ejecutable) por si en el futuro se quiere re-evaluar con más datos o con time-series CV.
+
+**Artefactos**:
+- `src/models/feature_selection_experiment.py` — script ejecutable (`python -m src.models.feature_selection_experiment [--n-top 30]`)
+- `models/feature_selection_results.json` — resultados completos con lista de top-30
+- `tests/test_models.py::TestFeatureSelectionArtifacts` — smoke tests del JSON
 
 ---
 
@@ -196,5 +228,7 @@ El predictor pesa **~1.5 MB** (XGBoost con 300 estimadores es mucho más compact
 El `MatchPredictor` es el modelo más ambicioso del proyecto, integrando 87 features de tres capas. Aunque su accuracy en test (0.51) está cerca del azar, su **AUC de 0.71 indica que ordena bien las probabilidades**, lo que es exactamente lo que la calibración con damping necesita: una señal direccional más que una clasificación perfecta.
 
 El damping exponencial con `damping=0.5` es la pieza clave: convierte una predicción ruidosa en una corrección conservadora, que sumada partido a partido a lo largo de la temporada tiene un efecto agregado significativo (de 66% de 3-0 a 44% con ML).
+
+La experimentación con feature selection (sección 8.1) y Optuna (mencionada en `memoria/benchmark.md` §7.1) confirma que **los defaults defendibles son robustos**: la búsqueda de mejoras no encontró ganancias que se transfirieran a test 2024. El modelo se queda como está, con un artefacto experimental que documenta el camino.
 
 Es un buen ejemplo de **"modelo débil + shrinkage fuerte > modelo fuerte sin shrinkage"** en producción.
