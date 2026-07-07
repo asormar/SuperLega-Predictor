@@ -168,8 +168,20 @@ def synthetic_player_gen():
 
 @pytest.fixture(scope="function")
 def synthetic_feature_builder(tmp_path: Path):
-    """RuntimeFeatureBuilder backed by a tiny tmp_path CSV (no real DB needed)."""
+    """RuntimeFeatureBuilder backed by a tiny tmp_path CSV (no real DB needed).
+
+    The CSV must include all ``h_*`` / ``a_*`` columns from
+    ``MATCH_FEATURE_COLS`` because ``RuntimeFeatureBuilder._load_static_profiles``
+    iterates over them unconditionally.  Non-``h_/a_`` columns are skipped by
+    the static-profiles loop so they do NOT need to be present.
+    """
     from src.simulation.feature_builder import RuntimeFeatureBuilder
+    from src.data.feature_store import MATCH_FEATURE_COLS
+
+    all_h_a_cols = [
+        c for c in MATCH_FEATURE_COLS
+        if c.startswith("h_") or c.startswith("a_")
+    ]
 
     csv_path = tmp_path / "match_features.csv"
     rows = []
@@ -177,16 +189,16 @@ def synthetic_feature_builder(tmp_path: Path):
         for visitante in ("Trento", "Perugia"):
             if local == visitante:
                 continue
-            rows.append({
+            row = {
                 "local": local,
                 "visitante": visitante,
                 "gana_local": 1,
                 "temporada": "2024/2025",
-                "point_ratio_h": 0.53,
-                "point_ratio_a": 0.47,
-                "h_point_ratio_h": 0.53,
-                "a_point_ratio_a": 0.47,
-            })
+            }
+            # Fill every required h_/a_ column with a dummy value
+            for col in all_h_a_cols:
+                row[col] = 0.5
+            rows.append(row)
 
     pd.DataFrame(rows).to_csv(csv_path, index=False, encoding="utf-8")
     builder = RuntimeFeatureBuilder(csv_path=csv_path)
