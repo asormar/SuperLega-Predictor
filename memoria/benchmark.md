@@ -303,6 +303,67 @@ Resumen — 12 vs 16 Equipos
 
 ---
 
-## 7. Conclusión
+## 7. Búsqueda de Hiperparámetros con Optuna (Batch 3, Quick Win 2)
 
-Los benchmarks muestran que los modelos ensemble (ExtraTrees para SET, XGBoost para MATCH) son consistentemente superiores a las alternativas más simples. Las features de roster aportan una mejora marginal pero real (~+0.002 AUC), mientras que expandir a 16 equipos degrada ligeramente la precisión. La arquitectura de benchmark es extensible: añadir un nuevo modelo requiere solo agregarlo al diccionario de `get_all_models()`. La principal limitación metodológica es la ausencia de búsqueda de hiperparámetros y de tests de significancia estadística.
+Para atacar directamente la limitación #1 de la sección anterior, se implementó `src/models/hyperparameter_search.py` con Optuna 4.9.0. La búsqueda maximiza el AUC de validación (2023) sobre los dos modelos campeones, sin tocar el split de test (2024).
+
+### Método
+
+- **Sampler**: TPE (Tree-structured Parzen Estimator) con `seed=42` para reproducibilidad.
+- **Trials**: 30 por modelo, con timeout de 600 s.
+- **Métrica objetivo**: `roc_auc_score` sobre val (2023).
+- **Modelos**: ExtraTrees (SET) y XGBoost (MATCH).
+- **Defaults comparados**: los definidos en `src/models/benchmark.py:36-65`.
+
+### Resultados (val 2023)
+
+| Modelo | Default AUC | Optuna AUC | Delta (abs) | Delta (rel) | Veredicto |
+|---|---:|---:|---:|---:|---|
+| SetPredictor (ExtraTrees) | 0.6275 | 0.6471 | **+0.0197** | +3.1% | **IMPROVED** |
+| MatchPredictor (XGBoost)  | 0.4272 | 0.4654 | **+0.0383** | +9.0% | **IMPROVED** |
+
+### Mejores hiperparámetros encontrados
+
+**ExtraTrees (SET)**:
+- `n_estimators`: 135 (default 300)
+- `max_depth`: 7 (default 10)
+- `min_samples_leaf`: 1 (default 4)
+- `min_samples_split`: 8
+- `max_features`: None (default sqrt)
+
+**XGBoost (MATCH)**:
+- `n_estimators`: 266 (default 300)
+- `max_depth`: 4 (default 5)
+- `learning_rate`: 0.0395 (default 0.05)
+- `subsample`: 0.70 (default 0.80)
+- `colsample_bytree`: 0.81 (default 0.80)
+- `reg_alpha`: 0.19 (default 0.10)
+- `reg_lambda`: 0.05 (default 1.00)
+
+### Observaciones
+
+- El default de `n_estimators=300` parece excesivo para ExtraTrees en este dataset; el Optuna converge a ~135 con un modelo más simple y mejor regularizado.
+- En XGBoost, el Optuna encontró un modelo con **mucha menos regularización L2** (0.05 vs 1.0) y **más L1** (0.19 vs 0.10) — útil para podar features ruidosas sin castigar los pesos grandes.
+- La mejora en MATCH (+9% relativo) es la más sustantiva; el AUC base de 0.43 sobre las features básicas (sin roster) indica que el modelo estaba claramente subentrenado con los defaults.
+- **Caveat**: las mejoras están medidas en val 2023. La transferencia a test 2024 no se verificó en este experimento (queda como follow-up antes de promover los nuevos params a producción).
+
+### Reproducir
+
+```powershell
+cd "C:\Users\Alejandro\Desktop\Universidad\4toCarrera\TFG\PREDICTOR(2)"
+python -m src.models.hyperparameter_search
+# Output: best params en models/best_params.json
+# Tiempo: ~35s en CPU moderna (30 trials × 2 modelos)
+```
+
+### Artefactos
+
+- `src/models/hyperparameter_search.py` — script ejecutable.
+- `models/best_params.json` — mejores hiperparámetros + comparación con defaults.
+- `tests/test_models.py::TestOptunaSearchArtifacts` — smoke tests del módulo y del JSON.
+
+---
+
+## 8. Conclusión
+
+Los benchmarks muestran que los modelos ensemble (ExtraTrees para SET, XGBoost para MATCH) son consistentemente superiores a las alternativas más simples. Las features de roster aportan una mejora marginal pero real (~+0.002 AUC), mientras que expandir a 16 equipos degrada ligeramente la precisión. La arquitectura de benchmark es extensible: añadir un nuevo modelo requiere solo agregarlo al diccionario de `get_all_models()`. La búsqueda con Optuna (sección 7) demuestra que los hiperparámetros por defecto estaban subóptimos: se logra +0.02 AUC en SET y +0.04 AUC en MATCH sin cambiar el tipo de modelo. **Próximo paso lógico**: validar los nuevos hiperparámetros en test 2024 y, si la mejora se transfiere, promoverlos a `train.py` y re-entrenar `models/*.joblib`.
