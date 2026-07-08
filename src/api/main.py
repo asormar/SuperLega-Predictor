@@ -29,7 +29,7 @@ from src.simulation.simulator import MatchSimulator
 from src.simulation.season_simulator import SeasonSimulator, generate_jornadas
 from src.simulation.feature_builder import RuntimeFeatureBuilder
 from src.simulation.constants import MAX_MC_ITERATIONS
-from src.models.set_predictor import SetPredictor
+from src.models.set_predictor_v2 import LogRegSetPredictor
 from src.models.match_predictor import MatchPredictor
 from src.models.point_probability import PointProbabilityModel, build_features_from_strengths
 from src.models.player_stats_generator import PlayerStatsGenerator
@@ -62,8 +62,11 @@ app.add_middleware(
 MODELS_DIR = BASE_DIR / "models"
 
 try:
-    set_predictor = SetPredictor.load(MODELS_DIR / "set_predictor.joblib")
-    print("[API] Set predictor cargado OK")
+    set_predictor, sp_source = LogRegSetPredictor.try_load_v2(
+        MODELS_DIR / "set_predictor_v2.joblib",
+        MODELS_DIR / "set_predictor.joblib",
+    )
+    print(f"[API] Set predictor cargado OK — fuente: {sp_source}")
 except Exception as e:
     print(f"[API] WARN: No se pudo cargar set_predictor: {e}")
     set_predictor = None
@@ -737,18 +740,29 @@ async def modelo_info():
     }
 
     if set_predictor:
-        info["set_predictor"] = {
-            "modelo": set_predictor.best_model_name,
+        # Preferencia: el campo `type_` del artefacto v2 ("logreg_recency") o el
+        # `best_model_name` del legacy ("ExtraTrees"). Fallback al nombre de la
+        # clase del adapter para casos no esperados.
+        _model_label = (
+            getattr(set_predictor, "type_", None)
+            or getattr(set_predictor, "best_model_name", None)
+            or type(set_predictor).__name__
+        )
+        payload = {
+            "modelo": _model_label,
             "features": set_predictor.feature_names or [],
-            "resultados_validacion": {
+        }
+        results = getattr(set_predictor, "results", None)
+        if results:
+            payload["resultados_validacion"] = {
                 name: {
                     "accuracy": round(r["accuracy"], 4),
                     "auc_roc": round(r["auc_roc"], 4),
                     "brier_score": round(r["brier_score"], 4),
                 }
-                for name, r in set_predictor.results.items()
-            },
-        }
+                for name, r in results.items()
+            }
+        info["set_predictor"] = payload
 
     if player_gen:
         info["player_stats"] = {

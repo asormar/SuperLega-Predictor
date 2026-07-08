@@ -5,6 +5,12 @@ Consolida los hallazgos de las fases del plan en artefactos reproducibles,
 SIN romper la pipeline de producción existente. Guarda modelos v2 y un
 snapshot de precisión para comparar antes/después.
 
+El snapshot sigue la misma forma que precision_baseline.json:
+  - champion: nombre del modelo campeón
+  - cv: métricas de validación rolling-origin (media ± std sobre folds)
+  - test: métricas en el conjunto de test held-out
+  - n_features: número de features usadas
+
 Hallazgos clave (ver comparación al final del plan):
   1. Las features enriquecidas por temporada completa tenían LEAKAGE; medidas
      honestamente el AUC de match era 0.53, no 0.71.
@@ -65,25 +71,101 @@ def _metrics(y, p) -> dict:
     }
 
 
+def _set_rolling_cv(data: dict) -> dict:
+    """Rolling-origin CV for the v2 LogReg (C=0.5, recency half-life=2).
+
+    Folds (sliding window, train fijo 2022-2024):
+      - train [2022, 2023] → val 2024
+      - train [2023, 2024] → val 2025
+
+    Returns dict with logloss_mean, logloss_std, auc_mean, auc_std,
+    brier_mean, acc_mean, n_folds.
+    """
+    ds = data["set_features"].copy()
+    cols = [c for c in SET_FEATURE_COLS if c in ds.columns]
+
+    fold_configs = [
+        ([2022, 2023], 2024),
+        ([2023, 2024], 2025),
+    ]
+
+    per_fold = {"logloss": [], "auc": [], "brier": [], "acc": []}
+
+    for train_years, val_year in fold_configs:
+        tr = ds[ds.temporada_inicio.isin(train_years)]
+        va = ds[ds.temporada_inicio == val_year]
+        if len(va) == 0 or len(tr) == 0:
+            continue
+        X_tr, y_tr = tr[cols].fillna(0), tr["ganador_set_local"]
+        X_va, y_va = va[cols].fillna(0), va["ganador_set_local"]
+        if y_va.nunique() < 2:
+            continue
+
+        # Recency weights: closer seasons matter more
+        sw = 0.5 ** ((val_year - tr.temporada_inicio.values) / SET_RECENCY_HALFLIFE)
+
+        model = LogisticRegression(max_iter=2000, C=0.5, random_state=42)
+        model.fit(X_tr, y_tr, sample_weight=sw)
+        p = model.predict_proba(X_va)[:, 1]
+        p = np.clip(p, 1e-6, 1 - 1e-6)
+
+        per_fold["logloss"].append(log_loss(y_va, p))
+        per_fold["auc"].append(roc_auc_score(y_va, p))
+        per_fold["brier"].append(brier_score_loss(y_va, p))
+        per_fold["acc"].append(accuracy_score(y_va, (p >= 0.5).astype(int)))
+
+    out = {"n_folds": len(per_fold["logloss"])}
+    for k, v in per_fold.items():
+        out[f"{k}_mean"] = float(np.mean(v)) if v else float("nan")
+        out[f"{k}_std"] = float(np.std(v)) if v else float("nan")
+    return out
+
+
 def train_match(dfm: pd.DataFrame) -> dict:
-    """Modelo de match: probabilidad de Elo con margen (sin entrenamiento)."""
+    """Modelo de match: probabilidad de Elo con margen (sin entrenamiento).
+
+    Returns dict con la misma forma que precision_baseline.json (match).
+    """
     te = dfm[dfm.temporada_inicio == TEST_SEASON]
     p_elo = te["elo_win_prob_h"].values
     m = _metrics(te["gana_local"], p_elo)
+
     # El "modelo" es el sistema Elo (parámetros en rolling_features).
     joblib.dump(
         {"type": "margin_elo", "features": ["elo_win_prob_h"],
          "note": "Probabilidad de Elo con margen, rolling sin leakage."},
         MODELS_DIR / "match_elo_v2.joblib",
     )
-    return m
+
+    return {
+        "champion": "margin_elo",
+        "cv": {
+            "n_folds": 0,
+            "note": "Elo es determinista (sin entrenamiento), no requiere CV.",
+        },
+        "test": {
+            "test_season": TEST_SEASON,
+            "n_test": m["n"],
+            "logloss": m["logloss"],
+            "auc": m["auc"],
+            "brier": m["brier"],
+            "acc": m["acc"],
+        },
+        "n_features": 1,  # solo elo_win_prob_h
+    }
 
 
 def train_set(data: dict) -> dict:
-    """Modelo de set: LogReg regularizado con pesos de recencia."""
+    """Modelo de set: LogReg regularizado con pesos de recencia.
+
+    Returns dict con la misma forma que precision_baseline.json (set).
+    """
     ds = data["set_features"].copy()
-    ds["temporada_inicio"] = ds["partido_id"].apply(
-        lambda x: int(str(x).split("/")[0]) if "/" in str(x) else 0)
+    # Guard defensivo: si el pipeline no inyectó temporada_inicio (p.ej. cache
+    # stale o llamada manual con otro constructor), derivarla del partido_id.
+    if "temporada_inicio" not in ds.columns:
+        ds["temporada_inicio"] = ds["partido_id"].apply(
+            lambda x: int(str(x).split("/")[0]) if "/" in str(x) else 0)
     cols = [c for c in SET_FEATURE_COLS if c in ds.columns]
 
     tr = ds[ds.temporada_inicio.isin(RECENT_TRAIN_SEASONS)]
@@ -93,14 +175,32 @@ def train_set(data: dict) -> dict:
     model = LogisticRegression(max_iter=2000, C=0.5, random_state=42)
     model.fit(tr[cols].fillna(0), tr["ganador_set_local"], sample_weight=sw)
     p = model.predict_proba(te[cols].fillna(0))[:, 1]
+    test_m = _metrics(te["ganador_set_local"], p)
 
+    # Guardar artefacto v2 (sin cambios)
     joblib.dump(
         {"type": "logreg_recency", "model": model, "features": cols,
          "recency_halflife": SET_RECENCY_HALFLIFE,
          "train_seasons": RECENT_TRAIN_SEASONS},
         MODELS_DIR / "set_predictor_v2.joblib",
     )
-    return _metrics(te["ganador_set_local"], p)
+
+    # Rolling-origin CV (independiente del test)
+    cv = _set_rolling_cv(data)
+
+    return {
+        "champion": "LogisticRegression",
+        "cv": cv,
+        "test": {
+            "test_season": TEST_SEASON,
+            "n_test": test_m["n"],
+            "logloss": test_m["logloss"],
+            "auc": test_m["auc"],
+            "brier": test_m["brier"],
+            "acc": test_m["acc"],
+        },
+        "n_features": len(cols),
+    }
 
 
 def main():
@@ -113,15 +213,19 @@ def main():
 
     print("\n[MATCH] Elo con margen (rolling, sin leakage)...")
     m_match = train_match(dfm)
-    print(f"  TEST {TEST_SEASON}: AUC={m_match['auc']:.4f} "
-          f"logloss={m_match['logloss']:.4f} brier={m_match['brier']:.4f} "
-          f"acc={m_match['acc']:.4f} (n={m_match['n']})")
+    print(f"  TEST {TEST_SEASON}: AUC={m_match['test']['auc']:.4f} "
+          f"logloss={m_match['test']['logloss']:.4f} brier={m_match['test']['brier']:.4f} "
+          f"acc={m_match['test']['acc']:.4f} (n={m_match['test']['n_test']})")
+    print(f"  CV: {m_match['cv']['n_folds']} folds (sin entrenamiento)")
 
     print("\n[SET] LogReg con recencia...")
     m_set = train_set(data)
-    print(f"  TEST {TEST_SEASON}: AUC={m_set['auc']:.4f} "
-          f"logloss={m_set['logloss']:.4f} brier={m_set['brier']:.4f} "
-          f"acc={m_set['acc']:.4f} (n={m_set['n']})")
+    print(f"  TEST {TEST_SEASON}: AUC={m_set['test']['auc']:.4f} "
+          f"logloss={m_set['test']['logloss']:.4f} brier={m_set['test']['brier']:.4f} "
+          f"acc={m_set['test']['acc']:.4f} (n={m_set['test']['n_test']})")
+    cv = m_set['cv']
+    print(f"  CV ({cv['n_folds']} folds): logloss={cv.get('logloss_mean', 'N/A'):.4f}±{cv.get('logloss_std', 0):.4f} "
+          f"auc={cv.get('auc_mean', 'N/A'):.4f}±{cv.get('auc_std', 0):.4f}")
 
     snapshot = {"match": m_match, "set": m_set,
                 "config": {"match_features": MATCH_FEATURES,

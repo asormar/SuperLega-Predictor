@@ -1,17 +1,42 @@
 {
   "match": {
-    "auc": 0.7499091569767443,
-    "logloss": 0.5851291528353485,
-    "brier": 0.20040962947277075,
-    "acc": 0.6915887850467289,
-    "n": 214
+    "champion": "margin_elo",
+    "cv": {
+      "n_folds": 0,
+      "note": "Elo es determinista (sin entrenamiento), no requiere CV."
+    },
+    "test": {
+      "test_season": 2025,
+      "n_test": 214,
+      "logloss": 0.5851291528353485,
+      "auc": 0.7499091569767443,
+      "brier": 0.20040962947277075,
+      "acc": 0.6915887850467289
+    },
+    "n_features": 1
   },
   "set": {
-    "auc": 0.708538973756365,
-    "logloss": 0.6252358237947503,
-    "brier": 0.21756908106864067,
-    "acc": 0.6576787807737398,
-    "n": 853
+    "champion": "LogisticRegression",
+    "cv": {
+      "n_folds": 2,
+      "logloss_mean": 0.6541860840915512,
+      "logloss_std": 0.03237820076208614,
+      "auc_mean": 0.6309967141882333,
+      "auc_std": 0.078269695078176,
+      "brier_mean": 0.23140917034651276,
+      "brier_std": 0.015215850051341587,
+      "acc_mean": 0.5962930443200225,
+      "acc_std": 0.06724740116649558
+    },
+    "test": {
+      "test_season": 2025,
+      "n_test": 853,
+      "logloss": 0.6252358237947503,
+      "auc": 0.708538973756365,
+      "brier": 0.21756908106864067,
+      "acc": 0.6576787807737398
+    },
+    "n_features": 21
   },
   "config": {
     "match_features": [

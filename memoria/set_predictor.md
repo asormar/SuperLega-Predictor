@@ -1,15 +1,19 @@
 # Set Predictor — Predicción del Ganador de un Set
 
-> **⚠️ ACTUALIZACIÓN 2026-07-08.** Medido con el protocolo honesto
-> (rolling-origin, test held-out 2025/26), el ExtraTrees calibrado da AUC
-> **0.65** (no infló como el match: sus features de set no tenían leakage de
-> temporada completa). La auditoría de precisión encontró que un **LogisticRegression
-> regularizado con pesos de recencia** (half-life 2 temporadas, entrenado en
-> 2022-2024) lo mejora a **AUC 0.71 / acc 0.66**, confirmando que en este
-> régimen de datos pequeños los modelos lineales baten a los árboles profundos.
-> El artefacto mejorado se genera con `python -m src.models.train_improved`
-> (`set_predictor_v2.joblib`). Detalle en
-> [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
+> **⚠️ ACTUALIZACIÓN 2026-07-08 (modelo) + 2026-07-08 (producción).** Medido
+> con el protocolo honesto (rolling-origin, test held-out 2025/26), el
+> ExtraTrees calibrado da AUC **0.65** (no infló como el match: sus features
+> de set no tenían leakage de temporada completa). La auditoría de precisión
+> encontró que un **LogisticRegression regularizado con pesos de recencia**
+> (half-life 2 temporadas, entrenado en 2022-2024) lo mejora a **AUC 0.71 /
+> acc 0.66**, confirmando que en este régimen de datos pequeños los modelos
+> lineales baten a los árboles profundos.
+>
+> **Estado en producción (API):** desde este commit el `set_predictor_v2.joblib`
+> (LogReg+recencia) es el campeón de producción que carga `src/api/main.py`,
+> y el `set_predictor.joblib` (ExtraTrees) queda como fallback. El artefacto
+> se regenera con `python -m src.models.train_improved`. Detalle del proceso
+> en [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
 
 ## Descripción
 

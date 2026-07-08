@@ -7,11 +7,19 @@
 > temporada completa —`enrich_with_team_stats`, `compute_roster_features`— se
 > mezclaban en partidos de esa misma temporada) evaluado sobre un único año de
 > test. Medido con rolling-origin sobre el test held-out 2025/26, el AUC real
-> era **0.53** (nivel de azar). En producción se ha **sustituido su señal por
-> la probabilidad de un Elo con margen de victoria** (AUC 0.75, logloss 0.585),
-> limpio y sin leakage (`src/data/rolling_features.py`). El artefacto
-> `match_predictor.joblib` sigue en disco solo como fallback. El texto de abajo
-> se conserva como registro del diseño previo.
+> era **0.53** (nivel de azar).
+>
+> **Estado en producción (API):** la señal del `MatchPredictor` (87 features,
+> leaky) **se ha sustituido por la probabilidad de un Elo con margen de
+> victoria** (AUC 0.75, logloss 0.585, limpio y sin leakage,
+> `src/data/rolling_features.py`) **en el `SeasonSimulator`** — que es el
+> único consumidor real (calibra las fuerzas por partido). El
+> `MatchSimulator.simulate_match()` directo **no usa el `MatchPredictor` para
+> nada**: solo recibe las fuerzas `home_strength/away_strength` y consulta el
+> `SetPredictor` para el clamp adaptativo. El artefacto
+> `match_predictor.joblib` se mantiene cargado en el API solo como fallback
+> (no se borra para no romper la carga). El texto de abajo se conserva como
+> registro del diseño previo.
 
 ## Descripción
 
