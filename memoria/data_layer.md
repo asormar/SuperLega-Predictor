@@ -1,5 +1,15 @@
 # Capa de Datos
 
+> **⚠️ ACTUALIZACIÓN 2026-07-08.** Se añadió `src/data/rolling_features.py`,
+> que reconstruye las features a nivel de partido desde `sets_partidos.csv`
+> **sin leakage temporal** (recorrido cronológico, solo información previa) e
+> incorpora un **Elo con margen de victoria**. Reemplaza en producción a las
+> features enriquecidas (`enrich_with_team_stats`, `compute_roster_features`),
+> que tenían leakage de temporada completa. Expone `get_historical_team_elo` y
+> `get_historical_team_strengths`, usadas por el API para sembrar fuerzas y Elo
+> runtime. Contexto completo en
+> [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
+
 ## Descripción
 
 La capa de datos es el cimiento del sistema. Se encarga de cargar, limpiar, normalizar y preparar los 22 archivos CSV de la carpeta `DB/`, que contienen datos históricos de la SuperLega italiana desde 2014 hasta 2024. Estos datos alimentan tanto el entrenamiento de los modelos ML como, indirectamente, la simulación en tiempo real (a través de los perfiles estáticos de equipo cargados por el `RuntimeFeatureBuilder`).

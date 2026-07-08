@@ -1,5 +1,18 @@
 # Match Predictor — Predicción del Ganador de un Partido
 
+> **⚠️ ACTUALIZACIÓN 2026-07-08.** Todo lo que sigue describe el diseño
+> original de 87 features. La auditoría de precisión (ver
+> [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md)) demostró que su
+> **AUC=0.707 era ficticio**: producto de leakage temporal (las features de
+> temporada completa —`enrich_with_team_stats`, `compute_roster_features`— se
+> mezclaban en partidos de esa misma temporada) evaluado sobre un único año de
+> test. Medido con rolling-origin sobre el test held-out 2025/26, el AUC real
+> era **0.53** (nivel de azar). En producción se ha **sustituido su señal por
+> la probabilidad de un Elo con margen de victoria** (AUC 0.75, logloss 0.585),
+> limpio y sin leakage (`src/data/rolling_features.py`). El artefacto
+> `match_predictor.joblib` sigue en disco solo como fallback. El texto de abajo
+> se conserva como registro del diseño previo.
+
 ## Descripción
 
 El `MatchPredictor` (`src/models/match_predictor.py`) es un clasificador binario que predice la probabilidad de que el equipo local gane un partido completo de volleyball. Es el más complejo de los tres modelos del proyecto porque integra **87 features** de tres categorías: base (Elo, forma, H2H), team stats agregadas y roster.

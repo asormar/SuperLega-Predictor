@@ -2,6 +2,17 @@
 
 Documentación técnica del simulador de partidos/temporadas de la SuperLega italiana. Cada documento cubre un subsistema del proyecto.
 
+> **⚠️ ACTUALIZACIÓN 2026-07-08 — Mejora de precisión.** Una auditoría con un
+> protocolo de evaluación honesto (rolling-origin, sin leakage) reveló que el
+> AUC=0.707 del MatchPredictor era **ficticio** (leakage temporal + un año de
+> test afortunado); el valor real era ~0.53. Se reconstruyeron las features sin
+> leakage y se integró un modelo Elo con margen de victoria, subiendo el AUC de
+> partido a **0.75** y las fuerzas de equipo a la jerarquía real de la liga.
+> Proceso completo en [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md)
+> y comparación de cifras en [`../COMPARACION_ANTES_DESPUES.md`](../COMPARACION_ANTES_DESPUES.md).
+> Las secciones marcadas abajo con métricas antiguas se conservan como registro
+> histórico; los valores vigentes están en el documento de proceso.
+
 ## Documentos por Subsistema
 
 ### Predicción (lo más maduro del proyecto)
@@ -15,8 +26,9 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
 
 | Documento | Cubre | Estado |
 |---|---|---|
-| [`set_predictor.md`](set_predictor.md) | `SetPredictor` — ExtraTrees calibrado, AUC=0.654 | ✅ Completo |
-| [`match_predictor.md`](match_predictor.md) | `MatchPredictor` — XGBoost calibrado, AUC=0.707, 87 features | ✅ Completo |
+| [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md) | **Proceso completo de mejora de precisión** (auditoría de leakage, protocolo honesto, integración Elo) | ✅ Nuevo |
+| [`set_predictor.md`](set_predictor.md) | `SetPredictor` — ExtraTrees calibrado (AUC honesto 0.65; mejora a 0.71 con LogReg+recencia) | ✅ Completo |
+| [`match_predictor.md`](match_predictor.md) | `MatchPredictor` — el AUC=0.707 era leakage; sustituido por Elo con margen (AUC 0.75) | ✅ Completo |
 | [`point_probability.md`](point_probability.md) | `PointProbabilityModel` — LogisticRegression + sideout 0.62 | ✅ Completo |
 | `benchmark.md` | `benchmark.py`, `benchmark_roster.py`, `benchmark_teams.py` — comparativas de modelos | ⏳ Pendiente |
 
@@ -129,20 +141,22 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
    └──────────────────────────────────────────────────┘
 ```
 
-**Métricas clave (test 2024, datos no vistos)**:
+**Métricas clave — protocolo honesto (rolling-origin, test held-out 2025/26)**:
 
-| Modelo | AUC | Accuracy | Brier |
+| Modelo | AUC antes* | AUC después | Accuracy después |
 |---|---:|---:|---:|
-| SetPredictor (ExtraTrees + isotonic) | 0.654 | 0.622 | 0.229 |
-| MatchPredictor (XGBoost + isotonic) | 0.707 | 0.514 | 0.245 |
-| PointProbability (LogReg + sideout) | n/a (regresor) | n/a | n/a |
+| MATCH (antes XGBoost / ahora Elo con margen) | 0.53 | **0.75** | 0.69 |
+| SET (ExtraTrees → LogReg+recencia) | 0.65 | **0.71** | 0.66 |
+
+\* "Antes" = medido honestamente. El AUC=0.707 que reportaba el código para el
+match era leakage; el valor real era 0.53. Detalle en
+[`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
 
 **Limitaciones documentadas**:
-- MatchPredictor con features frías en las primeras jornadas
-- SetPredictor inactivo hasta la jornada 5-6
-- Damping fijo en 0.5 (no se adapta a la fase de la temporada)
+- ~~Elo simplificado (sin ajuste por margen de victoria)~~ → **RESUELTO**: Elo con margen integrado.
+- Dataset pequeño a nivel de partido (725 en total; 34-59/temporada en las viejas) → régimen donde modelos lineales baten a árboles profundos.
 - Stats de jugadores sintéticas (muestreadas, no simuladas)
-- Sin Monte Carlo a nivel temporada (incertidumbre no cuantificada)
+- Sin Monte Carlo a nivel temporada por defecto (incertidumbre no cuantificada en un solo seed)
 - Sin lesiones ni mercado de fichajes
-- Elo simplificado (sin ajuste por margen de victoria)
+- MatchPredictor de 87 features (leaky) sigue en disco como fallback; el camino de producción usa la probabilidad de Elo limpia.
 - ~40 `print()` con caracteres Unicode que rompen en consola Windows (deuda técnica)
