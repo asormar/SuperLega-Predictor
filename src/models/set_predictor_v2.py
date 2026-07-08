@@ -1,14 +1,17 @@
 """
-set_predictor_v2.py — Adapter for the v2 LogReg SetPredictor.
+set_predictor_v2.py — Adapter para el SetPredictor v2 (LogReg con recencia).
 
-The v2 model is stored as a joblib dict (not a SetPredictor class instance)
-with keys: type, model, features, recency_halflife, train_seasons.
+El modelo v2 se almacena como un dict joblib (no una instancia de la clase
+SetPredictor) con claves: type, model, features, recency_halflife, train_seasons.
 
-This adapter wraps that dict and exposes the duck-typed interface that
-MatchSimulator and SeasonSimulator expect:
+Este adapter envuelve ese dict y expone la interfaz duck-typed que esperan
+MatchSimulator y SeasonSimulator:
   - .feature_names -> list[str]
   - .predict_proba(df) -> np.ndarray shape [n, 2]
   - .predict(df) -> np.ndarray int 0/1
+
+Ver `memoria/set_predictor.md` (banner) y `memoria/mejora_precision_2026-07.md`
+§6-§7.2 para el contexto completo (motivación, métricas honestas y caveats).
 """
 
 import numpy as np
@@ -19,11 +22,14 @@ from typing import Optional, Union
 
 
 class LogRegSetPredictor:
-    """Adapter for the v2 LogisticRegression SetPredictor (no scaler, no calibration).
+    """Adapter para el SetPredictor v2 (LogisticRegression, sin scaler, sin calibración).
 
-    The v2 was trained on raw features (21 columns from SET_FEATURE_COLS) with
-    recency weighting (half-life = 2.0 seasons), C = 0.5, max_iter = 2000.
-    No feature scaling was applied at training time, so none is needed at inference.
+    El v2 fue entrenado sobre features crudas (21 columnas de SET_FEATURE_COLS)
+    con pesos de recencia (half-life = 2.0 temporadas), C = 0.5, max_iter = 2000.
+    No se aplicó feature scaling en entrenamiento, así que tampoco en inferencia.
+
+    Test AUC 2025 = 0.71 (es 2025-específico; CV rolling-origin 2 folds = 0.63 ± 0.08).
+    Ver `memoria/mejora_precision_2026-07.md` §7.2 para el análisis per-year.
     """
 
     def __init__(
@@ -72,7 +78,7 @@ class LogRegSetPredictor:
 
     @classmethod
     def load(cls, path: Union[str, Path]) -> "LogRegSetPredictor":
-        """Load the v2 adapter from a joblib dict file."""
+        """Carga el adapter v2 desde un archivo joblib (dict)."""
         data = joblib.load(str(path))
         return cls(
             model=data["model"],
@@ -88,17 +94,17 @@ class LogRegSetPredictor:
         v2_path: Union[str, Path],
         legacy_path: Optional[Union[str, Path]] = None,
     ) -> tuple:
-        """Try to load the v2 predictor; fall back to the legacy SetPredictor.
+        """Intenta cargar el predictor v2; cae al legacy SetPredictor como fallback.
 
         Args:
-            v2_path: Path to ``set_predictor_v2.joblib``.
-            legacy_path: Path to the legacy ``set_predictor.joblib`` (ExtraTrees).
+            v2_path: ruta a ``set_predictor_v2.joblib``.
+            legacy_path: ruta al legacy ``set_predictor.joblib`` (ExtraTrees).
 
         Returns:
-            (predictor, source_label) where source_label is one of
-            ``"logreg_v2"``, ``"extra_trees_v1"``, or ``"none"``.
+            (predictor, source_label) donde source_label es uno de
+            ``"logreg_v2"``, ``"extra_trees_v1"``, o ``"none"``.
 
-        The returned predictor is duck-typed to the same interface:
+        El predictor devuelto es duck-typed a la misma interfaz que el legacy:
         ``.feature_names``, ``.predict_proba(df)`` → ``[n, 2]``.
         """
         v2_path = Path(v2_path)

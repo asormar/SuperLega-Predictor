@@ -27,8 +27,8 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
 | Documento | Cubre | Estado |
 |---|---|---|
 | [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md) | **Proceso completo de mejora de precisión** (auditoría de leakage, protocolo honesto, integración Elo) | ✅ Nuevo |
-| [`set_predictor.md`](set_predictor.md) | `SetPredictor` — ExtraTrees calibrado (AUC honesto 0.65; mejora a 0.71 con LogReg+recencia) | ✅ Completo |
-| [`match_predictor.md`](match_predictor.md) | `MatchPredictor` — el AUC=0.707 era leakage; sustituido por Elo con margen (AUC 0.75) | ✅ Completo |
+| [`set_predictor.md`](set_predictor.md) | `SetPredictor` — LogReg+recencia v2 en producción (test 2025 AUC 0.71*, CV 0.63 ± 0.08; legacy ExtraTrees como fallback) | ✅ Completo |
+| [`match_predictor.md`](match_predictor.md) | `MatchPredictor` — el AUC=0.707 era leakage; sustituido por Elo con margen (AUC 0.75); el artefacto viejo queda como fallback | ✅ Completo |
 | [`point_probability.md`](point_probability.md) | `PointProbabilityModel` — LogisticRegression + sideout 0.62 | ✅ Completo |
 | `benchmark.md` | `benchmark.py`, `benchmark_roster.py`, `benchmark_teams.py` — comparativas de modelos | ⏳ Pendiente |
 
@@ -113,10 +113,13 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
    │                                                  │
    │  Calibrado por:                                  │
    │  ┌────────────────┐  ┌────────────────┐         │
-   │  │ MatchPredictor │  │  SetPredictor  │         │
-   │  │ (XGBoost AUC   │  │ (ExtraTrees    │         │
-   │  │  0.71, damping)│  │  AUC 0.65,     │         │
-   │  └────────────────┘  │  clamp adapt.) │         │
+   │  │ Elo con margen │  │  SetPredictor  │         │
+   │  │  (rolling,     │  │ (LogReg v2     │         │
+   │  │   AUC 0.75)    │  │  test 0.71*,   │         │
+   │  │ [MatchPredictor│  │  CV 0.63,      │         │
+   │  │ 87 feats:      │  │  clamp adapt.) │         │
+   │  │ fallback]      │  │ [ExtraTrees:   │         │
+   │  └────────────────┘  │  fallback]     │         │
    │                      └────────────────┘         │
    │  Alimentado por:                                 │
    │  ┌────────────────┐  ┌────────────────┐         │
@@ -146,11 +149,17 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
 | Modelo | AUC antes* | AUC después | Accuracy después |
 |---|---:|---:|---:|
 | MATCH (antes XGBoost / ahora Elo con margen) | 0.53 | **0.75** | 0.69 |
-| SET (ExtraTrees → LogReg+recencia) | 0.65 | **0.71** | 0.66 |
+| SET (ExtraTrees → LogReg+recencia) | 0.65 | **0.71*** | 0.66 |
 
 \* "Antes" = medido honestamente. El AUC=0.707 que reportaba el código para el
 match era leakage; el valor real era 0.53. Detalle en
 [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
+
+\*\* "0.71" del SET es el test sobre 2025 (853 sets, la temporada más grande
+del dataset). El CV rolling-origin multi-temporada da **0.63 ± 0.08** y la
+media per-year 2018-2025 da 0.61 — el detalle y el follow-up obligatorio
+para 2026/27 están en
+[`mejora_precision_2026-07.md` §7.2](mejora_precision_2026-07.md).
 
 **Limitaciones documentadas**:
 - ~~Elo simplificado (sin ajuste por margen de victoria)~~ → **RESUELTO**: Elo con margen integrado.

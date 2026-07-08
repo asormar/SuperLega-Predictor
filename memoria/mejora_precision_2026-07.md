@@ -126,7 +126,10 @@ solo 2022-2024:
 Con 34-59 partidos por temporada, los árboles de gradiente sobreajustan ruido y
 **ahogan la señal limpia del Elo**: un modelo de 27 features daba AUC 0.54,
 peor que el Elo de una variable (0.62). El patrón se repitió en el set: un
-**LogisticRegression regularizado** (C=0.5) batió al ExtraTrees (0.71 vs 0.65).
+**LogisticRegression regularizado** (C=0.5) batió al ExtraTrees en el test 2025
+(0.71* vs 0.65). **\* El 0.71 es 2025-específico**: el CV rolling-origin honesto
+es 0.63 ± 0.08 y la media per-year 2018-2025 es 0.61 (Spearman con val_year
+= -0.17, p=0.69, sin tendencia monotónica). Detalle en §7.2.
 
 Config final elegida:
 - **MATCH**: probabilidad de **Elo con margen** (mejor logloss, 0.585; AUC 0.75).
@@ -212,8 +215,8 @@ media final (menor = mejor):
 El ruido del clamp quedó cuantificado y con plan de corrección en
 [`../PLAN_MEJORA_CLAMP.md`](../PLAN_MEJORA_CLAMP.md).
 
-Todo con **134 tests verdes**; el simulador y el API arrancan sin cambios de
-interfaz.
+Todo con **142 tests verdes** (134 + 8 nuevos para el adapter v2); el simulador
+y el API arrancan sin cambios de interfaz.
 
 ### 7.2 Validación per-year del set v2 (post-integración) — el "0.71" es 2025-específico
 

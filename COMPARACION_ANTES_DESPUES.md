@@ -103,6 +103,6 @@ y por el clamp adaptativo del SetPredictor. Detalle en
 
 ```bash
 python -m src.models.measure_precision --save baseline   # antes (honesto)
-python -m src.models.train_improved                      # después + artefactos
-python -m pytest -q                                      # 134 tests verdes
+python -m src.models.train_improved                      # después + artefactos v2
+python -m pytest -q                                      # 142 tests verdes
 ```

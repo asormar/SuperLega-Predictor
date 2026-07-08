@@ -87,7 +87,12 @@ Métricas en el set de validación (año 2023, 352 sets, balance de clases ≈ 5
 | XGBoost | 0.540 | 0.556 | 0.2703 | 0.538 | 0.540 |
 | LightGBM | 0.548 | 0.563 | 0.2696 | 0.547 | 0.548 |
 
-**Modelo campeón: ExtraTrees** (AUC = 0.6275). Es elegido por AUC porque es invariante al threshold y captura el ordenamiento de probabilidades, que es lo que el simulador necesita para el clamp adaptativo.
+**Modelo campeón: ExtraTrees** (AUC = 0.6275) en la versión legacy. Es elegido
+por AUC porque es invariante al threshold y captura el ordenamiento de
+probabilidades, que es lo que el simulador necesita para el clamp adaptativo.
+La versión de **producción** (v2) usa LogisticRegression con recencia y
+entrena en 2022-2024 — ver el banner al inicio del documento y
+[`mejora_precision_2026-07.md` §6-§7.2](mejora_precision_2026-07.md).
 
 ---
 
