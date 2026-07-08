@@ -19,6 +19,7 @@ y target `gana_local`, coherente con lo que un modelo vería ANTES del partido.
 import sys
 import math
 from pathlib import Path
+from typing import Optional
 from collections import defaultdict, deque
 
 import numpy as np
