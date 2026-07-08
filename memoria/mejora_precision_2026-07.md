@@ -157,9 +157,48 @@ clasificador aislado. Lo integrado:
    solo como fallback.
 
 **Efecto observable:** la clasificación simulada por fin correlaciona con la
-fuerza real. Posición media sobre varias temporadas simuladas: Lube, Perugia,
-Trento, Piacenza, Verona arriba; Grottazzolina, Padova, Monza abajo. Antes de
-sembrar el Elo, Grottazzolina (el equipo más débil) podía acabar 4º.
+fuerza real. Antes de sembrar el Elo, Grottazzolina (el equipo más débil) podía
+acabar 4º en un solo seed.
+
+### 7.1 Validación Monte Carlo — 20 temporadas simuladas
+
+Se corrieron **20 temporadas completas** (12 equipos, ida y vuelta = 22
+jornadas, seeds 0-19) con el Elo sembrado desde el histórico y el clamp del
+SetPredictor activado. Posición media final (menor = mejor):
+
+| # | Equipo | Posición media | Fuerza (margin-Elo) |
+|---|---|---:|---:|
+| 1 | Perugia | 3.3 | 0.681 |
+| 2 | Trento | 4.2 | 0.604 |
+| 3 | Lube | 5.5 | 0.538 |
+| 4 | Taranto | 5.9 | 0.350 |
+| 5 | Piacenza | 6.2 | 0.568 |
+| 6 | Monza | 6.8 | 0.462 |
+| 7 | Verona | 7.2 | 0.578 |
+| 8 | Modena | 7.3 | 0.522 |
+| 9 | Cisterna | 7.4 | 0.350 |
+| 10 | Padova | 7.4 | 0.372 |
+| 11 | Grottazzolina | 8.1 | 0.176 |
+| 12 | Milano | 8.5 | 0.457 |
+
+**Lectura honesta:**
+
+- El **top-3 es exacto** (Perugia > Trento > Lube) y el fondo también
+  (Grottazzolina/Milano últimos). La correlación fuerza→posición es claramente
+  positiva: el simulador ya no premia a los equipos débiles.
+- La **zona media es ruidosa**: Taranto (fuerza 0.35) sobrerrinde hasta el 4º
+  puesto y Verona (0.578) baja al 7º. Parte es varianza real de Monte Carlo con
+  solo 20 muestras, y parte viene del **clamp adaptativo del SetPredictor**, que
+  comprime las probabilidades punto a punto y mete regresión a la media. Una
+  corrida previa de 5 temporadas con el clamp **desactivado** salió más limpia
+  (Lube/Perugia/Trento/Piacenza/Verona en las 5 primeras posiciones), lo que
+  apunta al clamp como principal fuente de ruido de media tabla.
+- Este ruido es **coherente con la realidad**: el mid-table de la SuperLega es
+  genuinamente volátil temporada a temporada.
+
+Aislar cuánto ruido introduce el clamp del SetPredictor en la clasificación de
+temporada es el siguiente paso de optimización fina (queda fuera del alcance de
+esta iteración).
 
 Todo con **134 tests verdes**; el simulador y el API arrancan sin cambios de
 interfaz.

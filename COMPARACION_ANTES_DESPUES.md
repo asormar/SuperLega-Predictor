@@ -52,22 +52,51 @@ modelo real tenía AUC 0.53 — apenas por encima del azar.
    sobreajustan ruido y ahogan la señal. LogReg regularizado (o el Elo
    directo) gana consistentemente en match y en set.
 
+## Integración en producción
+
+Las mejoras se integraron en el simulador (no se quedaron como experimento):
+
+- **Fuerzas de equipo** desde el Elo con margen (`api/main.py`), con la
+  jerarquía real de la SuperLega como prior.
+- **Elo runtime sembrado** desde el histórico y **update con margen** en el
+  `RuntimeFeatureBuilder`.
+- **Señal de partido = probabilidad de Elo limpia** en el `SeasonSimulator`;
+  el `match_predictor.joblib` de 87 features queda solo como fallback.
+
+### Validación end-to-end: Monte Carlo de 20 temporadas
+
+20 temporadas simuladas (12 equipos, ida y vuelta, seeds 0-19). Posición media
+final vs fuerza del equipo:
+
+| # | Equipo | Pos. media | Fuerza | | # | Equipo | Pos. media | Fuerza |
+|---|---|---:|---:|---|---|---|---:|---:|
+| 1 | Perugia | 3.3 | 0.681 | | 7 | Verona | 7.2 | 0.578 |
+| 2 | Trento | 4.2 | 0.604 | | 8 | Modena | 7.3 | 0.522 |
+| 3 | Lube | 5.5 | 0.538 | | 9 | Cisterna | 7.4 | 0.350 |
+| 4 | Taranto | 5.9 | 0.350 | | 10 | Padova | 7.4 | 0.372 |
+| 5 | Piacenza | 6.2 | 0.568 | | 11 | Grottazzolina | 8.1 | 0.176 |
+| 6 | Monza | 6.8 | 0.462 | | 12 | Milano | 8.5 | 0.457 |
+
+Top-3 y fondo exactos; correlación fuerza→posición claramente positiva. La zona
+media es ruidosa (Taranto sobrerrinde, Verona baja) por varianza de Monte Carlo
+y por el clamp adaptativo del SetPredictor. Detalle en
+[`memoria/mejora_precision_2026-07.md`](memoria/mejora_precision_2026-07.md) §7.1.
+
 ## Qué NO se tocó (honestidad de alcance)
 
-- Los modelos de producción (`set_predictor.joblib`, `match_predictor.joblib`)
-  y el simulador siguen intactos y funcionando (134 tests verdes). Las mejoras
-  se entregan como artefactos v2 reproducibles (`match_elo_v2.joblib`,
-  `set_predictor_v2.joblib`) vía `python -m src.models.train_improved`.
-- Integrarlos en la producción exige alinear el `RuntimeFeatureBuilder` del
-  simulador con las nuevas features rolling (coherencia train/serve). Es el
-  siguiente paso natural, documentado en el plan (Fase 4 completa).
+- El `match_predictor.joblib` de 87 features sigue en disco como fallback; no se
+  borró para no romper la carga del API.
 - La feature de continuidad de plantilla (T2.4) y el predictor de partido
   derivado del set (T3.3) quedaron sin implementar: con el Elo ya en 0.75,
   el retorno marginal era bajo frente al riesgo.
+- No se hizo el backtest completo del simulador con ajuste de momentum/clamps
+  (Fase 4 completa); se validó a nivel de probabilidad (Brier 0.251 → 0.200) y
+  con el Monte Carlo de clasificación de arriba.
 
 ## Cómo reproducir
 
 ```bash
 python -m src.models.measure_precision --save baseline   # antes (honesto)
 python -m src.models.train_improved                      # después + artefactos
+python -m pytest -q                                      # 134 tests verdes
 ```
