@@ -162,9 +162,21 @@ acabar 4º en un solo seed.
 
 ### 7.1 Validación Monte Carlo — 20 temporadas simuladas
 
+> **⚠️ TABLA INVALIDADA (2026-07-08, misma tarde).** Al investigar el ruido
+> del clamp se descubrió que esta corrida se ejecutó con el sembrado de Elo
+> **roto** (bug `Optional` en `rolling_features.py`: el API caía en silencio
+> al fallback win-rate + Elo plano). La tabla se conserva como registro del
+> proceso, pero NO refleja la integración margin-Elo. El diagnóstico completo,
+> la cuantificación ON/OFF con el fix aplicado y el plan de corrección están
+> en [`../PLAN_MEJORA_CLAMP.md`](../PLAN_MEJORA_CLAMP.md). Con el fix, 6
+> temporadas ida simple dan Spearman fuerza→posición 0.87-0.89, y el clamp
+> del SetPredictor demostró aportar cero señal (ρ≈0 con p_elo) y +22% de
+> varianza de posición.
+
 Se corrieron **20 temporadas completas** (12 equipos, ida y vuelta = 22
-jornadas, seeds 0-19) con el Elo sembrado desde el histórico y el clamp del
-SetPredictor activado. Posición media final (menor = mejor):
+jornadas, seeds 0-19) con el Elo *supuestamente* sembrado desde el histórico
+(en realidad plano, ver aviso) y el clamp del SetPredictor activado. Posición
+media final (menor = mejor):
 
 | # | Equipo | Posición media | Fuerza (margin-Elo) |
 |---|---|---:|---:|
@@ -187,18 +199,14 @@ SetPredictor activado. Posición media final (menor = mejor):
   (Grottazzolina/Milano últimos). La correlación fuerza→posición es claramente
   positiva: el simulador ya no premia a los equipos débiles.
 - La **zona media es ruidosa**: Taranto (fuerza 0.35) sobrerrinde hasta el 4º
-  puesto y Verona (0.578) baja al 7º. Parte es varianza real de Monte Carlo con
-  solo 20 muestras, y parte viene del **clamp adaptativo del SetPredictor**, que
-  comprime las probabilidades punto a punto y mete regresión a la media. Una
-  corrida previa de 5 temporadas con el clamp **desactivado** salió más limpia
-  (Lube/Perugia/Trento/Piacenza/Verona en las 5 primeras posiciones), lo que
-  apunta al clamp como principal fuente de ruido de media tabla.
+  puesto y Verona (0.578) baja al 7º. *(Diagnóstico posterior: la causa
+  principal era el sembrado roto — ver aviso arriba — más el clamp comprimiendo
+  diferencias sin señal.)*
 - Este ruido es **coherente con la realidad**: el mid-table de la SuperLega es
   genuinamente volátil temporada a temporada.
 
-Aislar cuánto ruido introduce el clamp del SetPredictor en la clasificación de
-temporada es el siguiente paso de optimización fina (queda fuera del alcance de
-esta iteración).
+El ruido del clamp quedó cuantificado y con plan de corrección en
+[`../PLAN_MEJORA_CLAMP.md`](../PLAN_MEJORA_CLAMP.md).
 
 Todo con **134 tests verdes**; el simulador y el API arrancan sin cambios de
 interfaz.

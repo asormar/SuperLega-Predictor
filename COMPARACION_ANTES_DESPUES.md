@@ -65,6 +65,12 @@ Las mejoras se integraron en el simulador (no se quedaron como experimento):
 
 ### Validación end-to-end: Monte Carlo de 20 temporadas
 
+> **⚠️ Tabla invalidada:** esta corrida se ejecutó con el sembrado de Elo roto
+> (bug `Optional`, arreglado después). Diagnóstico y cifras corregidas en
+> [`PLAN_MEJORA_CLAMP.md`](PLAN_MEJORA_CLAMP.md) — con el fix: Spearman
+> fuerza→posición 0.87-0.89 (6 temporadas), y el clamp del SetPredictor
+> demostró aportar cero señal y +22% de varianza.
+
 20 temporadas simuladas (12 equipos, ida y vuelta, seeds 0-19). Posición media
 final vs fuerza del equipo:
 
