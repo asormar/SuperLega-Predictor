@@ -6,8 +6,18 @@
 > de set no tenían leakage de temporada completa). La auditoría de precisión
 > encontró que un **LogisticRegression regularizado con pesos de recencia**
 > (half-life 2 temporadas, entrenado en 2022-2024) lo mejora a **AUC 0.71 /
-> acc 0.66**, confirmando que en este régimen de datos pequeños los modelos
-> lineales baten a los árboles profundos.
+> acc 0.66** en el test de 2025, confirmando que en este régimen de datos
+> pequeños los modelos lineales baten a los árboles profundos.
+>
+> ⚠️ **Importante (validación per-year, ver
+> [`mejora_precision_2026-07.md` §7.2](mejora_precision_2026-07.md)):** el
+> "AUC 0.71" es el test sobre 2025/26 (853 sets, la temporada más grande del
+> dataset). El **CV honesto rolling-origin de 2 folds** da **0.63 ± 0.08** y
+> la **media per-year 2018-2025** da **0.61** (Spearman con val_year = -0.17,
+> p=0.69, sin tendencia monotónica). El legacy ExtraTrees tenía CV 0.62 ± 0.03
+> sobre 4 folds, así que la mejora del v2 en el rolling-origin multi-temporada
+> es +0.01 (dentro del ruido). El +0.06 del test aislado es **2025-específico**
+> y queda pendiente re-validar cuando llegue 2026/27.
 >
 > **Estado en producción (API):** desde este commit el `set_predictor_v2.joblib`
 > (LogReg+recencia) es el campeón de producción que carga `src/api/main.py`,

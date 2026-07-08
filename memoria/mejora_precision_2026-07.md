@@ -27,7 +27,11 @@ TFG: el hallazgo principal es tan importante como la mejora.
 | Modelo | AUC antes (honesto) | AUC después | Accuracy después |
 |---|---:|---:|---:|
 | MATCH | 0.53 | **0.75** | 0.69 |
-| SET | 0.65 | **0.71** | 0.66 |
+| SET | 0.65 | **0.71*** | 0.66 |
+
+\* El 0.71 del SET es el test sobre 2025 (853 sets, la temporada más grande
+del dataset). El CV rolling-origin multi-temporada da **0.63 ± 0.08** y la
+media per-year 2018-2025 da 0.61 — el detalle y las razones están en §7.2.
 
 Cifras exactas en [`../COMPARACION_ANTES_DESPUES.md`](../COMPARACION_ANTES_DESPUES.md).
 Plan original en [`../PLAN_MEJORA_PRECISION.md`](../PLAN_MEJORA_PRECISION.md).
@@ -210,6 +214,84 @@ El ruido del clamp quedó cuantificado y con plan de corrección en
 
 Todo con **134 tests verdes**; el simulador y el API arrancan sin cambios de
 interfaz.
+
+### 7.2 Validación per-year del set v2 (post-integración) — el "0.71" es 2025-específico
+
+> **Pregunta que motivó el análisis:** ¿el AUC 0.71 del set v2 es robusto o
+> depende de haber tenido "suerte" con la temporada de test? Se hizo un análisis
+> per-year deslizando la ventana de validación: para cada temporada T, entrenar
+> en los años previos con la misma config (LogReg C=0.5, recencia half-life=2,
+> 21 features de `SET_FEATURE_COLS`) y medir en T.
+
+**Resultado per-year (train = años previos, val = T):**
+
+| Temporada | n_sets | AUC | LogLoss | Accuracy |
+|---|---:|---:|---:|---:|
+| 2018 | 154 | 0.6003 | 0.6675 | 0.6169 |
+| 2019 | 186 | 0.6082 | 0.6760 | 0.5968 |
+| 2020 | 229 | **0.6407** | 0.6719 | 0.5939 |
+| 2021 | 244 | 0.5857 | 0.6726 | 0.5779 |
+| 2022 | 252 | 0.5796 | 0.6878 | 0.5754 |
+| 2023 | 352 | 0.5743 | 0.6960 | 0.5653 |
+| 2024 | 482 | 0.5828 | 0.6810 | 0.5913 |
+| **2025** | **853** | **0.7047** | **0.6329** | **0.6600** |
+
+**Spearman(val_year, AUC) = −0.17, p=0.69.** La correlación monotónica con el
+año es NO significativa y ligeramente negativa: la teoría de "mejora
+monotónica con el tiempo" está refutada. **2018-2024 se mueven en una banda
+estrecha** (0.57-0.64, con 2020 como el mejor año viejo en 0.64), y el salto a
+0.70 aparece **solo en 2025**.
+
+**El salto 2024 → 2025 de +0.122 AUC es real y no es ruido:**
+gap demasiado grande para explicarse por `n=482` vs `n=853` (la diferencia de
+estabilidad no mueve 0.12 de AUC). El modelo le va notablemente mejor a 2025
+que a cualquier temporada anterior.
+
+**Razones más probables del salto 2025:**
+
+1. **2025 es la temporada más grande del dataset** (853 sets, +77% vs 2024).
+   La métrica es mucho más estable, pero eso solo no explica +0.12.
+2. **La recencia (half-life=2) hace que 2024 sea el training más pesado para
+   predecir 2025.** El modelo "memoriza 2024 y predice 2025 ≈ 2024++", y
+   funciona porque la dinámica de la SuperLega es estable entre temporadas
+   consecutivas.
+3. **Para val=2024, el training más pesado son 2022 y 2023** (temporadas
+   chicas, 252 y 352 sets), y el modelo tiene poco material reciente para
+   aprender. La predicción de 2024 es la que más sufre por este motivo, no la
+   de 2025.
+
+**Lo que esto significa para la narrativa del modelo:**
+
+- El CV honesto de 2 folds (`train=[2022,2023]→val 2024` + `train=[2023,2024]
+  →val 2025`) da **AUC 0.631 ± 0.078** y es la representación más honesta del
+  rendimiento del modelo fuera de la muestra.
+- El "0.71" que aparece como headline en `set_predictor.md`, en el banner del
+  TL;DR y en `COMPARACION_ANTES_DESPUES.md` es **el número de 2025, no del
+  modelo en general**. La media per-year (0.61) y la CV (0.63) son las
+  magnitudes defendibles.
+- El legacy ExtraTrees (champion anterior) tenía CV AUC 0.62 ± 0.03 sobre 4
+  folds (2018-2024). La diferencia **CV v2 (0.63) vs CV legacy (0.62) es
+  +0.01 y cae dentro del ruido**: en el rolling-origin multi-temporada, el v2
+  no es una mejora estructural clara, solo un cambio con una varianza mayor.
+
+**Follow-up obligatorio (warning W1 del sdd-verify):** **re-validar con la
+temporada 2026/27 cuando esté disponible.** Si el AUC se mantiene por encima
+de ~0.65 en una temporada no vista en training, la mejora es estructural (el
+modelo aprendió algo real). Si vuelve a ~0.60, el 0.71 de 2025 fue una
+coincidencia favorable entre sample-size y ventana de recencia.
+
+Para esta re-validación basta con:
+
+```bash
+# Tras descargar la temporada 2026/27 en DB/sets_partidos.csv
+python -m src.models.train_improved   # re-genera set_predictor_v2.joblib
+                                     # con train incluyendo 2025
+python -c "from src.models.measure_precision import measure; print(measure())"
+```
+
+Y comparar el AUC en 2026 contra los números de 2018-2025 de la tabla de
+arriba. **No tocar el protocolo, no cambiar el modelo: solo agregar datos y
+medir igual.**
 
 ## 8. Qué NO se hizo (honestidad de alcance)
 
