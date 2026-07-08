@@ -1,0 +1,31 @@
+{
+  "match": {
+    "auc": 0.7499091569767443,
+    "logloss": 0.5851291528353485,
+    "brier": 0.20040962947277075,
+    "acc": 0.6915887850467289,
+    "n": 214
+  },
+  "set": {
+    "auc": 0.708538973756365,
+    "logloss": 0.6252358237947503,
+    "brier": 0.21756908106864067,
+    "acc": 0.6576787807737398,
+    "n": 853
+  },
+  "config": {
+    "match_features": [
+      "elo_diff",
+      "diff_form_ewma",
+      "h2h_win_rate_h",
+      "diff_set_ratio",
+      "diff_point_ratio"
+    ],
+    "train_seasons": [
+      2022,
+      2023,
+      2024
+    ],
+    "test_season": 2025
+  }
+}
