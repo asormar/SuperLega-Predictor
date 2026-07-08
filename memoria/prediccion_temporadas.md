@@ -121,7 +121,7 @@ El `RuntimeFeatureBuilder` (`src/simulation/feature_builder.py`) es la pieza cla
 
 | Atributo | Tipo | Descripción |
 |---|---|---|
-| `elo` | `dict[team, float]` | Rating Elo (K=32) actualizado tras cada partido |
+| `elo` | `dict[team, float]` | Rating Elo (K=28) actualizado tras cada partido |
 | `results` | `dict[team, list]` | Historial de resultados `(win, sets_fav, sets_contra)` |
 | `h2h` | `dict[(a,b), dict]` | Enfrentamientos directos simulados |
 | `streaks` | `dict[team, int]` | Racha actual (+/- consecutiva) |
@@ -144,7 +144,7 @@ Para cada partido simulado, se construyen en tiempo real:
 | `h_set_win_rate`, `h_set_diff_exp` | Suma de sets a favor / contra |
 | `h_forma_home`, `h_forma_away` | Win rate desglosado |
 | `h_racha`, `diff_racha` | `streaks[team]` |
-| `elo_h`, `elo_a`, `elo_diff`, `elo_win_prob_h` | `elo[team]` con K=32 y home adv=65 |
+| `elo_h`, `elo_a`, `elo_diff`, `elo_win_prob_h` | `elo[team]` con K=28 y home adv=60 (canónicos en `src/data/rolling_features.py`) |
 | `h_h2h_win_rate` | Histórico + simulado |
 | `jornada_num` | Contador del partido en el calendario |
 
@@ -153,7 +153,7 @@ Para cada partido simulado, se construyen en tiempo real:
 ```python
 # src/simulation/feature_builder.py
 def update(self, local, visitante, sets_local, sets_visitante, winner):
-    # 1. Actualizar Elo (K=32)
+    # 1. Actualizar Elo (K=28, canónico de src.data.rolling_features)
     # 2. Añadir resultado a results[team]
     # 3. Actualizar rachas (streaks)
     # 4. Registrar H2H
@@ -402,7 +402,7 @@ La calibración con MatchPredictor añade ~60s (de 10s a 70s) porque se evalúa 
 
 5. **Sin lesiones ni mercado de fichajes**: el rendimiento de los equipos es constante durante toda la temporada.
 
-6. **Elo simplificado**: se usa Elo clásico con K=32, sin ajustes por margen de victoria o importancia del partido.
+6. **Elo simplificado**: se usa Elo clásico con K=28, sin ajustes por margen de victoria o importancia del partido.
 
 ---
 

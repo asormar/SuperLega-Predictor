@@ -16,6 +16,7 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 from src.data.team_mapper import normalize_team_name
+from src.data.rolling_features import ELO_K, ELO_HOME_ADV, ELO_BASE
 from src.simulation.constants import AVG_POINTS_PER_SET
 from src.data.feature_store import (
     MATCH_FEATURE_COLS, ENRICHED_MATCH_COLS, ROSTER_BASIC_COLS,
@@ -23,12 +24,9 @@ from src.data.feature_store import (
 
 
 # ─────────────────────────────────────────────────────────────
-# Constantes de Elo
+# Constantes generales (Elo canónico importado de rolling_features)
 # ─────────────────────────────────────────────────────────────
 
-ELO_K = 32          # Factor K para actualizacion
-ELO_BASE = 1500     # Elo inicial para equipos nuevos
-ELO_HOME_ADV = 65   # Ventaja de campo en puntos Elo (~P(home)=0.59 con igualdad)
 ASSUMED_REST_DAYS = 7  # Descanso entre jornadas (simplificado)
 
 

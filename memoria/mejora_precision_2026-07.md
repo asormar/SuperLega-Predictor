@@ -157,8 +157,13 @@ clasificador aislado. Lo integrado:
    la señal de Elo las primeras jornadas y **diluía** el buen prior. Ahora es
    fiel desde la jornada 1. (Parámetro opt-in: el arranque plano se conserva por
    defecto para no romper el test de schema.)
-3. **Update de Elo con margen** en el `RuntimeFeatureBuilder` (alineado con el
-   modelo offline: 3-0 mueve más que 3-2).
+3. **Update de Elo con margen** en el `RuntimeFeatureBuilder` importando
+   las constantes canónicas desde `src.data.rolling_features`
+   (K=28, HOME_ADV=60, ELO_BASE=1500, ELO_SEASON_REGRESS=0.25). Antes
+   de este fix las constantes estaban duplicadas con valores distintos
+   (runtime usaba K=32, HOME_ADV=65) — train/serve skew clásico.
+   Margen mult `1 + 0.15·(|diff_sets|-1)` (3-0 → 1.30, 3-1 → 1.15,
+   3-2 → 1.00) aplicado en ambos lados.
 4. **Señal de partido = probabilidad de Elo limpia** en el `SeasonSimulator`,
    en lugar del MatchPredictor de 87 features (leaky). El artefacto viejo queda
    solo como fallback.

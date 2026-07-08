@@ -30,7 +30,11 @@ sys.path.insert(0, str(BASE_DIR))
 
 from src.data.team_mapper import normalize_team_name
 
-# ─── Parámetros (tuneables; ver optimize_elo) ───
+# ─── Parámetros (tuneables; ver optimize_elo) ────────────────────────────────
+# CANONICAL Elo constants — single source of truth. Other modules (e.g. the
+# RuntimeFeatureBuilder) import these instead of redefining them. The values
+# match what was used to compute get_historical_team_elo() and the API
+# team strengths, so runtime updates stay coherent with the historical signal.
 ELO_BASE = 1500.0
 ELO_K = 28.0
 ELO_HOME_ADV = 60.0
