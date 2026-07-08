@@ -208,6 +208,57 @@ def build_rolling_match_features(
     return pd.DataFrame(feat_rows)
 
 
+def get_historical_team_elo(
+    sp: Optional[pd.DataFrame] = None,
+    elo_k: float = ELO_K,
+    elo_home_adv: float = ELO_HOME_ADV,
+    elo_season_regress: float = ELO_SEASON_REGRESS,
+) -> dict:
+    """
+    Rating final de Elo con margen por equipo, replayeando todo el histórico
+    (sets_partidos.csv) en orden cronológico. Ratings centrados en ELO_BASE.
+
+    Returns:
+        dict {nombre_canonico: rating_elo (float)}.
+    """
+    if sp is None:
+        sp = pd.read_csv(BASE_DIR / "DB" / "sets_partidos.csv", encoding="utf-8")
+    m = _aggregate_matches(sp)
+
+    elo = defaultdict(lambda: ELO_BASE)
+    last_season = {}
+    for _, r in m.iterrows():
+        h, a, s = r["local"], r["visitante"], r["temporada_inicio"]
+        for t in (h, a):
+            if last_season.get(t) != s and t in last_season:
+                elo[t] = (1 - elo_season_regress) * elo[t] + elo_season_regress * ELO_BASE
+            last_season[t] = s
+        eh, ea = elo[h], elo[a]
+        exp = _elo_expected(eh + elo_home_adv, ea)
+        mov = abs(r["sets_h"] - r["sets_a"])
+        mm = 1.0 + 0.15 * (mov - 1)
+        d = elo_k * mm * ((1.0 if r["gana_local"] == 1 else 0.0) - exp)
+        elo[h] = eh + d
+        elo[a] = ea - d
+
+    return dict(elo)
+
+
+def get_historical_team_strengths(sp: Optional[pd.DataFrame] = None) -> dict:
+    """
+    Fuerza [0,1] por equipo derivada del rating final de Elo con margen.
+
+    Mapea el rating de `get_historical_team_elo` a [0,1] con una logística
+    centrada en ELO_BASE (escala 400). Prior de fuerza mucho más fiel que el
+    win-rate plano: recencia (regresión entre temporadas) + margen de victoria.
+
+    Returns:
+        dict {nombre_canonico: fuerza en [0,1]}.
+    """
+    elo = get_historical_team_elo(sp)
+    return {t: 1.0 / (1.0 + 10 ** (-(e - ELO_BASE) / 400.0)) for t, e in elo.items()}
+
+
 ROLLING_MATCH_COLS = [
     "elo_h", "elo_a", "elo_diff", "elo_win_prob_h",
     "h_win_rate", "a_win_rate", "diff_win_rate",

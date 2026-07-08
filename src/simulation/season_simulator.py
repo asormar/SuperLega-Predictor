@@ -378,11 +378,17 @@ class SeasonSimulator:
                     and self.feature_builder and hasattr(self.feature_builder, 'build_features')):
                 try:
                     match_features_df = self.feature_builder.build_features(home, away, jornada_num)
+                    # Señal de partido: probabilidad de Elo con margen (limpia,
+                    # sin leakage); MatchPredictor solo como fallback.
+                    _elo_p = match_features_df.iloc[0].get("elo_win_prob_h", None)
                     if self.match_predictor.feature_names:
                         match_features_df = match_features_df.reindex(
                             columns=self.match_predictor.feature_names, fill_value=0.0,
                         )
-                    p_match_home = self.match_predictor.predict_proba(match_features_df)[0, 1]
+                    if _elo_p is not None:
+                        p_match_home = float(_elo_p)
+                    else:
+                        p_match_home = self.match_predictor.predict_proba(match_features_df)[0, 1]
                     # Resolve damping: None -> fixed, callable -> per-jornada
                     if damping is None:
                         current_damping = MATCH_PREDICTOR_DAMPING
@@ -539,14 +545,22 @@ class SeasonSimulator:
                     match_features_df = self.feature_builder.build_features(
                         home, away, jornada_num,
                     )
-                    # Alinear columnas con lo que espera el modelo
+                    # Señal de partido: probabilidad de Elo con margen (limpia,
+                    # sin leakage). Reemplaza al MatchPredictor de 87 features,
+                    # que medido honestamente estaba a nivel de azar (AUC 0.53).
+                    # El MatchPredictor queda solo como fallback.
+                    _elo_p = match_features_df.iloc[0].get("elo_win_prob_h", None)
+                    # Alinear columnas con lo que espera el modelo (fallback)
                     if self.match_predictor.feature_names:
                         match_features_df = match_features_df.reindex(
                             columns=self.match_predictor.feature_names, fill_value=0.0,
                         )
-                    p_match_home = self.match_predictor.predict_proba(
-                        match_features_df
-                    )[0, 1]
+                    if _elo_p is not None:
+                        p_match_home = float(_elo_p)
+                    else:
+                        p_match_home = self.match_predictor.predict_proba(
+                            match_features_df
+                        )[0, 1]
                     # Resolve damping: None -> fixed, callable -> per-jornada
                     if damping is None:
                         current_damping = MATCH_PREDICTOR_DAMPING

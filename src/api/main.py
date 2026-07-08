@@ -90,8 +90,17 @@ except Exception as e:
     match_predictor = None
 
 try:
-    feature_builder = RuntimeFeatureBuilder()
-    print("[API] Feature builder cargado OK")
+    # Sembrar el Elo runtime desde el histórico (margin-Elo) para que la
+    # señal de partido sea fiel desde la jornada 1 en lugar de arrancar plano.
+    try:
+        from src.data.rolling_features import get_historical_team_elo
+        _initial_elo = get_historical_team_elo()
+    except Exception as _e:
+        print(f"[API] WARN: no se pudo sembrar Elo historico ({_e}); arranque plano")
+        _initial_elo = None
+    feature_builder = RuntimeFeatureBuilder(initial_elo=_initial_elo)
+    print("[API] Feature builder cargado OK"
+          f"{' (Elo sembrado)' if _initial_elo else ''}")
 except Exception as e:
     print(f"[API] WARN: No se pudo cargar feature_builder: {e}")
     feature_builder = None
@@ -102,9 +111,23 @@ simulator = MatchSimulator(
     player_stats_gen=player_gen,
 )
 
-# ─── Fuerzas de equipos (calculadas desde match_features) ───
+# ─── Fuerzas de equipos ───
 def _compute_team_strengths() -> dict:
-    """Calcula la fuerza de cada equipo desde sus win rates en match_features."""
+    """
+    Fuerza [0,1] por equipo desde el rating final de Elo con margen
+    (src/data/rolling_features.py). Prior mucho más fiel que el win-rate
+    plano anterior: incorpora recencia (regresión entre temporadas) y
+    margen de victoria, y ordena los equipos según la jerarquía real de
+    la SuperLega. Si falla, cae al win-rate histórico de match_features.
+    """
+    try:
+        from src.data.rolling_features import get_historical_team_strengths
+        strengths = {t: round(float(v), 3)
+                     for t, v in get_historical_team_strengths().items()}
+        print(f"[API] Fuerzas (margin-Elo) calculadas para {len(strengths)} equipos")
+        return strengths
+    except Exception as e:
+        print(f"[API] WARN: margin-Elo fallo ({e}); fallback a win-rate")
     try:
         mf = pd.read_csv(BASE_DIR / "DB" / "features" / "match_features.csv", encoding="utf-8")
         mf["local"] = mf["local"].apply(normalize_team_name)
@@ -119,7 +142,7 @@ def _compute_team_strengths() -> dict:
                 continue
             wins = home["gana_local"].sum() + (1 - away["gana_local"]).sum()
             strengths[team] = round(float(wins / total), 3)
-        print(f"[API] Fuerzas calculadas para {len(strengths)} equipos")
+        print(f"[API] Fuerzas (win-rate fallback) calculadas para {len(strengths)} equipos")
         return strengths
     except Exception as e:
         print(f"[API] WARN: No se pudieron calcular fuerzas: {e}")
