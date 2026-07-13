@@ -17,7 +17,7 @@
 > `MatchSimulator.simulate_match()` directo **no usa el `MatchPredictor` para
 > nada**: solo recibe las fuerzas `home_strength/away_strength` y consulta el
 > `SetPredictor` para el clamp adaptativo. El artefacto
-> `match_predictor.joblib` se mantiene cargado en el API solo como fallback
+> `match_predictor.joblib` se mantiene cargado en el API solo como fallback. Ver `../models/plots/reliability_match.png` y `../models/plots/reliability_match_calibrado.png` para las curvas de calibración de esta versión legacy.
 > (no se borra para no romper la carga). El texto de abajo se conserva como
 > registro del diseño previo.
 

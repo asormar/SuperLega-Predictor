@@ -1,5 +1,8 @@
 # Predicción de Temporadas
 
+> **⚠️ ACTUALIZACIÓN 2026-07-13 — Señal de partido y set predictor en producción.**
+> La señal de partido es el **Elo con margen** (rolling, sin leakage, AUC 0.75 en test 2025/26); el `MatchPredictor` de 87 features queda solo como fallback. El set predictor de producción es la **v2 LogReg con recencia** (test 2025 AUC 0.71; legacy ExtraTrees como fallback). El proceso completo de mejora y las cifras detalladas están en [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
+
 ## Descripción
 
 La sección de predicción de temporadas genera un calendario round-robin (ida o ida+vuelta) para los equipos de la SuperLega, simula cada partido individualmente usando el motor de Cadenas de Markov con calibración ML, y acumula clasificaciones según el sistema de puntuación oficial. A diferencia de la predicción de partidos individuales, en este modo se activan dos integraciones ML que no se usan en el partido suelto: el **MatchPredictor** calibra las fuerzas de equipo antes de cada partido y el **SetPredictor** ajusta el clamp de probabilidad punto a punto al inicio de cada set.
@@ -65,28 +68,30 @@ def match_points(sets_winner: int, sets_loser: int) -> tuple[int, int]:
 La predicción de temporadas integra tres modelos ML con el motor de simulación:
 
 ```
-                        ┌─────────────────┐
-                        │ RuntimeFeature- │
-                        │    Builder      │
-                        │  (Elo, forma,   │
-                        │   rachas, H2H)  │
-                        └────────┬────────┘
-                                 │ 87 features
+                    ┌──────────────────────────────────┐
+                    │   margin_elo (rolling_features)  │
+                    │   elo_win_prob_h (AUC=0.75)      │
+                    │   + RuntimeFeatureBuilder         │
+                    │   (Elo dinámico, forma, H2H)     │
+                    └────────────┬─────────────────────┘
+                                 │ p_target (prob. partido)
                                  ▼
-┌──────────────┐        ┌─────────────────┐        ┌──────────────────┐
-│team_strengths│──damp──│ MatchPredictor   │──h_adj─│ MatchSimulator   │
-│  (input)     │        │ (XGBoost+isot.)  │        │ (Markov + punto) │
-└──────────────┘        │  AUC=0.707       │        └────────┬─────────┘
-                       └─────────────────┘                 │
-                                                           │ set_context
-                                                           ▼
-                                                  ┌──────────────────┐
-                                                  │ SetPredictor     │
-                                                  │ (ExtraTrees+isot)│
-                                                  │  clamp [0.20,    │
-                                                  │  0.80] adapt.    │
-                                                  └──────────────────┘
+┌──────────────┐        ┌────────────────────────┐        ┌──────────────────┐
+│team_strengths│──damp──│ _calibrate_strengths()  │──h_adj─│ MatchSimulator   │
+│  (input)     │        │ (damping adaptativo     │        │ (Markov + punto) │
+└──────────────┘        │  0.3→0.7, damping=0.5) │        └────────┬─────────┘
+                       └────────────────────────┘                 │
+                                                                  │ set_context
+                                                                  ▼
+                                                  ┌──────────────────────────┐
+                                                  │ LogRegSetPredictor v2    │
+                                                  │ (set_predictor_v2.joblib)│
+                                                  │ 21 features, AUC 0.71    │
+                                                  │ test 2025; CV 0.63±0.08 │
+                                                  │ clamp adapt. [0.10,0.90]│
+                                                  └──────────────────────────┘
 ```
+*Nota: El `MatchPredictor` de 87 features y el `SetPredictor` legacy (ExtraTrees calibrado) quedan en disco como fallback. El API carga los artefactos v2 primero.*
 
 **Comparación clave con la predicción de partidos sueltos:**
 
@@ -102,14 +107,123 @@ La predicción de temporadas integra tres modelos ML con el motor de simulación
 
 ## 4. Generador del Calendario
 
-El calendario se genera con permutaciones de los equipos. Para N equipos:
+El calendario se genera con el **método del círculo** (circle method, `src/simulation/season_simulator.py:62-161`, función `generate_jornadas`), que produce N-1 jornadas por vuelta con N/2 partidos cada una, donde todos los equipos juegan exactamente una vez por jornada.
+
+### 4.1. Algoritmo
+
+```
+1. Fijar el primer equipo de la lista.
+2. Disponer el resto en un círculo que rota N-1 veces.
+3. En cada rotación, emparejar equipos opuestos en el círculo.
+4. Alternar local/visitante según la rotación par/impar.
+5. Barajar el orden de jornadas y de partidos con un `Random` local
+   (controlado por `seed`, sin contaminar el RNG global de `simulate_match`).
+```
+
+La asignación local/visitante y los emparejamientos del círculo no se modifican en la baraja (se mantiene la estructura del calendario). Si N es impar, se añade un "bye" (None) que ocupa la plaza del equipo que descansa; ese partido se elimina al final.
+
+### 4.2. Formato
+
+```python
+# Estructura: lista de jornadas, cada jornada es una lista de tuplas (home, away)
+schedule = [
+    [("Trento", "Perugia"), ("Verona", "Milano"), ...],  # jornada 1
+    [("Milano", "Trento"), ("Perugia", "Verona"), ...],  # jornada 2
+    ...
+]
+```
+
+Para N=12 equipos: N-1 = **11 jornadas** por vuelta, N/2 = **6 partidos** por jornada.
+
+### 4.3. Estadísticas de tamaño
 
 | Modo | Nº partidos | Fórmula |
 |---|---|---|
 | Ida simple | N×(N−1)/2 | 12 equipos → **66** partidos |
 | Ida y vuelta | N×(N−1) | 12 equipos → **132** partidos |
 
-Los partidos se barajan aleatoriamente con `random.shuffle()` para simular un orden de jornadas realista. El simulador también soporta simulación en dos mitades (`half="first"` y `half="second"`) para permitir al usuario continuar desde un estado parcial sin perder progreso.
+### 4.4. Determinismo
+
+El mismo `seed` de Python produce exactamente el mismo calendario. Si `seed=None`, cada llamada genera un orden distinto. En el modo doble vuelta, la vuelta usa una semilla derivada (`seed + 1`) y se baraja de forma independiente para evitar correlación con la ida.
+
+### 4.5. Diferencia con la generación anterior
+
+Antes del Batch 3, el calendario se generaba con `generate_round_robin` (una permutación plana de `itertools.permutations` para una sola ronda, sin estructura de jornadas). El método del círculo produce un calendario con estructura de jornadas real (como la SuperLega real: cada equipo juega exactamente una vez por jornada), y la alternancia local/visitante sigue un patrón determinista.
+
+El simulador también soporta simulación en dos mitades (`half="first"` y `half="second"`, más `first_half_state`) para permitir al usuario continuar desde un estado parcial sin perder progreso.
+
+---
+
+## 4.6. Endpoints de Simulación Jornada a Jornada
+
+Además del endpoint único `POST /api/simular/temporada` (que simula la temporada completa de una vez), la API expone dos endpoints para un **flujo jornada a jornada** que permite al frontend avanzar incrementalmente:
+
+### `POST /api/simular/temporada/iniciar` (`main.py:603-651`)
+
+Inicializa una temporada: genera el calendario y devuelve el estado inicial. **NO simula ningún partido.**
+
+**Request:**
+```json
+{
+  "equipos": ["Trento", "Perugia", "Verona", "Piacenza", "Lube", "Milano", "Modena", "Monza", "Cisterna", "Padova", "Taranto", "Grottazzolina"],
+  "doble_vuelta": true,
+  "semilla": 42,
+  "fuerzas": {"Trento": 0.70}
+}
+```
+
+**Response:**
+```json
+{
+  "schedule": [[["Trento", "Perugia"], ["Verona", "Milano"], ...], ...],
+  "total_jornadas": 22,
+  "total_partidos": 132,
+  "initial_standings": [{"equipo": "Trento", "puntos": 0, ...}, ...],
+  "initial_player_stats": [],
+  "doble_vuelta": true
+}
+```
+
+El `schedule` tiene formato `list[list[tuple[str, str]]]`: una lista de jornadas, cada jornada es una lista de tuplas `(home, away)`. El frontend almacena este schedule y lo reenvía en cada llamada a `/jornada`.
+
+### `POST /api/simular/temporada/jornada` (`main.py:654-730`)
+
+Simula **una sola jornada** del calendario. El backend es **stateless**: el frontend mantiene el estado acumulado (`current_standings`, `current_player_stats`) y lo envía en cada llamada.
+
+**Request:**
+```json
+{
+  "equipos": ["Trento", "Perugia", ...],
+  "doble_vuelta": true,
+  "schedule": [[["Trento", "Perugia"], ...], ...],
+  "jornada_index": 0,
+  "current_standings": [{"equipo": "Trento", "puntos": 0, ...}, ...],
+  "current_player_stats": [],
+  "semilla": 42,
+  "fuerzas": {"Trento": 0.70},
+  "use_match_predictor": true,
+  "use_set_calibration": true
+}
+```
+
+**Response:**
+```json
+{
+  "jornada_index": 0,
+  "jornada_num": 1,
+  "total_jornadas": 22,
+  "matches": [{"local": "...", "visitante": "...", "resultado": "3-1", "ganador": "...", "sets": [...]}],
+  "updated_standings": [{"equipo": "Trento", "puntos": 3, ...}, ...],
+  "updated_player_stats": [...],
+  "is_complete": false
+}
+```
+
+La semilla de cada jornada se deriva como `semilla * 1000 + jornada_index` para que los resultados sean reproducibles jornada a jornada sin requerir replay de las previas. Cuando `is_complete` es `true`, el frontend sabe que la temporada ha terminado.
+
+### Relación con el flujo de dos mitades
+
+El flujo `half='first'`/`half='second'` (del endpoint único `/api/simular/temporada`) sigue existiendo para el caso de uso "simular temporada completa de una vez y opcionalmente pausar al descanso". El flujo jornada a jornada es un modo alternativo para la UI que quiere mostrar resultados incrementalmente. Ambos usan el mismo `generate_jornadas` y `SeasonSimulator` internamente.
 
 ---
 
@@ -126,7 +240,7 @@ El `RuntimeFeatureBuilder` (`src/simulation/feature_builder.py`) es la pieza cla
 | `h2h` | `dict[(a,b), dict]` | Enfrentamientos directos simulados |
 | `streaks` | `dict[team, int]` | Racha actual (+/- consecutiva) |
 | `standings_points` | `dict[team, int]` | Puntos SuperLega (para ranking) |
-| `elo_h_home` | derivado | Elo local con ventaja de campo (+65) |
+| `elo_h_home` | derivado | Elo local con ventaja de campo (+60) |
 
 ### 5.2. Carga de Perfiles Estáticos
 
@@ -163,15 +277,18 @@ def update(self, local, visitante, sets_local, sets_visitante, winner):
 
 ---
 
-## 6. MatchPredictor — Calibración de Fuerzas
+## 6. Margin-Elo (producción) — Calibración de Fuerzas
 
-El MatchPredictor (`src/models/match_predictor.py`) es un clasificador binario que predice `P(local gana partido)` a partir de 87 features. Fue entrenado con split temporal (train: 2016-2022, val: 2023, test: 2024):
+La señal de partido en producción es la **probabilidad de Elo con margen** (`src/data/rolling_features.py`), que reconstruye las features sin leakage desde `sets_partidos.csv`. Es un Elo determinista (no requiere modelo entrenado) con `K=28`, `HOME_ADV=60` y margen de victoria. Evaluado con protocolo rolling-origin sobre 2025:
 
-| Métrica Test | Valor |
+| Métrica Test (2025, N=214) | Valor |
 |---|---|
-| AUC-ROC | 0.707 |
-| Accuracy | 0.514 |
-| Brier Score | 0.245 |
+| AUC-ROC | 0.750 |
+| Accuracy | 0.692 |
+| Brier Score | 0.200 |
+| LogLoss | 0.585 |
+
+El `MatchPredictor` (`src/models/match_predictor.py`) de 87 features (XGBoost+isotónico, AUC reportado 0.707) queda en disco como fallback; su señal era leakage temporal (valor honesto ~0.53). Detalle en [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
 
 ### 6.1. Integración en el Flujo de Temporada
 
@@ -209,12 +326,21 @@ Con `damping=0.5` se aplica `√k` al odds ratio: si el MatchPredictor sugiere e
 
 ## 7. SetPredictor — Clamp Adaptativo
 
-El SetPredictor (`src/models/set_predictor.py`) es un ExtraTreesClassifier que predice `P(local gana set)` a partir de 20 features (incluyendo estado in-match como `set_num_norm`, `sets_h_antes`, `momentum_h`). En el flujo de temporada, se usa para **relajar el clamp** de probabilidad punto a punto que la simulación de Markov aplica por defecto.
+El set predictor de producción es `set_predictor_v2.py` (`LogRegSetPredictor`: LogReg C=0.5, recency half-life=2 temporadas, 21 features, entrenado en 2022-2024). Predice `P(local gana set)` a partir de 21 features que incluyen fuerza de equipo, diferencia Elo, win rate en sets, forma reciente, enfrentamientos directos y estado in-match (`set_num_norm`, `sets_h_antes`, `momentum_h`, `es_desempate`).
+
+| Métrica | Valor |
+|---|---|
+| AUC test 2025 (853 sets) | **0.709** |
+| CV rolling-origin 2 folds | 0.631 ± 0.078 |
+| Accuracy test 2025 | 0.658 |
+| Brier Score test 2025 | 0.218 |
+
+El legacy `set_predictor.py` (ExtraTrees calibrado, CV 4 folds 0.62 ± 0.03) queda en disco como fallback. En el flujo de temporada, el v2 se usa para **relajar el clamp** de probabilidad punto a punto que la simulación de Markov aplica por defecto.
 
 ### 7.1. Clamp por Defecto vs. Adaptativo
 
 ```python
-# src/simulation/simulator.py:229
+# src/simulation/simulator.py:247
 p_home_wins = np.clip(base_p + momentum_adj, 0.20, 0.80)  # comportamiento por defecto
 ```
 

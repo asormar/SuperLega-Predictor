@@ -1,17 +1,23 @@
 # Siguiente Sesión — Plan de Trabajo
 
+> **STATUS: HISTÓRICO (2026-07-06).** Esta guía documenta el estado al cierre de la sesión
+> del 2026-07-06, **antes** de la integración del Elo con margen (Batch 3) y del v2 LogReg
+> SetPredictor. El estado actual está documentado en [`../memoria/mejora_precision_2026-07.md`](../memoria/mejora_precision_2026-07.md)
+> y [`../memoria/INDICE.md`](../memoria/INDICE.md). Se mantiene como registro histórico del
+> trabajo realizado en esa sesión.
+
 Esta guía resume el estado del TFG PREDICTOR(2) y los próximos pasos recomendados para cuando vuelvas a trabajar en él.
 
 ## Estado Actual (al cierre de la sesión del 2026-07-06)
 
 - **Repo**: `C:\Users\Alejandro\Desktop\Universidad\4toCarrera\TFG\PREDICTOR(2)`. 18 commits en `main`. Sin remote (queda para cuando hagas `gh auth login`).
 - **Documentación**: 10 archivos en `memoria/` (ver `memoria/INDICE.md` para el índice).
-- **Modelos entrenados**: SetPredictor (ExtraTrees, AUC=0.654), MatchPredictor (XGBoost, AUC=0.707), PointProbabilityModel (LogReg), PlayerStatsGenerator (22 equipos).
-- **API funcionando**: 5 endpoints, validación Pydantic, CORS dev-only, Monte Carlo determinista con seed.
-- **Tests**: 0. Esto es la deuda más importante a resolver.
+- **Modelos entrenados**: SetPredictor (LogReg+recencia v2, test 2025 AUC 0.71; CV 0.63 ± 0.08; legacy ExtraTrees como fallback), MatchPredictor (margin-Elo, test 2025/26 AUC 0.75; artefacto viejo de 87 features como fallback), PointProbabilityModel (LogReg), PlayerStatsGenerator (22 equipos).
+- **API funcionando**: 7 endpoints (incluyendo `/temporada/iniciar` y `/temporada/jornada`), validación Pydantic, CORS dev-only, Monte Carlo determinista con seed.
+- **Tests**: 142 verdes (134 + 8 del v2 adapter).
 - **Linter/Format**: 0. Ruff + Black recomendados.
 - **CI**: 0. GitHub Actions recomendado.
-- **Memoria Engram**: sesión `predictor-tfg-2026-07-06` con 7 saves. Buscar con `mem_search(query: "TFG", project: "prueba")` o `mem_context(project: "prueba")`.
+- **Memoria Engram**: sesión `predictor-tfg-2026-07-06` con 7 saves. Buscar con `mem_search(query: "TFG", project: "predictor(2)")` o `mem_context(project: "predictor(2)")`.
 
 ## Sub-agentes que trabajaron en esta sesión
 

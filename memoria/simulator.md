@@ -4,7 +4,7 @@
 
 El `MatchSimulator` es el núcleo del sistema. Implementa un motor de simulación punto a punto basado en **Cadenas de Markov** que modela partidos de voleibol de la SuperLega. Cada punto se decide probabilísticamente en función de la fuerza relativa de los equipos, quién está sacando (sideout), el momentum acumulado (rachas), y el estado actual del set. El motor también soporta un modo **Monte Carlo** que ejecuta N simulaciones completas para obtener distribuciones de probabilidad.
 
-*Código: `src/simulation/simulator.py` (504 líneas)*
+*Código: `src/simulation/simulator.py` (452 líneas)*
 
 ---
 
@@ -14,10 +14,13 @@ El `MatchSimulator` es el núcleo del sistema. Implementa un motor de simulació
 ┌─────────────────────────────────────────────────────────────┐
 │                    MatchSimulator                            │
 │                                                             │
-│  Atributos:                                                  │
-│  ├─ set_predictor (opcional) → clamp adaptativo             │
+│  Atributos de __init__():                                    │
 │  ├─ point_model (opcional) → PointProbabilityModel          │
 │  └─ player_stats_gen (opcional) → PlayerStatsGenerator      │
+│                                                              │
+│  Parámetro por llamada:                                      │
+│  └─ set_predictor (duck-typed: .feature_names +             │
+│       .predict_proba(df)→[n,2]) → clamp adaptativo          │
 │                                                             │
 │  Métodos públicos:                                          │
 │  ├─ simulate_match() → MatchResult                          │
@@ -139,11 +142,12 @@ _simulate_set(set_number, point_probs, target_score, home_serves_first, ...)
 
 | Parámetro | Valor | Constante | Efecto |
 |---|---|---|---|
-| `MOMENTUM_BONUS` | 0.015 | `simulator.py:72` | +1.5% por punto consecutivo |
-| `MOMENTUM_MAX_STREAK` | 4 | `simulator.py:73` | Máximo de puntos que acumulan bonus (+6% total) |
-| `MOMENTUM_DECAY` | 0.5 | `simulator.py:74` | Decay del momentum entre sets |
-| `sideout` | 0.62 | `_default_point_probs()` | P(receptor gana el rally) |
-| Clamp por defecto | [0.20, 0.80] | `_simulate_set()` | Límites de p_home_wins |
+| `MOMENTUM_BONUS` | 0.015 | `constants.py:77` | +1.5% por punto consecutivo |
+| `MOMENTUM_MAX_STREAK` | 4 | `constants.py:78` | Máximo de puntos que acumulan bonus (+6% total) |
+| `MOMENTUM_DECAY` | 0.5 | `constants.py:79` | Decay del momentum entre sets |
+| `sideout` | 0.62 | `_default_point_probs()` (simulator.py:392-419) | P(receptor gana el rally) |
+| Clamp por defecto | [0.20, 0.80] | `_simulate_set()` (simulator.py:247) | Límites de p_home_wins — clamp init |
+| Clamp aplicación | — | `simulator.py:277` | `p_home_wins = np.clip(base_p + adj, clamp_low, clamp_high)` |
 | Clamp con SetPredictor | [0.10, 0.90] | con ajuste dinámico | Se relaja según contexto |
 | Target score normal | 25 | — | Sets 1-4 |
 | Target score tie-break | 15 | — | 5º set |

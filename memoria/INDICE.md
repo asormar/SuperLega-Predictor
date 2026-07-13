@@ -9,7 +9,7 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
 > leakage y se integró un modelo Elo con margen de victoria, subiendo el AUC de
 > partido a **0.75** y las fuerzas de equipo a la jerarquía real de la liga.
 > Proceso completo en [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md)
-> y comparación de cifras en [`../COMPARACION_ANTES_DESPUES.md`](../COMPARACION_ANTES_DESPUES.md).
+> y comparación de cifras en [`../docs/COMPARACION_ANTES_DESPUES.md`](../docs/COMPARACION_ANTES_DESPUES.md).
 > Las secciones marcadas abajo con métricas antiguas se conservan como registro
 > histórico; los valores vigentes están en el documento de proceso.
 
@@ -30,20 +30,20 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
 | [`set_predictor.md`](set_predictor.md) | `SetPredictor` — LogReg+recencia v2 en producción (test 2025 AUC 0.71*, CV 0.63 ± 0.08; legacy ExtraTrees como fallback) | ✅ Completo |
 | [`match_predictor.md`](match_predictor.md) | `MatchPredictor` — el AUC=0.707 era leakage; sustituido por Elo con margen (AUC 0.75); el artefacto viejo queda como fallback | ✅ Completo |
 | [`point_probability.md`](point_probability.md) | `PointProbabilityModel` — LogisticRegression + sideout 0.62 | ✅ Completo |
-| `benchmark.md` | `benchmark.py`, `benchmark_roster.py`, `benchmark_teams.py` — comparativas de modelos | ⏳ Pendiente |
+| `benchmark.md` | `benchmark.py`, `benchmark_roster.py`, `benchmark_teams.py` — comparativas de modelos | ✅ Completo |
 
 ### Capa de Datos
 
 | Documento | Cubre | Estado |
 |---|---|---|
-| `data_layer.md` | `data_pipeline.py`, `feature_store.py`, `team_mapper.py` — pipeline de datos y features | ⏳ Pendiente |
-| `player_stats_generator.md` | `player_stats_generator.py` — generación de stats sintéticas por jugador | ⏳ Pendiente |
+| `data_layer.md` | `data_pipeline.py`, `feature_store.py`, `team_mapper.py` — pipeline de datos y features | ✅ Completo |
+| `player_stats_generator.md` | `player_stats_generator.py` — generación de stats sintéticas por jugador | ✅ Completo |
 
 ### Simulación
 
 | Documento | Cubre | Estado |
 |---|---|---|
-| `simulator.md` | `MatchSimulator` — motor de Markov chain con momentum y sideout | ⏳ Pendiente |
+| `simulator.md` | `MatchSimulator` — motor de Markov chain con momentum y sideout | ✅ Completo |
 
 ### Infra
 

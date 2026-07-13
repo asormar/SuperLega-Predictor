@@ -117,6 +117,11 @@ Reporte de clasificación:
 
 El modelo tiene **alto recall para el local (0.81)** pero bajo recall para el visitante (0.39), lo que sugiere que tiende a sobre-predecir victorias del local. Esto es esperable porque (a) hay leve home advantage en los datos (56% gana_local) y (b) las features reflejan ese sesgo.
 
+![Curva de calibración del SetPredictor legacy (ExtraTrees): sin calibrar (izquierda) y calibrado (derecha)](../models/plots/reliability_set.png)
+![Curva de calibración del SetPredictor legacy calibrado](../models/plots/reliability_set_calibrado.png)
+
+*Figuras: Curvas de calibración del modelo ExtraTrees sin calibrar (arriba) y calibrado con isotonic (abajo). Generadas por `src/models/reliability_curve.py`. La curva calibrada sigue más cerca la diagonal, indicando mejor calibración de probabilidades.*
+
 ---
 
 ## 5. Top 10 Features Más Importantes
@@ -184,14 +189,20 @@ joblib.dump(save_data, path)
 
 El predictor completo pesa **~19 MB** (el `ExtraTrees` con 300 estimadores es el componente dominante).
 
-### Carga (`load`)
+### Carga (`try_load_v2`)
 
 ```python
-# src/api/main.py:58
-set_predictor = SetPredictor.load(MODELS_DIR / "set_predictor.joblib")
+# src/api/main.py:65-68
+set_predictor, sp_source = LogRegSetPredictor.try_load_v2(
+    MODELS_DIR / "set_predictor_v2.joblib",
+    MODELS_DIR / "set_predictor.joblib",
+)
+# sp_source: "v2_logreg_recency" o "legacy_extratrees"
 ```
 
-Si la carga falla (archivo corrupto o ausente), la API arranca en modo degraded: el `set_predictor` queda en `None` y el simulador usa el clamp por defecto `[0.20, 0.80]` sin calibración ML.
+El adaptador v2 (`LogRegSetPredictor`, `src/models/set_predictor_v2.py`) implementa una carga en cascada: primero intenta cargar `set_predictor_v2.joblib` (LogReg+recencia en producción); si no existe o falla, cae al `set_predictor.joblib` (ExtraTrees legacy, entrenado por `SetPredictor.train()`). Si ambos fallan, el `set_predictor` queda en `None` y el simulador usa el clamp por defecto `[0.20, 0.80]`.
+
+El retorno `sp_source` es un string que indica qué camino se cargó (`"v2_logreg_recency"` o `"legacy_extratrees"`), para trazabilidad en los logs del API y en el endpoint `/api/modelo/info`.
 
 ---
 
@@ -209,3 +220,51 @@ Si la carga falla (archivo corrupto o ausente), la API arranca en modo degraded:
 El `SetPredictor` implementa un patrón estándar de **comparar 6 modelos, seleccionar el mejor por AUC, y calibrar con isotonic**. El champion (ExtraTrees) alcanza un AUC de 0.65 en test, lo que está por encima del azar pero lejos de un predictor fuerte — lo cual es esperable porque la varianza intra-partido es alta y el volleyball tiene mucho "ruido" (puntos i.i.d. en rallies cortos).
 
 La integración con el simulador (clamp adaptativo) le da un rol práctico: relaja el clamp cuando el modelo está seguro de quién gana el set, y lo mantiene estricto cuando no. Esto reduce la varianza del simulador sin sobre-ajustar.
+
+---
+
+## 10. Adaptador LogRegSetPredictor (v2)
+
+El adaptador `LogRegSetPredictor` (`src/models/set_predictor_v2.py`, ~121 líneas) envuelve el modelo de producción **LogisticRegression con recencia** que sustituyó al ExtraTrees calibrado como campeón de la API en julio de 2026.
+
+### 10.1. Motivación
+
+El modelo legacy (ExtraTrees + calibración isotonic) tenía tres problemas en producción:
+
+1. **Tamaño**: ~19 MB frente a ~5 KB del LogReg, por los 300 estimadores del ExtraTrees.
+2. **AUC estancado**: AUC 0.65 en test, con validación cruzada 4 folds de 0.62 ± 0.03, sin tendencia de mejora al añadir más datos.
+3. **Calibración isotonic frágil**: con solo 1345 sets de entrenamiento, `CalibratedClassifierCV(cv=3, method="isotonic")` corría riesgo de sobre-ajuste.
+
+El LogisticRegression con recencia (half-life 2 temporadas, C=0.5) resuelve los tres: es órdenes de magnitud más pequeño, alcanza AUC 0.71 en test 2025 (CV 0.63 ± 0.08), y al no necesitar calibración post-hoc elimina una fuente de varianza.
+
+### 10.2. Contrato Duck-Typed
+
+El adaptador expone la misma interfaz que el `SetPredictor` legacy para que el API y el simulador puedan usar cualquiera de los dos sin cambios:
+
+```python
+# Contrato mínimo:
+#   .feature_names: list[str]     — 21 features de set
+#   .predict_proba(df) → ndarray  — forma [n, 2], columna 1 = P(local gana set)
+```
+
+El `try_load_v2` devuelve `(LogRegSetPredictor, "v2_logreg_recency")` si carga el artefacto v2, o `(SetPredictor, "legacy_extratrees")` si cae al fallback. Esto permite que `src/api/main.py` maneje la selección en una sola línea.
+
+### 10.3. Entrenamiento
+
+El modelo v2 se entrena con `python -m src.models.train_improved`, que:
+
+- Usa datos de 2022-2024 (recencia: half-life=2 temporadas, ponderando más los sets recientes).
+- Entrena un `LogisticRegression(C=0.5, max_iter=2000, random_state=42)` sobre 21 features de set.
+- NO aplica scaler ni calibración post-hoc (el LogReg ya produce probabilidades calibradas por construcción).
+- Serializa el artefacto como `models/set_predictor_v2.joblib`.
+
+### 10.4. Validación
+
+| Métrica | Valor |
+|---|---:|
+| AUC test 2025 (853 sets) | **0.709** |
+| CV rolling-origin 2 folds | 0.631 ± 0.078 |
+| Accuracy test 2025 | 0.658 |
+| Brier Score test 2025 | 0.218 |
+
+El desglose completo de la validación (incluyendo el análisis per-year y la discusión de por qué el "AUC 0.71" es 2025-específico) está en [`mejora_precision_2026-07.md` §6-§7.2](mejora_precision_2026-07.md) y [`prediccion_temporadas.md` §7](prediccion_temporadas.md).

@@ -33,8 +33,8 @@ TFG: el hallazgo principal es tan importante como la mejora.
 del dataset). El CV rolling-origin multi-temporada da **0.63 ± 0.08** y la
 media per-year 2018-2025 da 0.61 — el detalle y las razones están en §7.2.
 
-Cifras exactas en [`../COMPARACION_ANTES_DESPUES.md`](../COMPARACION_ANTES_DESPUES.md).
-Plan original en [`../PLAN_MEJORA_PRECISION.md`](../PLAN_MEJORA_PRECISION.md).
+Cifras exactas en [`../docs/COMPARACION_ANTES_DESPUES.md`](../docs/COMPARACION_ANTES_DESPUES.md).
+Plan original en [`../docs/PLAN_MEJORA_PRECISION.md`](../docs/PLAN_MEJORA_PRECISION.md).
 
 ---
 
@@ -180,7 +180,7 @@ acabar 4º en un solo seed.
 > al fallback win-rate + Elo plano). La tabla se conserva como registro del
 > proceso, pero NO refleja la integración margin-Elo. El diagnóstico completo,
 > la cuantificación ON/OFF con el fix aplicado y el plan de corrección están
-> en [`../PLAN_MEJORA_CLAMP.md`](../PLAN_MEJORA_CLAMP.md). Con el fix, 6
+> en [`../docs/PLAN_MEJORA_CLAMP.md`](../docs/PLAN_MEJORA_CLAMP.md). Con el fix, 6
 > temporadas ida simple dan Spearman fuerza→posición 0.87-0.89, y el clamp
 > del SetPredictor demostró aportar cero señal (ρ≈0 con p_elo) y +22% de
 > varianza de posición.
@@ -218,7 +218,7 @@ media final (menor = mejor):
   genuinamente volátil temporada a temporada.
 
 El ruido del clamp quedó cuantificado y con plan de corrección en
-[`../PLAN_MEJORA_CLAMP.md`](../PLAN_MEJORA_CLAMP.md).
+[`../docs/PLAN_MEJORA_CLAMP.md`](../docs/PLAN_MEJORA_CLAMP.md).
 
 Todo con **142 tests verdes** (134 + 8 nuevos para el adapter v2); el simulador
 y el API arrancan sin cambios de interfaz.

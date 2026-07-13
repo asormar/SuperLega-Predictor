@@ -86,7 +86,7 @@ final vs fuerza del equipo:
 Top-3 y fondo exactos; correlación fuerza→posición claramente positiva. La zona
 media es ruidosa (Taranto sobrerrinde, Verona baja) por varianza de Monte Carlo
 y por el clamp adaptativo del SetPredictor. Detalle en
-[`memoria/mejora_precision_2026-07.md`](memoria/mejora_precision_2026-07.md) §7.1.
+[`../memoria/mejora_precision_2026-07.md`](../memoria/mejora_precision_2026-07.md) §7.1.
 
 ## Qué NO se tocó (honestidad de alcance)
 
