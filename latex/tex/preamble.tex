@@ -5,6 +5,7 @@
 \usepackage[T1]{fontenc}
 \usepackage[catalan, english, spanish]{babel}   % Spanish = principal (último)
 \usepackage{mathtools}             % amsmath + extras
+\let\openbox\relax                  % Evita conflicto conocido entre amssymb y mathtools
 \usepackage{amssymb}               % AMS symbols (load BEFORE newpxmath to avoid \Bbbk/\openbox conflicts)
 \usepackage{newpxtext}             % Palatino text
 \usepackage{newpxmath}             % Matching math
