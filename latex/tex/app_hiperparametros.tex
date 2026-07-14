@@ -1,0 +1,30 @@
+\chapter{Hiperpar\'ametros y configuraci\'on}
+\label{app:hiperparametros}
+
+\begin{table}[htbp]
+\centering
+\caption{Hiperpar\'ametros de los modelos y configuraci\'on del simulador.}
+\label{tab:hiperparametros}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Modelo / Componente} & \textbf{Par\'ametro} & \textbf{Valor} \\
+\midrule
+SetPredictor v2 & Algoritmo & Regresi\'on log\'istica (C=0.5) \\
+ & Recency half-life & 2 temporadas \\
+ & Entrenamiento & 2022--2024 \\
+\midrule
+MatchElo v2 & Tipo & Margin-Elo determinista \\
+ & Factor K & 20 \\
+ & Home advantage & 100 ELO \\
+\midrule
+PointProbabilityModel & DEFAULT\_SIDEOUT\_RATE & 0.62 \\
+ & MOMENTUM\_BONUS & 0.015 \\
+ & MOMENTUM\_MAX\_STREAK & 4 \\
+ & MOMENTUM\_DECAY & 0.5 \\
+\midrule
+MatchSimulator & Clamp p\_home\_wins & [0.20, 0.80] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% TODO: ampliar con detalles de cada modelo y justificaci\'on de los valores.
