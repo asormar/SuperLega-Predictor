@@ -1,0 +1,230 @@
+%=============================================================================
+% ENCODING, FONTS, LANGUAGE
+%=============================================================================
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[catalan, english, spanish]{babel}   % Spanish = principal (último)
+\usepackage{mathtools}             % amsmath + extras
+\usepackage{amssymb}               % AMS symbols (load BEFORE newpxmath to avoid \Bbbk/\openbox conflicts)
+\usepackage{newpxtext}             % Palatino text
+\usepackage{newpxmath}             % Matching math
+\usepackage[scaled=0.95]{inconsolata} % Monospace for code
+
+%=============================================================================
+% PAGE LAYOUT AND TYPOGRAPHY
+%=============================================================================
+\usepackage[a4paper, margin=1in, bindingoffset=0.5cm]{geometry}
+\usepackage[final,protrusion=true,expansion=true]{microtype}
+\usepackage{setspace}
+\onehalfspacing
+\setlength{\parskip}{6pt}
+\setlength{\parindent}{0pt}
+\usepackage{emptypage}
+
+%=============================================================================
+% MATH (mathtools + amssymb ya cargados arriba, ANTES de newpxmath)
+%=============================================================================
+
+%=============================================================================
+% GRAPHICS, FIGURES, TABLES
+%=============================================================================
+\usepackage{graphicx}
+\usepackage[font=small,labelfont=bf,format=hang]{caption}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{tabularx}
+
+%=============================================================================
+% CODE LISTINGS
+%=============================================================================
+\usepackage{listings}
+\usepackage{xcolor}
+\lstdefinestyle{pythonstyle}{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    stringstyle=\color{red!70!black},
+    commentstyle=\color{gray}\itshape,
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    framerule=0.5pt,
+    framesep=4pt
+}
+\lstdefinestyle{jsonstyle}{
+    basicstyle=\ttfamily\small,
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    framerule=0.5pt,
+    framesep=4pt
+}
+
+%=============================================================================
+% COLORS
+%=============================================================================
+\definecolor{chaptercolor}{RGB}{0, 70, 140}
+\definecolor{linkblue}{RGB}{0,51,153}
+
+%=============================================================================
+% LISTS
+%=============================================================================
+\usepackage{enumitem}
+
+%=============================================================================
+% HEADER/FOOTER
+%=============================================================================
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\nouppercase{\leftmark}}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancypagestyle{plain}{
+    \fancyhf{}
+    \fancyfoot[C]{\small\thepage}
+    \renewcommand{\headrulewidth}{0pt}
+}
+
+%=============================================================================
+% CHAPTER TITLES
+%=============================================================================
+\usepackage{titlesec}
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\color{chaptercolor}}
+  {\chaptertitlename\ \thechapter}{20pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{-20pt}{40pt}
+
+%=============================================================================
+% ALGORITHMS
+%=============================================================================
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+%=============================================================================
+% THEOREMS
+%=============================================================================
+\usepackage{amsthm}
+\theoremstyle{plain}
+\newtheorem{theorem}{Teorema}[chapter]
+\newtheorem{lemma}[theorem]{Lema}
+\newtheorem{proposition}[theorem]{Proposici\'on}
+\newtheorem{corollary}[theorem]{Corolario}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definici\'on}
+\newtheorem{example}[theorem]{Ejemplo}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Observaci\'on}
+
+%=============================================================================
+% UNITS
+%=============================================================================
+\usepackage{siunitx}
+\sisetup{detect-all}
+
+%=============================================================================
+% QUOTATIONS (must load after babel)
+%=============================================================================
+\usepackage[autostyle=true]{csquotes}
+
+%=============================================================================
+% ACRONYMS (no requiere makeglossaries; \acsetup{single=true} para citas)
+%=============================================================================
+\usepackage{acronym}
+\acsetup{single=true}
+
+%=============================================================================
+% BIBLIOGRAPHY (biber backend; estilo IEEE numérico)
+%=============================================================================
+\usepackage[backend=biber, style=ieee, sorting=nyt, isbn=false]{biblatex}
+\addbibresource{references.bib}
+
+%=============================================================================
+% APPENDICES
+%=============================================================================
+\usepackage{appendix}
+
+%=============================================================================
+% HYPERLINKS (load near end)
+%=============================================================================
+\usepackage{bookmark}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=chaptercolor,
+    citecolor=linkblue,
+    urlcolor=linkblue,
+    pdfauthor={Alejandro Sorolla Martínez},
+    pdftitle={Desarrollo de un modelo predictivo basado en Machine Learning para la estimación de resultados y análisis de rendimiento en el voleibol profesional.},
+    pdfsubject={TFG -- ETSIT, UPV},
+    pdfkeywords={TFG, voleibol, SuperLega, Markov, ML, FastAPI, React, rolling-origin, Elo},
+    bookmarks=true,
+    bookmarksnumbered=true,
+    bookmarksopen=true,
+}
+
+%=============================================================================
+% SMART CROSS-REFERENCES (must load after hyperref)
+%=============================================================================
+\usepackage{cleveref}
+\crefname{chapter}{capítulo}{capítulos}
+
+%=============================================================================
+% CUSTOM MATH COMMANDS
+%=============================================================================
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Z}{\mathbb{Z}}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclarePairedDelimiter{\abs}{\lvert}{\rvert}
+\DeclarePairedDelimiter{\norm}{\lVert}{\rVert}
+\DeclarePairedDelimiter{\inner}{\langle}{\rangle}
+
+%=============================================================================
+% COMANDOS PERSONALIZADOS PARA FRONT MATTER Y APÉNDICES
+%=============================================================================
+% \resumen{títuloES}{cuerpo} — capítulo Resumen con keywords en español
+\newcommand{\resumen}[2]{%
+  \chapter*{Resumen}%
+  \addcontentsline{toc}{chapter}{Resumen}%
+  \begin{center}\Large\bfseries #1\end{center}%
+  #2%
+  \bigskip\par\noindent\textbf{Palabras clave:} Machine Learning, Analítica deportiva, Voleibol, Modelos predictivos, Análisis de datos, Rendimiento deportivo.%
+}
+
+% \resumenCA{títuloCA}{cuerpo} — Resum en valenciano/catalán
+\newcommand{\resumenCA}[2]{%
+  \begin{otherlanguage}{catalan}%
+  \chapter*{Resum}%
+  \addcontentsline{toc}{chapter}{Resum}%
+  \begin{center}\Large\bfseries #1\end{center}%
+  #2%
+  \bigskip\par\noindent\textbf{Paraules clau:} Aprenentatge automàtic, Analítica esportiva, Voleibol, Models predictius, Anàlisi de dades, Rendiment esportiu.%
+  \end{otherlanguage}%
+}
+
+% \resumenEN{títuloEN}{body} — Abstract en inglés
+\newcommand{\resumenEN}[2]{%
+  \begin{otherlanguage}{english}%
+  \chapter*{Abstract}%
+  \addcontentsline{toc}{chapter}{Abstract}%
+  \begin{center}\Large\bfseries #1\end{center}%
+  #2%
+  \bigskip\par\noindent\textbf{Keywords:} Machine Learning, Sports analytics, Volleyball, Predictive models, Data analysis, Sports performance.%
+  \end{otherlanguage}%
+}
+
+% \abetcompetencia{ID}{descripción}{cumple} — fila para tabla ABET
+\newcommand{\abetcompetencia}[3]{%
+  #1 & #2 & #3 & \% TODO \\%
+}
+
+% \odsref{número}{nombre} — sección de ODS en Apéndice A
+\newcommand{\odsref}[2]{%
+  \section*{ODS #1: #2}%
+  \addcontentsline{toc}{section}{ODS #1: #2}%
+  \label{ods:#1}%
+}
