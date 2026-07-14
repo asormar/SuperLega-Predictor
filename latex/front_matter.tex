@@ -1,0 +1,178 @@
+%=============================================================================
+% PORTADA INSTITUCIONAL UPV / ETSIT / GTDM
+%=============================================================================
+\begin{titlepage}
+\thispagestyle{empty}
+\begin{center}
+\vspace*{2cm}
+
+% Logo UPV (placeholder textual si no existe)
+\IfFileExists{latex/img/upv_logo.png}
+  {\includegraphics[height=3cm]{latex/img/upv_logo.png}}
+  {\Large\textbf{Universitat Polit\`ecnica de Val\`encia}} \\[0.5cm]
+
+{\large\textbf{ETSIT} -- Escola T\`ecnica Superior d'Enginyeria de Telecomunicaci\'o} \\[0.3cm]
+{\normalsize\textbf{GTDM} -- Grau en Tecnologia Digital i Multim\`edia} \\[3cm]
+
+% Título oficial del TFG
+{\Huge\bfseries\color{chaptercolor}
+Desarrollo de un modelo predictivo basado en Machine Learning\\[0.3cm]
+para la estimaci\'on de resultados y an\'alisis de rendimiento\\[0.3cm]
+en el voleibol profesional.}\\[2cm]
+
+{\Large\textit{Trabajo de Fin de Grado presentado por}}\\[1cm]
+
+{\Large\bfseries Alejandro Sorolla Mart\'inez}\\[0.5cm]
+
+{\large Director: \% TODO}\\[2cm]   % TODO: nombre del director
+
+{\large Valencia, \number\year} \\
+{\large Curso 2025--2026}
+
+\vfill
+
+\IfFileExists{latex/img/etsit_logo.png}
+  {\includegraphics[height=2cm]{latex/img/etsit_logo.png}}
+  {\normalsize\textit{ETSIT -- Universitat Polit\`ecnica de Val\`encia}}
+\end{center}
+\end{titlepage}
+
+%=============================================================================
+% DECLARACIÓN DE AUTORÍA Y ORIGINALIDAD
+%=============================================================================
+\chapter*{Declaraci\'on de autor\'ia y originalidad}
+\addcontentsline{toc}{chapter}{Declaraci\'on de autor\'ia y originalidad}
+
+Yo, Alejandro Sorolla Mart\'inez, declaro que el Trabajo de Fin de Grado
+aqu\'i presentado es de mi autor\'ia original y que no ha sido presentado
+previamente para obtener ning\'un t\'itulo o calificaci\'on. Todo el material
+tomado de otras fuentes --- bibliograf\'ia, referencias o comentarios ---
+est\'a debidamente reconocido.
+
+\vspace{2cm}
+\noindent\rule{6cm}{0.4pt}
+
+\noindent\textit{Alejandro Sorolla Mart\'inez}
+
+\noindent\today
+
+%=============================================================================
+% RESUMEN (ES)
+%=============================================================================
+\pagenumbering{roman}
+\resumen{Desarrollo de un modelo predictivo basado en Machine Learning para
+         la estimaci\'on de resultados y an\'alisis de rendimiento en el
+         voleibol profesional.}
+{%
+Este Trabajo de Fin de Grado presenta \textsc{Predictor(2)}, un sistema
+completo para simular partidos y temporadas de la SuperLega italiana de
+voleibol. La arquitectura combina un motor de \emph{cadenas de Markov}
+punto a punto con tres modelos de \emph{\ac{ML}} (regresi\'on
+log\'istica, gradient boosting y ensembles) entrenados sobre datos p\'ublicos
+de los \'ultimos diez a\~nos. El sistema se complementa con una interfaz
+web en React y una API REST en FastAPI. La evaluaci\'on con protocolo
+\emph{rolling-origin} honesto (sin leakage temporal) arroja un AUC de
+\num{0.75} para la predicci\'on de partido y \num{0.71} para la
+predicci\'on de set, con tiempos de simulaci\'on de temporada completa del
+orden de \qty{70}{\second}.
+}
+
+%=============================================================================
+% RESUM (CA)
+%=============================================================================
+\resumenCA{Desenvolupament d'un model predictiu basat en Machine Learning per
+           a l'estimaci\'o de resultats i an\`alisi de rendiment en el
+           voleibol professional.}
+{%
+Aquest Treball de Fi de Grau presenta \textsc{Predictor(2)}, un sistema
+complet per a simular partits i temporades de la SuperLega italiana de
+voleibol. L'arquitectura combina un motor de \emph{cadenes de Markov}
+punt a punt amb tres models de \emph{aprenentatge autom\`atic} (regressi\'o
+log\'istica, gradient boosting i ensembles) entrenats sobre dades p\'ubliques
+dels \'ultims deu anys. El sistema es complementa amb una interfície
+web en React i una API REST en FastAPI. L'avaluaci\'o amb protocol
+\emph{rolling-origin} honest (sense leakage temporal) obt\'e un AUC de
+\num{0.75} per a la predicci\'o de partit i \num{0.71} per a la
+predicci\'o de set, amb temps de simulaci\'o de temporada completa de
+l'ordre de \qty{70}{\second}.
+}
+
+%=============================================================================
+% ABSTRACT (EN)
+%=============================================================================
+\resumenEN{Development of a Machine Learning-based predictive model for
+           outcome estimation and performance analysis in professional
+           volleyball.}
+{%
+This Bachelor's Thesis presents \textsc{Predictor(2)}, a complete system
+for simulating matches and seasons of the Italian SuperLega volleyball
+league. The architecture combines a point-by-point \emph{Markov chain}
+engine with three \emph{machine learning} models (logistic regression,
+gradient boosting, and ensembles) trained on publicly available data from
+the last ten years. The system is complemented by a React web interface
+and a FastAPI REST API. Evaluation with an honest \emph{rolling-origin}
+protocol (no temporal leakage) yields an AUC of \num{0.75} for match
+prediction and \num{0.71} for set prediction, with full-season
+simulation times in the order of \qty{70}{\second}.
+}
+
+%=============================================================================
+% AGRADECIMIENTOS
+%=============================================================================
+\chapter*{Agradecimientos}
+\addcontentsline{toc}{chapter}{Agradecimientos}
+
+% TODO: completar con personas, director, familia, etc.
+A \% TODO por su apoyo y dedicaci\'on durante la realizaci\'on de este trabajo.
+
+%=============================================================================
+% RESUMEN EJECUTIVO ABET (OBLIGATORIO ETSIT)
+%=============================================================================
+\chapter*{Resumen ejecutivo ABET}
+\addcontentsline{toc}{chapter}{Resumen ejecutivo ABET}
+
+\begin{table}[htbp]
+\centering
+\caption{Tabla de competencias ABET}
+\label{tab:abet}
+\begin{tabularx}{\textwidth}{l X c c}
+\toprule
+\textbf{Competencia} & \textbf{Descripci\'on} & \textbf{Cumple} & \textbf{D\'onde} \\
+\midrule
+\abetcompetencia{IDENTIFY}{Identificar, formular y resolver problemas de ingenier\'ia}{\% TODO}
+\abetcompetencia{FORMULATE}{Formular problemas complejos mediante principios de ingenier\'ia, ciencia y matem\'aticas}{\% TODO}
+\abetcompetencia{DESIGN}{Dise\~nar soluciones que satisfagan necesidades espec\'ificas considerando salud, seguridad y factores culturales}{\% TODO}
+\abetcompetencia{IMPLEMENT}{Desarrollar e implementar sistemas y procesos basados en an\'alisis de datos}{\% TODO}
+\abetcompetencia{TEST}{Dise\~nar y ejecutar experimentos, analizar e interpretar datos para mejorar conclusiones}{\% TODO}
+\bottomrule
+\end{tabularx}
+\end{table}
+
+%=============================================================================
+% LISTA DE ACRÓNIMOS
+%=============================================================================
+\chapter*{Acr\'onimos}
+\addcontentsline{toc}{chapter}{Acr\'onimos}
+
+\begin{acronym}[MMMMMM]
+\acro{API}{Application Programming Interface}
+\acro{AUC}{Area Under the Curve}
+\acro{CSV}{Comma-Separated Values}
+\acro{ELO}{Sistema de rating Elo}
+\acro{ETSIT}{Escola T\`ecnica Superior d'Enginyeria de Telecomunicaci\'o}
+\acro{GTDM}{Grau en Tecnologia Digital i Multim\`edia}
+\acro{H2H}{Head-to-Head (enfrentamiento directo)}
+\acro{JSON}{JavaScript Object Notation}
+\acro{MC}{Monte Carlo}
+\acro{ML}{Machine Learning}
+\acro{ROC}{Receiver Operating Characteristic}
+\acro{TFG}{Trabajo de Fin de Grado}
+\acro{UPV}{Universitat Polit\`ecnica de Val\`encia}
+\end{acronym}
+
+%=============================================================================
+% ÍNDICES
+%=============================================================================
+\tableofcontents
+\listoffigures
+\listoftables
