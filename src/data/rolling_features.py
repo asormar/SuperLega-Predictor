@@ -42,6 +42,11 @@ ELO_SEASON_REGRESS = 0.25   # al empezar temporada: elo = (1-r)*elo + r*BASE
 FORM_HALFLIFE = 5.0         # partidos
 H2H_HALFLIFE_SEASONS = 2.0
 
+# Orden cronológico de las dos vueltas. El `partido_id` de sets_partidos.csv
+# NO distingue ida de vuelta (abrevia nombres a 5 chars y omite `fase`), así que
+# la columna `fase` es lo único que las separa temporalmente.
+_FASE_ORDER = {"1st half": 0, "2nd half": 1}
+
 
 def _jornada_num(j) -> int:
     """Extrae el número de jornada de strings tipo '11 Round'."""
@@ -51,22 +56,38 @@ def _jornada_num(j) -> int:
 
 
 def _aggregate_matches(sp: pd.DataFrame) -> pd.DataFrame:
-    """Agrega sets_partidos (set a set) a nivel de partido."""
+    """Agrega sets_partidos (set a set) a nivel de partido.
+
+    Agrupa por ``(partido_id, local)`` — NO solo por ``partido_id`` — porque en
+    este dataset el ``partido_id`` COLISIONA la ida y la vuelta del mismo cruce
+    (abrevia los nombres a 5 chars y omite la columna ``fase``), de modo que
+    "A vs B" y "B vs A" comparten id. Agrupar solo por ``partido_id`` fundía los
+    dos partidos, sumando sus sets y corrompiendo el target ``gana_local`` (el
+    82% de los ids estaban afectados). El criterio ``(partido_id, local)`` los
+    separa: cada encuentro tiene un local distinto. Con esto se pasa de 725
+    "partidos" (rotos) a ~1322 partidos reales.
+
+    Orden cronológico por ``(temporada_inicio, fase, jornada_num)``: la ida
+    (1st half) va antes que la vuelta (2nd half), que comparten ``jornada_num``.
+    """
     sp = sp.copy()
     sp["local"] = sp["equipo_local"].apply(normalize_team_name)
     sp["visitante"] = sp["equipo_visitante"].apply(normalize_team_name)
     sp["t"] = sp["temporada"].str.split("/").str[0].astype(int)
     sp["jnum"] = sp["jornada"].apply(_jornada_num)
+    has_fase = "fase" in sp.columns
+    sp["fnum"] = sp["fase"].map(lambda x: _FASE_ORDER.get(x, 0)) if has_fase else 0
 
-    g = sp.groupby("partido_id")
+    g = sp.groupby(["partido_id", "local"])
     rows = []
-    for pid, grp in g:
+    for (pid, _loc), grp in g:
         sets_h = int((grp["ganador_set_local"] == 1).sum())
         sets_a = int((grp["ganador_set_local"] == 0).sum())
         rows.append({
             "partido_id": pid,
             "temporada_inicio": int(grp["t"].iloc[0]),
             "jornada_num": int(grp["jnum"].iloc[0]),
+            "fnum": int(grp["fnum"].iloc[0]),
             "local": grp["local"].iloc[0],
             "visitante": grp["visitante"].iloc[0],
             "sets_h": sets_h,
@@ -76,8 +97,10 @@ def _aggregate_matches(sp: pd.DataFrame) -> pd.DataFrame:
             "gana_local": 1 if sets_h > sets_a else 0,
         })
     m = pd.DataFrame(rows)
-    m = m.sort_values(["temporada_inicio", "jornada_num", "partido_id"]).reset_index(drop=True)
-    return m
+    m = m.sort_values(
+        ["temporada_inicio", "fnum", "jornada_num", "partido_id", "local"]
+    ).reset_index(drop=True)
+    return m.drop(columns=["fnum"])
 
 
 def _elo_expected(elo_a: float, elo_b: float) -> float:
