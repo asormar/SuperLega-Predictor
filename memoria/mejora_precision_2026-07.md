@@ -342,9 +342,11 @@ medir igual.**
 
 ## 8. Qué NO se hizo (honestidad de alcance)
 
-- No se amplió el nº de partidos históricos: `sets_partidos.csv` solo tiene 725
-  partidos en total (34-59/temporada en las viejas, porque solo se scrapeó a los
-  equipos rastreados). Es un techo de datos, no de método.
+- No se amplió el nº de partidos históricos: `sets_partidos.csv` tiene ~1322
+  partidos reales tras la corrección B0 (frente a los 724 pre-B0, que eran
+  artefacto de la colisión `partido_id`). Las temporadas viejas tienen
+  34-59/temporada porque solo se scrapeó a los equipos rastreados. Es un techo
+  de datos, no de método.
 - El `match_predictor.joblib` de 87 features sigue en disco como fallback; no se
   borró para no romper la carga del API.
 - La **feature de continuidad de plantilla** (roster churn) y el **predictor de

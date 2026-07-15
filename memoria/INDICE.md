@@ -162,7 +162,7 @@ pre-B0b). El detalle y el follow-up obligatorio para 2026/27 están en
 
 **Limitaciones documentadas**:
 - ~~Elo simplificado (sin ajuste por margen de victoria)~~ → **RESUELTO**: Elo con margen integrado.
-- Dataset pequeño a nivel de partido (725 en total; 34-59/temporada en las viejas) → régimen donde modelos lineales baten a árboles profundos.
+- Dataset pequeño a nivel de partido (~1322 tras B0; 34-59/temporada en las viejas) → régimen donde modelos lineales baten a árboles profundos.
 - Stats de jugadores sintéticas (muestreadas, no simuladas)
 - Sin Monte Carlo a nivel temporada por defecto (incertidumbre no cuantificada en un solo seed)
 - Sin lesiones ni mercado de fichajes
