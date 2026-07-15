@@ -1,7 +1,7 @@
 # Predicción de Temporadas
 
 > **⚠️ ACTUALIZACIÓN 2026-07-13 — Señal de partido y set predictor en producción.**
-> La señal de partido es el **Elo con margen** (rolling, sin leakage, AUC 0.75 en test 2025/26); el `MatchPredictor` de 87 features queda solo como fallback. El set predictor de producción es la **v2 LogReg con recencia** (test 2025 AUC 0.71; legacy ExtraTrees como fallback). El proceso completo de mejora y las cifras detalladas están en [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
+> La señal de partido es el **Elo con margen** (rolling, sin leakage, AUC 0.75→**0.762** tras B0 en test 2025/26, n=314); el `MatchPredictor` de 87 features queda solo como fallback. El set predictor de producción es la **v2 LogReg con recencia** (test 2025 AUC **0.697**, n=1193, CV 0.679±0.017; legacy ExtraTrees como fallback). El proceso completo de mejora y las cifras detalladas están en [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
 
 ## Descripción
 
@@ -86,8 +86,8 @@ La predicción de temporadas integra tres modelos ML con el motor de simulación
                                                   ┌──────────────────────────┐
                                                   │ LogRegSetPredictor v2    │
                                                   │ (set_predictor_v2.joblib)│
-                                                  │ 21 features, AUC 0.71    │
-                                                  │ test 2025; CV 0.63±0.08 │
+                                                   │ 21 features, AUC 0.697   │
+                                                   │ test 2025; CV 0.68±0.02 │
                                                   │ clamp adapt. [0.10,0.90]│
                                                   └──────────────────────────┘
 ```
@@ -281,12 +281,15 @@ def update(self, local, visitante, sets_local, sets_visitante, winner):
 
 La señal de partido en producción es la **probabilidad de Elo con margen** (`src/data/rolling_features.py`), que reconstruye las features sin leakage desde `sets_partidos.csv`. Es un Elo determinista (no requiere modelo entrenado) con `K=28`, `HOME_ADV=60` y margen de victoria. Evaluado con protocolo rolling-origin sobre 2025:
 
-| Métrica Test (2025, N=214) | Valor |
+| Métrica Test (2025, N=314) | Valor |
 |---|---|
-| AUC-ROC | 0.750 |
-| Accuracy | 0.692 |
-| Brier Score | 0.200 |
-| LogLoss | 0.585 |
+| AUC-ROC | 0.762 |
+| Accuracy | 0.704 |
+| Brier Score | 0.193 |
+| LogLoss | 0.568 |
+
+Cifras tras corrección B0 (2026-07-15): datos limpios (1322 partidos válidos
+sin colisión `partido_id`).
 
 El `MatchPredictor` (`src/models/match_predictor.py`) de 87 features (XGBoost+isotónico, AUC reportado 0.707) queda en disco como fallback; su señal era leakage temporal (valor honesto ~0.53). Detalle en [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
 
@@ -330,10 +333,14 @@ El set predictor de producción es `set_predictor_v2.py` (`LogRegSetPredictor`: 
 
 | Métrica | Valor |
 |---|---|
-| AUC test 2025 (853 sets) | **0.709** |
-| CV rolling-origin 2 folds | 0.631 ± 0.078 |
-| Accuracy test 2025 | 0.658 |
-| Brier Score test 2025 | 0.218 |
+| AUC test 2025 (1193 sets) | **0.697** |
+| CV rolling-origin 2 folds | 0.679 ± 0.017 |
+| Accuracy test 2025 | 0.650 |
+| Brier Score test 2025 | 0.216 |
+
+Cifras tras corrección B0b (2026-07-15): `set_features.csv` regenerado sin
+colisión. Datos pre-B0b en
+[`registro_historico_b0.md`](../memoria/registro_historico_b0.md) §B.3.
 
 El legacy `set_predictor.py` (ExtraTrees calibrado, CV 4 folds 0.62 ± 0.03) queda en disco como fallback. En el flujo de temporada, el v2 se usa para **relajar el clamp** de probabilidad punto a punto que la simulación de Markov aplica por defecto.
 

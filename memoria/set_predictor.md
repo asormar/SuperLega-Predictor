@@ -262,9 +262,13 @@ El modelo v2 se entrena con `python -m src.models.train_improved`, que:
 
 | Métrica | Valor |
 |---|---:|
-| AUC test 2025 (853 sets) | **0.709** |
-| CV rolling-origin 2 folds | 0.631 ± 0.078 |
-| Accuracy test 2025 | 0.658 |
-| Brier Score test 2025 | 0.218 |
+| AUC test 2025 (1193 sets) | **0.697** |
+| CV rolling-origin 2 folds | 0.679 ± 0.017 |
+| Accuracy test 2025 | 0.650 |
+| Brier Score test 2025 | 0.216 |
+
+Cifras tras corrección B0b (2026-07-15): `set_features.csv` regenerado sin
+colisión (n 853→1193). Datos pre-B0b en
+[`registro_historico_b0.md`](registro_historico_b0.md) §B.2.
 
 El desglose completo de la validación (incluyendo el análisis per-year y la discusión de por qué el "AUC 0.71" es 2025-específico) está en [`mejora_precision_2026-07.md` §6-§7.2](mejora_precision_2026-07.md) y [`prediccion_temporadas.md` §7](prediccion_temporadas.md).
