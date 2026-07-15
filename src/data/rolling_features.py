@@ -45,7 +45,12 @@ H2H_HALFLIFE_SEASONS = 2.0
 # Orden cronológico de las dos vueltas. El `partido_id` de sets_partidos.csv
 # NO distingue ida de vuelta (abrevia nombres a 5 chars y omite `fase`), así que
 # la columna `fase` es lo único que las separa temporalmente.
-_FASE_ORDER = {"1st half": 0, "2nd half": 1}
+FASE_ORDER = {"1st half": 0, "2nd half": 1}
+# Mantener alias privado por compatibilidad con callers internos que importan _FASE_ORDER
+_FASE_ORDER = FASE_ORDER
+
+# Peso del margen de victoria en el multiplicador de Elo: margen 3-0→(1+0.15*2)=1.30, 3-1→1.15, 3-2→1.0
+ELO_MARGIN_WEIGHT = 0.15
 
 
 def _jornada_num(j) -> int:
@@ -76,7 +81,7 @@ def _aggregate_matches(sp: pd.DataFrame) -> pd.DataFrame:
     sp["t"] = sp["temporada"].str.split("/").str[0].astype(int)
     sp["jnum"] = sp["jornada"].apply(_jornada_num)
     has_fase = "fase" in sp.columns
-    sp["fnum"] = sp["fase"].map(lambda x: _FASE_ORDER.get(x, 0)) if has_fase else 0
+    sp["fnum"] = sp["fase"].map(lambda x: FASE_ORDER.get(x, 0)) if has_fase else 0
 
     g = sp.groupby(["partido_id", "local"])
     rows = []
@@ -105,6 +110,27 @@ def _aggregate_matches(sp: pd.DataFrame) -> pd.DataFrame:
 
 def _elo_expected(elo_a: float, elo_b: float) -> float:
     return 1.0 / (1.0 + 10 ** ((elo_b - elo_a) / 400.0))
+
+
+def elo_to_strength(elo: float) -> float:
+    """Fuerza [0,1] desde el rating Elo, logística centrada en ELO_BASE.
+
+    Mismo mapeo que ``get_historical_team_strengths`` y el cálculo inline que
+    usan otros módulos. Factorizada aquí como fuente única de verdad.
+    """
+    return 1.0 / (1.0 + 10 ** (-(elo - ELO_BASE) / 400.0))
+
+
+def margin_multiplier(mov: int) -> float:
+    """Multiplicador de K de Elo según margen de sets (3-0, 3-1, 3-2).
+
+    Args:
+        mov: Diferencia absoluta de sets (1, 2 o 3).
+
+    Returns:
+        Factor multiplicador: 1.0 para 3-2, 1.15 para 3-1, 1.30 para 3-0.
+    """
+    return 1.0 + ELO_MARGIN_WEIGHT * (mov - 1)
 
 
 def build_rolling_match_features(
@@ -159,7 +185,7 @@ def build_rolling_match_features(
         }
 
         # ── Stats dentro de temporada (expanding, pre-partido) ──
-        for prefix, team, is_home in [("h", h, True), ("a", a, True)]:
+        for prefix, team in [("h", h), ("a", a)]:
             hist = season_hist[(team, season)]
             n = len(hist)
             if n > 0:
@@ -214,7 +240,7 @@ def build_rolling_match_features(
         # ══ ACTUALIZAR ESTADO (post-partido) ══
         home_won = r["gana_local"] == 1
         mov = abs(r["sets_h"] - r["sets_a"])            # 3,2,1
-        margin_mult = 1.0 + 0.15 * (mov - 1)            # 3-0→1.30, 3-1→1.15, 3-2→1.0
+        margin_mult = margin_multiplier(mov)            # 3-0→1.30, 3-1→1.15, 3-2→1.0
         exp_h = _elo_expected(elo_h + elo_home_adv, elo_a)
         delta = elo_k * margin_mult * ((1.0 if home_won else 0.0) - exp_h)
         elo[h] = elo_h + delta
@@ -264,7 +290,7 @@ def get_historical_team_elo(
         eh, ea = elo[h], elo[a]
         exp = _elo_expected(eh + elo_home_adv, ea)
         mov = abs(r["sets_h"] - r["sets_a"])
-        mm = 1.0 + 0.15 * (mov - 1)
+        mm = margin_multiplier(mov)
         d = elo_k * mm * ((1.0 if r["gana_local"] == 1 else 0.0) - exp)
         elo[h] = eh + d
         elo[a] = ea - d
@@ -284,7 +310,7 @@ def get_historical_team_strengths(sp: Optional[pd.DataFrame] = None) -> dict:
         dict {nombre_canonico: fuerza en [0,1]}.
     """
     elo = get_historical_team_elo(sp)
-    return {t: 1.0 / (1.0 + 10 ** (-(e - ELO_BASE) / 400.0)) for t, e in elo.items()}
+    return {t: elo_to_strength(e) for t, e in elo.items()}
 
 
 ROLLING_MATCH_COLS = [

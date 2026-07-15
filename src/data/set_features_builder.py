@@ -49,8 +49,8 @@ reconciliación completa con el runtime es el item A3 del plan):
 """
 
 import sys
+import os
 from pathlib import Path
-from collections import defaultdict
 
 import pandas as pd
 
@@ -58,16 +58,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from src.data.team_mapper import normalize_team_name
-from src.data.rolling_features import build_rolling_match_features, ELO_BASE
+from src.data.rolling_features import build_rolling_match_features, elo_to_strength
 from src.data.feature_store import SET_FEATURE_COLS
 
 SET_FEATURES_PATH = BASE_DIR / "DB" / "features" / "set_features.csv"
 BACKUP_PATH = BASE_DIR / "DB" / "features" / "set_features_collided_backup.csv"
-
-
-def _strength(elo: float) -> float:
-    """Fuerza [0,1] desde el Elo, logística centrada en ELO_BASE (escala 400)."""
-    return 1.0 / (1.0 + 10 ** (-(elo - ELO_BASE) / 400.0))
 
 
 def _set_sequences(sp: pd.DataFrame) -> dict:
@@ -86,13 +81,17 @@ def _set_sequences(sp: pd.DataFrame) -> dict:
 
 
 def build_set_features(sp: pd.DataFrame) -> pd.DataFrame:
-    """Construye el DataFrame de set features limpio (1 fila por set, pre-set)."""
-    dfm = build_rolling_match_features(sp)  # features pre-partido correctas
+    """Construye el DataFrame de set features limpio (1 fila por set, pre-set).
+
+    Returns:
+        DataFrame con columnas: partido_id, set_num, SET_FEATURE_COLS, ganador_set_local.
+    """
+    match_features = build_rolling_match_features(sp)  # features pre-partido correctas
     seqs = _set_sequences(sp)
 
     rows = []
     missing = 0
-    for idx, r in dfm.iterrows():
+    for idx, r in match_features.iterrows():
         key = (r["partido_id"], r["local"])
         seq = seqs.get(key)
         if not seq:
@@ -106,7 +105,7 @@ def build_set_features(sp: pd.DataFrame) -> pd.DataFrame:
         uid = f"{t}/{t + 1}_m{idx:05d}"
 
         elo_h, elo_a = float(r["elo_h"]), float(r["elo_a"])
-        s_h, s_a = _strength(elo_h), _strength(elo_a)
+        s_h, s_a = elo_to_strength(elo_h), elo_to_strength(elo_a)
         set_wr_h, set_wr_a = float(r["h_set_ratio"]), float(r["a_set_ratio"])
         forma_h, forma_a = float(r["h_form_ewma"]), float(r["a_form_ewma"])
         base = {
@@ -122,7 +121,7 @@ def build_set_features(sp: pd.DataFrame) -> pd.DataFrame:
 
         sets_h = sets_a = 0
         prev_home_won = None
-        for si, gsl in enumerate(seq, start=1):
+        for si, winner_set in enumerate(seq, start=1):
             momentum = 0.5 if prev_home_won is None else (1.0 if prev_home_won else 0.0)
             es_desempate = 1 if (sets_h == 2 and sets_a == 2) else 0
             row = dict(base)
@@ -135,10 +134,10 @@ def build_set_features(sp: pd.DataFrame) -> pd.DataFrame:
                 "diff_sets_antes": sets_h - sets_a,
                 "momentum_h": momentum,
                 "es_desempate": es_desempate,
-                "ganador_set_local": int(gsl),
+                "ganador_set_local": int(winner_set),
             })
             rows.append(row)
-            if gsl == 1:
+            if winner_set == 1:
                 sets_h += 1
                 prev_home_won = True
             else:
@@ -170,11 +169,15 @@ def main():
           f"(esperado max 2)")
     print(f"  Balance target ganador_set_local: {df['ganador_set_local'].mean():.3f}")
 
-    # Backup del CSV colisionado (solo la primera vez) y escritura del nuevo.
+    # Backup del CSV colisionado (solo la primera vez).
     if not BACKUP_PATH.exists() and SET_FEATURES_PATH.exists():
         SET_FEATURES_PATH.replace(BACKUP_PATH)
         print(f"  Backup del CSV viejo -> {BACKUP_PATH.name}")
-    df.to_csv(SET_FEATURES_PATH, index=False, encoding="utf-8")
+
+    # Atomic write: tmp + os.replace (evita corrupción si el proceso muere entre medias).
+    tmp_path = SET_FEATURES_PATH.with_suffix(SET_FEATURES_PATH.suffix + ".tmp")
+    df.to_csv(tmp_path, index=False, encoding="utf-8")
+    os.replace(tmp_path, SET_FEATURES_PATH)
     print(f"  Escrito {SET_FEATURES_PATH}")
 
 

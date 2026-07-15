@@ -46,6 +46,7 @@ import time
 import argparse
 from pathlib import Path
 from collections import defaultdict
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -58,6 +59,8 @@ from sklearn.metrics import log_loss, brier_score_loss
 from src.data.team_mapper import normalize_team_name
 from src.data.rolling_features import (
     _elo_expected, _jornada_num,
+    elo_to_strength, margin_multiplier,
+    FASE_ORDER,
     ELO_BASE, ELO_K, ELO_HOME_ADV, ELO_SEASON_REGRESS,
 )
 from src.simulation.simulator import MatchSimulator
@@ -78,14 +81,22 @@ POINT_FEATURES = [
     "diff_dominancia", "diff_set_ratio", "diff_forma_efectiva",
 ]
 
-# Orden cronologico de las dos vueltas (para separar ida/vuelta colisionadas).
-FASE_ORDER = {"1st half": 0, "2nd half": 1}
-
 # Referencia del Elo con margen en el test held-out 2025 (measure_precision).
 ELO_REF_2025 = {"brier": 0.200, "logloss": 0.585, "auc": 0.750}
 
 # Presupuesto de tiempo: si la proyeccion supera esto, abortar (salvo --force).
 DEFAULT_MAX_SECONDS = 1200.0
+
+# ─── Magic numbers nombrados ────────────────────────────────────────────────
+# Tolerancia de degradacion de Brier: si el simulador empeora menos de esto
+# respecto al Elo, se considera que NO degrada la calidad de probabilidad.
+BRIER_DEGRADATION_TOLERANCE = 0.005
+# Semilla base por partido (seed = MATCH_SEED_BASE + i en el loop).
+MATCH_SEED_BASE = 1000
+# Fuerza neutra para equipos sin datos historicos.
+STRENGTH_NEUTRAL = 0.5
+# Numero de bins para curvas de fiabilidad y ECE.
+N_CALIBRATION_BINS = 8
 
 
 # ─────────────────────────────────────────────────────────────
@@ -133,8 +144,10 @@ def _replay_elo(matches: pd.DataFrame) -> dict:
     """Elo con margen replayado sobre partidos CORRECTOS, en orden cronologico.
 
     Misma dinamica que rolling_features (K=28, home_adv=60, regresion 0.25 entre
-    temporadas, margin_mult = 1 + 0.15*(|diff_sets|-1)), pero sobre la
+    temporadas, margin_mult = margin_multiplier(|diff_sets|)), pero sobre la
     reconstruccion sin colision.
+
+    # TODO: dedupe with rolling_features.get_historical_team_elo when A5 lands.
     """
     elo = defaultdict(lambda: ELO_BASE)
     last_season = {}
@@ -147,7 +160,7 @@ def _replay_elo(matches: pd.DataFrame) -> dict:
         eh, ea = elo[h], elo[a]
         exp = _elo_expected(eh + ELO_HOME_ADV, ea)
         mov = abs(int(r["sets_h"]) - int(r["sets_a"]))
-        mm = 1.0 + 0.15 * (mov - 1)
+        mm = margin_multiplier(mov)
         d = ELO_K * mm * ((1.0 if r["gana_local"] == 1 else 0.0) - exp)
         elo[h] = eh + d
         elo[a] = ea - d
@@ -164,7 +177,7 @@ def _seed_state(matches: pd.DataFrame, season: int):
     if len(hist) == 0:
         raise ValueError(f"No hay historia anterior a la temporada {season}.")
     elo = _replay_elo(hist)
-    strengths = {t: 1.0 / (1.0 + 10 ** (-(e - ELO_BASE) / 400.0)) for t, e in elo.items()}
+    strengths = {t: elo_to_strength(e) for t, e in elo.items()}
     return elo, strengths
 
 
@@ -183,7 +196,7 @@ def _prob_metrics(y: np.ndarray, p: np.ndarray) -> dict:
     }
 
 
-def _ece(y: np.ndarray, p: np.ndarray, n_bins: int = 8) -> float:
+def _ece(y: np.ndarray, p: np.ndarray, n_bins: int = N_CALIBRATION_BINS) -> float:
     """Expected Calibration Error con n_bins equiespaciados."""
     edges = np.linspace(0.0, 1.0, n_bins + 1)
     total = len(y)
@@ -234,16 +247,188 @@ def _load_set_predictor():
             MODELS_DIR / "set_predictor_v2.joblib",
             MODELS_DIR / "set_predictor.joblib",
         )
-        print(f"  [INFO] SetPredictor para el clamp: {source}")
+        print(f"  [INFO] SetPredictor para calibracion: {source}")
         return pred
     except Exception as e:  # noqa: BLE001
-        print(f"  [WARN] set_predictor no disponible ({e}); clamp por defecto.")
+        print(f"  [WARN] set_predictor no disponible ({e}); calibracion por defecto.")
         return None
 
 
 # ─────────────────────────────────────────────────────────────
-# Backtest
+# Backtest — decomposed
 # ─────────────────────────────────────────────────────────────
+
+def _run_season_simulation(
+    matches_in_season: pd.DataFrame,
+    initial_elo: dict,
+    strengths: dict,
+    point_model,
+    set_predictor,
+    n_sims: int,
+    use_set_calibration: bool,
+    damping: float,
+    max_seconds: float,
+    force: bool,
+) -> dict:
+    """Recorre los partidos de la temporada, simula MC y acumula resultados.
+
+    Returns:
+        dict con ``y``, ``p_sim``, ``p_elo``, acumuladores de margen,
+        ``elapsed`` (float) y ``time_budget_exceeded`` (bool).
+    """
+    fb = RuntimeFeatureBuilder(initial_elo=initial_elo)
+    simulator = MatchSimulator(point_model=point_model, player_stats_gen=None)
+
+    n = len(matches_in_season)
+    y = np.zeros(n, dtype=int)
+    p_sim = np.zeros(n)
+    p_elo = np.zeros(n)
+    sim_margin_acc = {"3-0": 0.0, "3-1": 0.0, "3-2": 0.0}
+    real_margin_cnt = {"3-0": 0, "3-1": 0, "3-2": 0}
+    n_margin = 0
+    time_budget_exceeded = False
+
+    t_start = time.perf_counter()
+    for i, r in matches_in_season.iterrows():
+        home, away = r["local"], r["visitante"]
+        jornada = int(r["jornada_num"]) if r["jornada_num"] else (i + 1)
+
+        # 1) Features pre-partido con el estado ACUMULADO hasta ahora.
+        feat_df = fb.build_features(home, away, jornada)
+        row = feat_df.iloc[0]
+        p_e = float(row.get("elo_win_prob_h", 0.5))
+
+        # 2) Calibrar fuerzas exactamente como en produccion (season_simulator).
+        h_adj = min(strengths.get(home, STRENGTH_NEUTRAL) + HOME_ADVANTAGE_STRENGTH_BONUS, 1.0)
+        a_str = strengths.get(away, STRENGTH_NEUTRAL)
+        h_adj, a_str = SeasonSimulator._calibrate_strengths(h_adj, a_str, p_e, damping=damping)
+
+        # 3) Features de punto (las 6) desde el DataFrame de features.
+        point_mf = {f: (float(row[f]) if f in feat_df.columns else 0.0) for f in POINT_FEATURES}
+
+        # Contexto de set (solo si la calibracion esta activa).
+        team_feats = None
+        if use_set_calibration and set_predictor is not None:
+            team_feats = SeasonSimulator._extract_set_team_features(feat_df)
+
+        # 4) Monte Carlo del partido (semilla por partido -> reproducible).
+        mc_result = simulator.monte_carlo_simulate(
+            home_team=home,
+            away_team=away,
+            home_strength=h_adj,
+            away_strength=a_str,
+            match_features=point_mf,
+            n_simulations=n_sims,
+            seed=MATCH_SEED_BASE + i,
+            set_predictor=set_predictor if use_set_calibration else None,
+            team_features=team_feats,
+        )
+
+        # 5) Registrar prediccion y actualizar con el resultado REAL.
+        y[i] = int(r["gana_local"])
+        p_sim[i] = float(mc_result["home_win_prob"])
+        p_elo[i] = p_e
+
+        sim_margin = _sim_margin_probs(mc_result["score_distribution"])
+        # Solo contamos margenes en partidos con final estandar (ganador a 3 sets).
+        if max(int(r["sets_h"]), int(r["sets_a"])) == 3:
+            for k in sim_margin_acc:
+                sim_margin_acc[k] += sim_margin[k]
+            real_margin_cnt[_margin_key(r["sets_h"], r["sets_a"])] += 1
+            n_margin += 1
+
+        winner = "home" if r["gana_local"] == 1 else "away"
+        fb.update(home, away, int(r["sets_h"]), int(r["sets_a"]), winner,
+                  points_local=int(r["pts_h"]), points_visitante=int(r["pts_a"]))
+
+        # Time-box: proyectar tras el primer partido.
+        if i == 0:
+            dt = time.perf_counter() - t_start
+            projected = dt * n
+            print(f"  [time-box] 1er partido: {dt:.2f}s -> proyeccion total "
+                  f"~{projected:.0f}s ({projected / 60:.1f} min)")
+            if projected > max_seconds and not force:
+                print(f"  ABORTADO: proyeccion {projected:.0f}s > presupuesto "
+                      f"{max_seconds:.0f}s. Baja --n-sims, usa calibracion OFF, "
+                      f"o pasa --force.")
+                time_budget_exceeded = True
+                break
+
+    elapsed = time.perf_counter() - t_start
+    print(f"  Simulacion: {len(matches_in_season)} partidos en {elapsed:.0f}s "
+          f"({elapsed / max(n, 1):.2f}s/partido).")
+
+    return {
+        "y": y[:i + 1] if time_budget_exceeded else y,
+        "p_sim": p_sim[:i + 1] if time_budget_exceeded else p_sim,
+        "p_elo": p_elo[:i + 1] if time_budget_exceeded else p_elo,
+        "sim_margin_acc": sim_margin_acc,
+        "real_margin_cnt": real_margin_cnt,
+        "n_margin": n_margin,
+        "elapsed": elapsed,
+        "time_budget_exceeded": time_budget_exceeded,
+    }
+
+
+def _aggregate_metrics(
+    y: np.ndarray,
+    p_sim: np.ndarray,
+    p_elo: np.ndarray,
+    sim_margin_acc: dict,
+    real_margin_cnt: dict,
+    n_margin: int,
+    season: int,
+    n_sims: int,
+    use_set_calibration: bool,
+    damping: float,
+    elapsed: float,
+) -> dict:
+    """Agrega metricas a partir de los acumuladores de la simulacion."""
+    denom = max(n_margin, 1)
+    sim_margin = {k: v / denom for k, v in sim_margin_acc.items()}
+    real_margin = {k: real_margin_cnt[k] / denom for k in real_margin_cnt}
+    l1_margin = float(sum(abs(sim_margin[k] - real_margin[k]) for k in sim_margin))
+
+    return {
+        "season": season,
+        "n_matches": int(len(y)),
+        "n_sims": n_sims,
+        "use_set_calibration": use_set_calibration,
+        "damping": damping,
+        "seconds": round(elapsed, 1),
+        "simulator": {**_prob_metrics(y, p_sim), "ece": _ece(y, p_sim)},
+        "elo_reference": {**_prob_metrics(y, p_elo), "ece": _ece(y, p_elo)},
+        "elo_ref_2025_holdout": ELO_REF_2025,
+        "score_margin_distribution": {
+            "n_standard_finals": n_margin,
+            "simulated": {k: round(v, 4) for k, v in sim_margin.items()},
+            "real": {k: round(v, 4) for k, v in real_margin.items()},
+            "l1_distance": round(l1_margin, 4),
+        },
+        "reliability": _reliability_bins(y, p_sim, n_bins=N_CALIBRATION_BINS),
+    }
+
+
+def _save_and_plot(
+    results: dict,
+    y: np.ndarray,
+    p_sim: np.ndarray,
+    p_elo: np.ndarray,
+    season: int,
+    use_set_calibration: bool,
+    make_plot: bool = True,
+):
+    """Guarda JSON y (opcionalmente) grafico de fiabilidad."""
+    _print_summary(results)
+
+    out = MODELS_DIR / f"backtest_simulator_{season}.json"
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2)
+    print(f"\n  Resultados guardados en {out}")
+
+    if make_plot:
+        _plot_reliability(y, p_sim, p_elo, season, use_set_calibration)
+
 
 def run_backtest(
     season: int = 2024,
@@ -255,6 +440,9 @@ def run_backtest(
     make_plot: bool = True,
 ) -> dict:
     """Recorre la temporada `season` real y mide la precision del simulador.
+
+    Orquestador delgado: carga datos, siembra estado, delega la simulacion
+    a ``_run_season_simulation``, agrega metricas y persiste.
 
     Returns:
         dict con las metricas agregadas (tambien se guarda en disco).
@@ -274,133 +462,51 @@ def run_backtest(
     initial_elo, strengths = _seed_state(matches, season)
     print(f"  Estado sembrado con {len(initial_elo)} equipos (historia < {season}).")
 
-    m_season = matches[matches["temporada_inicio"] == season].reset_index(drop=True)
-    if len(m_season) == 0:
+    matches_in_season = matches[matches["temporada_inicio"] == season].reset_index(drop=True)
+    if len(matches_in_season) == 0:
         raise ValueError(f"No hay partidos para la temporada {season}.")
-    print(f"  Partidos reales en {season}: {len(m_season)}")
+    print(f"  Partidos reales en {season}: {len(matches_in_season)}")
 
     # Modelos de produccion.
     point_model = _load_point_model()
     set_predictor = _load_set_predictor() if use_set_calibration else None
 
-    # RuntimeFeatureBuilder sembrado (igual que el API en main.py).
-    fb = RuntimeFeatureBuilder(initial_elo=initial_elo)
-    simulator = MatchSimulator(point_model=point_model, player_stats_gen=None)
+    # Simular partido a partido.
+    accum = _run_season_simulation(
+        matches_in_season, initial_elo, strengths,
+        point_model, set_predictor,
+        n_sims, use_set_calibration, damping,
+        max_seconds, force,
+    )
 
-    # Acumuladores.
-    y = np.zeros(len(m_season), dtype=int)
-    p_sim = np.zeros(len(m_season))
-    p_elo = np.zeros(len(m_season))
-    sim_margin_acc = {"3-0": 0.0, "3-1": 0.0, "3-2": 0.0}
-    real_margin_cnt = {"3-0": 0, "3-1": 0, "3-2": 0}
-    n_margin = 0
-
-    t_start = time.perf_counter()
-    for i, r in m_season.iterrows():
-        home, away = r["local"], r["visitante"]
-        jornada = int(r["jornada_num"]) if r["jornada_num"] else (i + 1)
-
-        # 1) Features pre-partido con el estado ACUMULADO hasta ahora.
-        df = fb.build_features(home, away, jornada)
-        row = df.iloc[0]
-        p_e = float(row.get("elo_win_prob_h", 0.5))
-
-        # 2) Calibrar fuerzas exactamente como en produccion (season_simulator).
-        h_adj = min(strengths.get(home, 0.5) + HOME_ADVANTAGE_STRENGTH_BONUS, 1.0)
-        a_str = strengths.get(away, 0.5)
-        h_adj, a_str = SeasonSimulator._calibrate_strengths(h_adj, a_str, p_e, damping=damping)
-
-        # 3) Features de punto (las 6) desde el DataFrame de features.
-        point_mf = {f: (float(row[f]) if f in df.columns else 0.0) for f in POINT_FEATURES}
-
-        # Contexto de set (solo si el clamp esta activo).
-        team_feats = None
-        if use_set_calibration and set_predictor is not None:
-            team_feats = SeasonSimulator._extract_set_team_features(df)
-
-        # 4) Monte Carlo del partido (semilla por partido -> reproducible).
-        mc = simulator.monte_carlo_simulate(
-            home_team=home,
-            away_team=away,
-            home_strength=h_adj,
-            away_strength=a_str,
-            match_features=point_mf,
-            n_simulations=n_sims,
-            seed=1000 + i,
-            set_predictor=set_predictor if use_set_calibration else None,
-            team_features=team_feats,
+    if accum["time_budget_exceeded"]:
+        # Devolver lo que se haya acumulado hasta el aborto.
+        results = _aggregate_metrics(
+            accum["y"], accum["p_sim"], accum["p_elo"],
+            accum["sim_margin_acc"], accum["real_margin_cnt"],
+            accum["n_margin"],
+            season, n_sims, use_set_calibration, damping,
+            accum["elapsed"],
         )
+        _save_and_plot(results, accum["y"], accum["p_sim"], accum["p_elo"],
+                       season, use_set_calibration, make_plot=False)
+        return results
 
-        # 5) Registrar prediccion y actualizar con el resultado REAL.
-        y[i] = int(r["gana_local"])
-        p_sim[i] = float(mc["home_win_prob"])
-        p_elo[i] = p_e
-
-        sm = _sim_margin_probs(mc["score_distribution"])
-        # Solo contamos margenes en partidos con final estandar (ganador a 3 sets).
-        if max(int(r["sets_h"]), int(r["sets_a"])) == 3:
-            for k in sim_margin_acc:
-                sim_margin_acc[k] += sm[k]
-            real_margin_cnt[_margin_key(r["sets_h"], r["sets_a"])] += 1
-            n_margin += 1
-
-        winner = "home" if r["gana_local"] == 1 else "away"
-        fb.update(home, away, int(r["sets_h"]), int(r["sets_a"]), winner,
-                  points_local=int(r["pts_h"]), points_visitante=int(r["pts_a"]))
-
-        # Time-box: proyectar tras el primer partido y abortar si se dispara.
-        if i == 0:
-            dt = time.perf_counter() - t_start
-            projected = dt * len(m_season)
-            print(f"  [time-box] 1er partido: {dt:.2f}s -> proyeccion total "
-                  f"~{projected:.0f}s ({projected / 60:.1f} min)")
-            if projected > max_seconds and not force:
-                raise SystemExit(
-                    f"  ABORTADO: proyeccion {projected:.0f}s > presupuesto {max_seconds:.0f}s. "
-                    f"Baja --n-sims, usa clamp OFF, o pasa --force.")
-
-    elapsed = time.perf_counter() - t_start
-    print(f"  Simulacion completa en {elapsed:.0f}s ({elapsed / len(m_season):.2f}s/partido).")
-
-    # ── Metricas agregadas ──
-    denom = max(n_margin, 1)
-    sim_margin = {k: v / denom for k, v in sim_margin_acc.items()}
-    real_margin = {k: real_margin_cnt[k] / denom for k in real_margin_cnt}
-    l1_margin = float(sum(abs(sim_margin[k] - real_margin[k]) for k in sim_margin))
-
-    results = {
-        "season": season,
-        "n_matches": int(len(m_season)),
-        "n_sims": n_sims,
-        "use_set_calibration": use_set_calibration,
-        "damping": damping,
-        "seconds": round(elapsed, 1),
-        "simulator": {**_prob_metrics(y, p_sim), "ece": _ece(y, p_sim)},
-        "elo_reference": {**_prob_metrics(y, p_elo), "ece": _ece(y, p_elo)},
-        "elo_ref_2025_holdout": ELO_REF_2025,
-        "score_margin_distribution": {
-            "n_standard_finals": n_margin,
-            "simulated": {k: round(v, 4) for k, v in sim_margin.items()},
-            "real": {k: round(v, 4) for k, v in real_margin.items()},
-            "l1_distance": round(l1_margin, 4),
-        },
-        "reliability": _reliability_bins(y, p_sim, n_bins=8),
-    }
-
-    _print_summary(results)
-
-    out = MODELS_DIR / f"backtest_simulator_{season}.json"
-    with open(out, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
-    print(f"\n  Resultados guardados en {out}")
-
-    if make_plot:
-        _plot_reliability(y, p_sim, p_elo, season, use_set_calibration)
-
+    results = _aggregate_metrics(
+        accum["y"], accum["p_sim"], accum["p_elo"],
+        accum["sim_margin_acc"], accum["real_margin_cnt"],
+        accum["n_margin"],
+        season, n_sims, use_set_calibration, damping,
+        accum["elapsed"],
+    )
+    _save_and_plot(results, accum["y"], accum["p_sim"], accum["p_elo"],
+                   season, use_set_calibration, make_plot=make_plot)
     return results
 
 
-def _reliability_bins(y: np.ndarray, p: np.ndarray, n_bins: int = 8) -> dict:
+def _reliability_bins(
+    y: np.ndarray, p: np.ndarray, n_bins: int = N_CALIBRATION_BINS,
+) -> dict:
     """Bins de la curva de fiabilidad (prob predicha media vs frecuencia real)."""
     from sklearn.calibration import calibration_curve
     try:
@@ -408,7 +514,8 @@ def _reliability_bins(y: np.ndarray, p: np.ndarray, n_bins: int = 8) -> dict:
                                                  n_bins=n_bins, strategy="uniform")
         return {"prob_pred": [round(float(x), 4) for x in prob_pred],
                 "prob_true": [round(float(x), 4) for x in prob_true]}
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        print(f"  [WARN] _reliability_bins fallo ({e}); se devuelven bins vacios.")
         return {"prob_pred": [], "prob_true": []}
 
 
@@ -427,7 +534,7 @@ def _print_summary(res: dict):
         print(f"    {k}:  sim {md['simulated'][k]:.3f}   real {md['real'][k]:.3f}")
     print(f"  L1(margenes) = {md['l1_distance']:.4f}")
     delta_brier = s["brier"] - e["brier"]
-    if delta_brier <= 0.005:
+    if delta_brier <= BRIER_DEGRADATION_TOLERANCE:
         print(f"\n  Lectura: el simulador NO degrada la calidad de probabilidad "
               f"(Brier delta {delta_brier:+.4f}); es fiel al Elo y anade el detalle de marcador.")
     else:
@@ -435,7 +542,13 @@ def _print_summary(res: dict):
               f"respecto al Elo; candidato a ajuste (grupo A / B2 / B3).")
 
 
-def _plot_reliability(y, p_sim, p_elo, season: int, set_cal: bool):
+def _plot_reliability(
+    y: np.ndarray,
+    p_sim: np.ndarray,
+    p_elo: np.ndarray,
+    season: int,
+    set_cal: bool,
+) -> None:
     """Guarda la curva de fiabilidad del simulador y del Elo en models/plots/."""
     try:
         import matplotlib
@@ -447,7 +560,8 @@ def _plot_reliability(y, p_sim, p_elo, season: int, set_cal: bool):
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
         for p, label, color in [(p_sim, "Simulador", "#1565C0"), (p_elo, "Elo (ref)", "#E53935")]:
-            pt, pp = calibration_curve(y, np.clip(p, 1e-6, 1 - 1e-6), n_bins=8, strategy="uniform")
+            pt, pp = calibration_curve(y, np.clip(p, 1e-6, 1 - 1e-6),
+                                       n_bins=N_CALIBRATION_BINS, strategy="uniform")
             ax1.plot(pp, pt, "o-", label=label, color=color)
         ax1.plot([0, 1], [0, 1], "--", color="gray", alpha=0.6, label="Perfecta")
         ax1.set_xlabel("Probabilidad predicha")
@@ -464,7 +578,7 @@ def _plot_reliability(y, p_sim, p_elo, season: int, set_cal: bool):
         ax2.legend()
         ax2.grid(alpha=0.3)
 
-        suffix = "_clampON" if set_cal else ""
+        suffix = "_calON" if set_cal else ""
         out = PLOTS_DIR / f"backtest_simulator_{season}{suffix}.png"
         fig.tight_layout()
         fig.savefig(out, dpi=110)
@@ -481,7 +595,7 @@ def main():
     ap.add_argument("--n-sims", type=int, default=500,
                     help="Simulaciones Monte Carlo por partido (default 500).")
     ap.add_argument("--use-set-calibration", action="store_true",
-                    help="Activar el clamp adaptativo del SetPredictor (lento).")
+                    help="Activar la calibracion del SetPredictor (lento).")
     ap.add_argument("--damping", type=float, default=MATCH_PREDICTOR_DAMPING,
                     help=f"Damping de _calibrate_strengths (default {MATCH_PREDICTOR_DAMPING}).")
     ap.add_argument("--max-seconds", type=float, default=DEFAULT_MAX_SECONDS,
