@@ -40,22 +40,36 @@ Cuando `n_simulaciones_mc > 0`, el endpoint delega en `MatchSimulator.monte_carl
 
 ## 2. Cálculo de Fuerzas por Defecto
 
-Cuando el usuario no envía `fuerza_local` o `fuerza_visitante`, se obtienen de la variable global `TEAM_STRENGTHS` calculada al arrancar la API (`src/api/main.py:118-152`):
+> **⚠️ ACTUALIZACIÓN 2026-07-15** — Fuerzas recalculadas tras B0 (colisión
+> `partido_id` arreglada). 1322 partidos válidos desde el margin-Elo rolling.
 
-1. Se lee `DB/features/match_features.csv` y se agrupa por equipo.
-2. Para cada equipo con al menos 10 partidos, se calcula `wins / total_matches`.
-3. Los equipos con menos de 10 partidos reciben un valor de fallback hardcodeado (`_STRENGTH_DEFAULTS`).
+Cuando el usuario no envía `fuerza_local` o `fuerza_visitante`, se obtienen de la variable global `TEAM_STRENGTHS` calculada al arrancar la API (`src/api/main.py:118-164`):
 
-Esto produce una tabla de fuerzas en el rango [0.35, 0.68] para la temporada 2024/2025:
+1. Se computa el **margin-Elo rolling** desde `sets_partidos.csv` corregido
+   (1322 partidos reales, sin colisión `partido_id`).
+2. Se mapea el rating Elo final a [0,1] mediante una logística centrada en 1500
+   con escala 400.
+3. Los equipos sin suficientes datos (menos de 10 partidos) reciben un valor de
+   fallback hardcodeado (`_STRENGTH_DEFAULTS`).
+
+Tras B0 (2026-07-15), las fuerzas se recalculan desde el margin-Elo limpio
+sobre 1322 partidos válidos (sin colisión `partido_id`). La jerarquía refleja
+el margin-Elo rolling con recencia:
 
 | Equipo | Fuerza | Equipo | Fuerza |
 |---|---|---|---|
-| Trento | 0.68 | Modena | 0.52 |
-| Perugia | 0.65 | Monza | 0.48 |
-| Verona | 0.60 | Padova | 0.47 |
-| Piacenza | 0.58 | Cisterna | 0.45 |
-| Lube | 0.56 | Taranto | 0.40 |
-| Milano | 0.53 | Grottazzolina | 0.35 |
+| Perugia | 0.833 | Milano | ~0.55 |
+| Trento | 0.734 | Monza | ~0.52 |
+| Lube | ~0.67 | Padova | ~0.48 |
+| Piacenza | ~0.64 | Cisterna | ~0.45 |
+| Verona | ~0.62 | Taranto | **0.526** |
+| Modena | ~0.58 | Grottazzolina | 0.183 |
+
+Nota: los valores marcados con `~` son aproximados; la jerarquía exacta se
+obtiene del API en tiempo de ejecución. Los cambios más notables respecto a la
+tabla pre-B0 son: **Perugia** escala de 0.65 a 0.833 (confirma su dominancia),
+**Taranto** sube de 0.40 a 0.526 (resuelve la anomalía previa), y
+**Grottazzolina** baja de 0.35 a 0.183.
 
 ---
 
