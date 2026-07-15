@@ -1,0 +1,43 @@
+{
+  "config": {
+    "OFF": {
+      "pair_level": {
+        "mean_abs_diff": 0.22406,
+        "p95_abs_diff": 0.39732,
+        "n_pairs": 132
+      },
+      "season_level": {
+        "spearman": -0.97203,
+        "spearman_pvalue": 0.0,
+        "mean_std_position": 0.16667,
+        "n_seeds": 10
+      },
+      "time_seconds": 31.6
+    },
+    "ON": {
+      "pair_level": {
+        "mean_abs_diff": 0.24262,
+        "p95_abs_diff": 0.44298,
+        "n_pairs": 132
+      },
+      "season_level": {
+        "spearman": -0.97203,
+        "spearman_pvalue": 0.0,
+        "mean_std_position": 0.0,
+        "n_seeds": 10
+      },
+      "time_seconds": 541.9
+    },
+    "NEW": null
+  },
+  "params": {
+    "n_sims": 200,
+    "n_seeds": 10,
+    "time_budget_s": 900.0,
+    "clamp_range_default": [
+      0.2,
+      0.8
+    ]
+  },
+  "decision": "FULL"
+}
