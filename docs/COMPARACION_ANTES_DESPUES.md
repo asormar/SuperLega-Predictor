@@ -41,11 +41,18 @@ modelo real tenía AUC 0.53 — apenas por encima del azar.
    victoria**, forma EWMA y H2H con decaimiento. Un Elo limpio (una sola
    variable, sin entrenar) ya daba AUC 0.62 — más que las 87 features viejas.
 
-3. **Recencia / descarte de datos ruidosos**. Las temporadas 2016-2020
-   (34-55 partidos, con el local ganando solo ~35% de las veces) enseñaban
-   la relación con el **signo invertido**: un modelo entrenado con todo el
-   histórico predecía 2025 al revés (AUC 0.42). Entrenando solo con 2022-2024
-   (o con pesos de recencia, half-life ≈ 1.5), el AUC salta a 0.75.
+3. **Recencia operativa (train 2022-2024)**. La ventana de entrenamiento se
+   limita a las últimas 3 temporadas.
+   - **Justificación vigente**: ciclo de plantillas de la SuperLega (half-life
+     2 temporadas ≈ renovación típica de un roster).
+   - **Justificación histórica (invalidada por B0, 2026-07-15)**: se creía que
+     las temporadas 2016-2020 estaban "envenenadas" y enseñaban el signo
+     invertido (home-win ~0.32, AUC 0.42 con todo el histórico). Con el fix B0
+     (colisión `partido_id` corregida), el home-win es **0.48-0.61 en todas las
+     temporadas** y esa narrativa pierde sustento. La recencia se mantiene por
+     la primera razón, no por la segunda.
+   - Texto original invalidado: ver
+     [`memoria/registro_historico_b0.md`](../memoria/registro_historico_b0.md) §A.3.
 
 4. **Modelos lineales regularizados > árboles profundos** en este régimen
    de datos pequeños. Con 34-59 partidos por temporada, los árboles
