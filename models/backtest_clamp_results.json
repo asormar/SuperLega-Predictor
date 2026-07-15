@@ -10,9 +10,10 @@
         "spearman": -0.97203,
         "spearman_pvalue": 0.0,
         "mean_std_position": 0.16667,
+        "mean_std_total_points": 0.49399,
         "n_seeds": 10
       },
-      "time_seconds": 31.6
+      "time_seconds": 32.7
     },
     "ON": {
       "pair_level": {
@@ -24,9 +25,10 @@
         "spearman": -0.97203,
         "spearman_pvalue": 0.0,
         "mean_std_position": 0.0,
+        "mean_std_total_points": 0.05,
         "n_seeds": 10
       },
-      "time_seconds": 541.9
+      "time_seconds": 550.1
     },
     "NEW": null
   },

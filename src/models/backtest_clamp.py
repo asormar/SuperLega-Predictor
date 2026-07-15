@@ -8,6 +8,16 @@ del simulador a nivel de partido (132 pares ordenados) y de temporada
   - ON:  clamp adaptativo con SetPredictor v2 (LogReg con recencia).
   - NEW: placeholder para A3 (train/serve skew fix), null hasta que exista.
 
+Metricas de estabilidad a nivel temporada:
+  - mean_std_position: metrica secundaria. Esperada 0.0 para ON debido a la
+    saturacion del clamp adaptativo per-point (clamp=[0.674, 0.900] para
+    predicciones confiadas), que hace el ganador del set ~99% determinista.
+    El seed SI se honra (los scores de cada set varian), pero los ganadores
+    no, por lo que la posicion en tabla es 100% determinista.
+  - mean_std_total_points: metrica primaria de estabilidad. Captura la
+    variacion en puntos de clasificacion entre seeds (resultados 3-0/3-1/3-2),
+    que SI varian bajo el clamp.
+
 Time-box de 15 minutos: si la proyeccion excede, reduce parametros
 automaticamente (n_sims 200->50, n_seeds 10->3). Si aun asi excede,
 aborta con mensaje claro.
@@ -94,6 +104,18 @@ def _compute_pair_elo(home: str, away: str, elo_dict: dict) -> float:
     return _elo_expected(elo_h + ELO_HOME_ADV, elo_a)
 
 
+def _get_points(std_entry):
+    """Extrae puntos del entry de standings (duck-typed)."""
+    for attr in ("puntos", "points", "pts"):
+        if hasattr(std_entry, attr):
+            return getattr(std_entry, attr)
+    if isinstance(std_entry, dict):
+        for key in ("puntos", "points", "pts"):
+            if key in std_entry:
+                return std_entry[key]
+    return 0
+
+
 # ─── Nivel partido ──────────────────────────────────────────
 
 def _run_pair_level(
@@ -156,8 +178,16 @@ def _run_season_level(
     season_sim: SeasonSimulator,
     use_set_calibration: bool,
 ) -> dict:
-    """Mide Spearman y estabilidad de posicion para una config."""
+    """Mide Spearman, estabilidad de posicion y variacion de puntos para una config.
+
+    Nota: mean_std_position es una metrica secundaria (esperada 0.0 para ON
+    debido a la saturacion del clamp adaptativo per-point, que hace el ganador
+    del set ~99% determinista). mean_std_total_points es la metrica primaria
+    de estabilidad — captura la variacion en resultados 3-0/3-1/3-2, que
+    siguen variando bajo el clamp.
+    """
     all_positions = {t: [] for t in teams}
+    all_points = {t: [] for t in teams}
 
     for s in range(n_seeds):
         result = season_sim.simulate_season(
@@ -171,6 +201,7 @@ def _run_season_level(
         for pos, std_entry in enumerate(standings, 1):
             team = std_entry.team if hasattr(std_entry, "team") else std_entry["equipo"]
             all_positions[team].append(pos)
+            all_points[team].append(_get_points(std_entry))
 
     # Posicion media por equipo
     mean_pos = {t: float(np.mean(all_positions[t])) for t in teams}
@@ -178,6 +209,10 @@ def _run_season_level(
     # Desviacion tipica por equipo (a traves de seeds) -> media
     std_pos = [float(np.std(all_positions[t])) for t in teams]
     mean_std = float(np.mean(std_pos))
+
+    # Puntos totales por equipo (a traves de seeds) -> std -> media
+    std_pts = [float(np.std(all_points[t])) for t in teams]
+    mean_std_pts = float(np.mean(std_pts))
 
     # Spearman: fuerza margin-Elo descendente vs posicion media ascendente
     # (fuerza alta -> posicion baja, por eso spearman negativo esperado)
@@ -189,6 +224,7 @@ def _run_season_level(
         "spearman": round(float(rho), 5),
         "spearman_pvalue": round(float(pval), 6),
         "mean_std_position": round(mean_std, 5),
+        "mean_std_total_points": round(mean_std_pts, 5),
         "n_seeds": n_seeds,
     }
 
@@ -260,22 +296,23 @@ def _print_summary_table(results: dict, params: dict):
     print("  RESULTADOS BACKTEST DEL CLAMP")
     print("  " + "=" * 80)
     header = (f"  {'Config':<8} {'|P_MC-p_elo|':<16} {'p95':<10} "
-              f"{'Spearman':<11} {'Std pos':<10} {'n_pairs':<9} "
-              f"{'n_seeds':<9} {'T(s)':<8}")
+              f"{'Spearman':<11} {'Std pos':<10} {'Std pts':<10} "
+              f"{'n_pairs':<9} {'n_seeds':<9} {'T(s)':<8}")
     print(header)
-    print("  " + "-" * 80)
+    print("  " + "-" * 90)
     for cfg in CONFIGS:
         r = results["config"].get(cfg)
         if r is None:
-            print(f"  {cfg:<8} {'(pendiente A3)':<60}")
+            print(f"  {cfg:<8} {'(pendiente A3)':<70}")
             continue
         pl = r["pair_level"]
         sl = r["season_level"]
         t = r["time_seconds"]
         print(f"  {cfg:<8} {pl['mean_abs_diff']:<16.5f} {pl['p95_abs_diff']:<10.5f} "
               f"{sl['spearman']:<11.4f} {sl['mean_std_position']:<10.4f} "
+              f"{sl['mean_std_total_points']:<10.4f} "
               f"{pl['n_pairs']:<9} {sl['n_seeds']:<9} {t:<8.1f}")
-    print("  " + "=" * 80)
+    print("  " + "=" * 90)
     print(f"  Parametros: n_sims={params['n_sims']}, "
           f"n_seeds={params['n_seeds']}, "
           f"budget={params['time_budget_s']}s")
@@ -410,7 +447,8 @@ def main(
     print(f"  OFF: |P_MC-p_elo| media={pair_off['mean_abs_diff']:.5f} "
           f"p95={pair_off['p95_abs_diff']:.5f} | "
           f"spearman={season_off['spearman']:.4f} "
-          f"std_pos={season_off['mean_std_position']:.4f} | "
+          f"std_pos={season_off['mean_std_position']:.4f} "
+          f"std_pts={season_off['mean_std_total_points']:.4f} | "
           f"tiempo={t_off:.1f}s")
     results["config"]["OFF"] = {
         "pair_level": pair_off,
@@ -434,7 +472,8 @@ def main(
     print(f"  ON:  |P_MC-p_elo| media={pair_on['mean_abs_diff']:.5f} "
           f"p95={pair_on['p95_abs_diff']:.5f} | "
           f"spearman={season_on['spearman']:.4f} "
-          f"std_pos={season_on['mean_std_position']:.4f} | "
+          f"std_pos={season_on['mean_std_position']:.4f} "
+          f"std_pts={season_on['mean_std_total_points']:.4f} | "
           f"tiempo={t_on:.1f}s")
     results["config"]["ON"] = {
         "pair_level": pair_on,
