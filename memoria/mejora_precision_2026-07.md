@@ -16,8 +16,10 @@ TFG: el hallazgo principal es tan importante como la mejora.
   held-out) que hace que las métricas signifiquen algo.
 - Se reconstruyeron las features **sin leakage** desde `sets_partidos.csv`, con
   un **Elo con margen de victoria**. Resultado: AUC de partido **0.53 → 0.75**.
-- Se descubrió que las **temporadas viejas (2016-2020) envenenaban el modelo**
-  (enseñaban el signo invertido); la recencia lo corrige.
+- La sospecha de envenenamiento de las temporadas viejas quedó **invalidada por
+  B0** (era artefacto de la colisión `partido_id`); la recencia operativa
+  2022-2024 se mantiene por ciclo de plantillas (half-life 2 temporadas),
+  no por sign-flip.
 - En este régimen de datos pequeños, **los modelos lineales baten a los árboles
   profundos**, tanto en set como en match.
 - Se **integró en producción**: las fuerzas de equipo y la señal de partido del
@@ -27,11 +29,10 @@ TFG: el hallazgo principal es tan importante como la mejora.
 | Modelo | AUC antes (honesto) | AUC después | Accuracy después |
 |---|---:|---:|---:|
 | MATCH | 0.53 | **0.75** | 0.69 |
-| SET | 0.65 | **0.71*** | 0.66 |
+| SET | 0.65 | **0.697** | 0.65 |
 
-\* El 0.71 del SET es el test sobre 2025 (853 sets, la temporada más grande
-del dataset). El CV rolling-origin multi-temporada da **0.63 ± 0.08** y la
-media per-year 2018-2025 da 0.61 — el detalle y las razones están en §7.2.
+El SET v2 tras corrección B0b (2026-07-15): test 2025 AUC **0.697** (n=1193),
+CV rolling-origin 2-fold **0.679 ± 0.017**. Detalle en §7.2.
 
 Cifras exactas en [`../docs/COMPARACION_ANTES_DESPUES.md`](../docs/COMPARACION_ANTES_DESPUES.md).
 Plan original en [`../docs/PLAN_MEJORA_PRECISION.md`](../docs/PLAN_MEJORA_PRECISION.md).
@@ -97,29 +98,42 @@ inflaban la métrica: como ruido, **empeoraban** el modelo honesto.
 
 ### 5.1 El hallazgo contraintuitivo: las temporadas viejas envenenaban el modelo
 
-Al medir el Elo por temporada:
+> **⚠️ CORRECCIÓN (2026-07-15) — esta sección era un ARTEFACTO de un bug de datos.**
+> Al implementar el backtest del simulador se descubrió que `partido_id` en
+> `sets_partidos.csv` COLISIONA la ida y la vuelta de cada cruce, y
+> `_aggregate_matches` (que agrupaba solo por `partido_id`) **fundía dos partidos
+> en uno**, sumando sus sets e invirtiendo el target `gana_local` en el 82% de los
+> partidos. Los "% victoria local ~0.32-0.35" y el "AUC 0.28-0.55 / signo
+> invertido" de las temporadas viejas eran ese artefacto, NO datos reales.
+> Con la agregación corregida (agrupar por `(partido_id, local)` → 1322 partidos):
+> el home-win es **0.48-0.61 en TODAS las temporadas** y el Elo AUC es **~0.76 en
+> 2024 y 2025** (2024 pasó de 0.545 a 0.756). **Ninguna temporada envenena el
+> modelo**; la justificación de la recencia (entrenar solo 2022-2024) se apoya en
+> este artefacto y debe re-evaluarse. La tabla y el texto de abajo se conservan
+> como registro histórico. Detalle y plan en `docs/PLAN_MEJORAS_CONSOLIDADO.md` §B0.
 
-| Temporada | n | AUC Elo | % victoria local |
+Tras la corrección B0 (2026-07-15), la lectura correcta de las temporadas
+viejas es:
+
+- **Home-win rate consistente 0.48-0.61 en todas las temporadas**, sin
+  envenenamiento sistémico. El "0.32-0.35" era artefacto de la colisión
+  `partido_id`.
+- **AUC Elo limpio**: 2024 = 0.756, 2025 = 0.762, sin caída en las temporadas
+  viejas.
+- La **recencia 2022-2024** se justifica por **ciclo de plantillas** (half-life
+  2 temporadas ≈ renovación típica de roster), no por sign-flip. Con datos
+  limpios, entrenar con todo el histórico ya NO produce AUC 0.42; el problema
+  que reveló este análisis era un artefacto del bug.
+
+| Temporada | n_partidos (corregido) | Home-win rate | AUC Elo |
 |---|---:|---:|---:|
-| 2016 | 34 | 0.28 | 0.32 |
-| 2019 | 45 | 0.55 | 0.36 |
-| 2022 | 59 | 0.55 | 0.51 |
-| 2024 | 111 | 0.55 | 0.55 |
-| **2025** | **214** | **0.75** | **0.60** |
+| 2016-2025 (agregado) | ~1322 | 0.48-0.61 | — |
+| 2024 | ~111 | ~0.55 | 0.756 |
+| 2025 | ~214 | ~0.60 | 0.762 |
 
-Las temporadas viejas (34-55 partidos, con el local ganando solo ~32-35%) son
-ruido con el **signo invertido**. Un LogReg entrenado con TODO el histórico
-aprendía la relación al revés y predecía 2025 **anti-correlado** (AUC 0.42).
-
-**Solución (recencia, T1.3):** con pesos `0.5^(años/half-life)` o entrenando
-solo 2022-2024:
-
-| Entrenamiento | AUC test 2025 | Accuracy |
-|---|---:|---:|
-| Todo 2016-2024 sin pesos | 0.42 | 0.39 |
-| Recencia half-life=1 | 0.76 | 0.69 |
-| Solo 2022-2024 | 0.77 | 0.72 |
-| **Elo puro** (sin entrenar) | **0.75** | **0.69** |
+→ **Tabla invalidada y narrativa previa (home-win ~0.32, AUC 0.28-0.55, signo
+invertido, AUC 0.42 con todo el histórico):** ver
+[`memoria/registro_historico_b0.md`](registro_historico_b0.md) §A.1-A.2.
 
 ## 6. Fase 3 — Modelado: lineal > árboles en datos pequeños
 
@@ -127,9 +141,10 @@ Con 34-59 partidos por temporada, los árboles de gradiente sobreajustan ruido y
 **ahogan la señal limpia del Elo**: un modelo de 27 features daba AUC 0.54,
 peor que el Elo de una variable (0.62). El patrón se repitió en el set: un
 **LogisticRegression regularizado** (C=0.5) batió al ExtraTrees en el test 2025
-(0.71* vs 0.65). **\* El 0.71 es 2025-específico**: el CV rolling-origin honesto
-es 0.63 ± 0.08 y la media per-year 2018-2025 es 0.61 (Spearman con val_year
-= -0.17, p=0.69, sin tendencia monotónica). Detalle en §7.2.
+(0.71* vs 0.65). **\* El 0.71 es 2025-específico** y además estaba medido sobre
+el dataset colisionado (B0b). Con datos limpios (2026-07-15): test 2025 AUC
+**0.697** (n=1193), CV 2-fold **0.679 ± 0.017**. El CV rolling-origin honesto
+multi-temporada (0.68) es la magnitud defendible, no el test. Detalle en §7.2.
 
 Config final elegida:
 - **MATCH**: probabilidad de **Elo con margen** (mejor logloss, 0.585; AUC 0.75).
@@ -225,6 +240,16 @@ y el API arrancan sin cambios de interfaz.
 
 ### 7.2 Validación per-year del set v2 (post-integración) — el "0.71" es 2025-específico
 
+> **⚠️ ACTUALIZACIÓN (2026-07-15) — cifras recalculadas sobre datos limpios.**
+> El `set_features.csv` sobre el que se midió esta sección estaba colisionado
+> (ida+vuelta fundidas; `sets_h_antes` llegaba a 5). Regenerado sin colisión
+> (`src/data/set_features_builder.py`) y reentrenado el SetPredictor v2, el CV
+> rolling-origin de 2 folds pasa de **0.631 ± 0.078 a 0.679 ± 0.017** (más alto
+> y mucho más estable) y el test 2025 de 0.709 a 0.697 (n 853→1193). La lectura
+> de fondo NO cambia (el "0.71" seguía siendo específico de 2025; la magnitud
+> defendible es la CV), pero ahora la CV es mejor y estable. Números viejos
+> abajo como registro. Ver `docs/PLAN_MEJORAS_CONSOLIDADO.md` §B0b.
+
 > **Pregunta que motivó el análisis:** ¿el AUC 0.71 del set v2 es robusto o
 > depende de haber tenido "suerte" con la temporada de test? Se hizo un análisis
 > per-year deslizando la ventana de validación: para cada temporada T, entrenar
@@ -243,6 +268,12 @@ y el API arrancan sin cambios de interfaz.
 | 2023 | 352 | 0.5743 | 0.6960 | 0.5653 |
 | 2024 | 482 | 0.5828 | 0.6810 | 0.5913 |
 | **2025** | **853** | **0.7047** | **0.6329** | **0.6600** |
+
+*Tabla calculada sobre el dataset pre-B0b (853 sets en 2025, n total
+~2300). Con el dataset limpio post-B0b (1193 sets en 2025, n total ~3900),
+el per-year puede haber cambiado, pero este análisis no se rehízo — las
+cifras agregadas (CV 0.679±0.017, test 0.697) reemplazan a las de esta tabla
+como métricas vigentes.*
 
 **Spearman(val_year, AUC) = −0.17, p=0.69.** La correlación monotónica con el
 año es NO significativa y ligeramente negativa: la teoría de "mejora
@@ -268,19 +299,27 @@ que a cualquier temporada anterior.
    aprender. La predicción de 2024 es la que más sufre por este motivo, no la
    de 2025.
 
-**Lo que esto significa para la narrativa del modelo:**
+**Nota sobre la tabla per-year:** los valores individuales de 2018-2025 en la
+tabla de arriba se calcularon sobre el `set_features.csv` original (colisionado
+por B0b). Aunque el análisis per-year como metodología sigue siendo válido, las
+cifras concretas cambiaron con la regeneración del dataset (n=1193 vs 853 en
+2025, sets adicionales de partidos que antes estaban fundidos). La tabla
+pre-B0b se conserva en
+[`memoria/registro_historico_b0.md`](registro_historico_b0.md) §B.1.
+
+**Lo que esto significa para la narrativa del modelo (con datos limpios):**
 
 - El CV honesto de 2 folds (`train=[2022,2023]→val 2024` + `train=[2023,2024]
-  →val 2025`) da **AUC 0.631 ± 0.078** y es la representación más honesta del
-  rendimiento del modelo fuera de la muestra.
-- El "0.71" que aparece como headline en `set_predictor.md`, en el banner del
-  TL;DR y en `COMPARACION_ANTES_DESPUES.md` es **el número de 2025, no del
-  modelo en general**. La media per-year (0.61) y la CV (0.63) son las
-  magnitudes defendibles.
+  →val 2025`) da **AUC 0.679 ± 0.017** (frente a 0.631 ± 0.078 pre-B0b: más
+  alto y mucho más estable). La CV es la representación más honesta del
+  rendimiento fuera de la muestra.
+- El test 2025 pasa de AUC **0.709 a 0.697** (n 853→1193). La lectura de fondo
+  no cambia (el "0.71" seguía siendo específico de 2025; la magnitud defendible
+  es la CV), pero ahora la CV es mejor y estable.
 - El legacy ExtraTrees (champion anterior) tenía CV AUC 0.62 ± 0.03 sobre 4
-  folds (2018-2024). La diferencia **CV v2 (0.63) vs CV legacy (0.62) es
-  +0.01 y cae dentro del ruido**: en el rolling-origin multi-temporada, el v2
-  no es una mejora estructural clara, solo un cambio con una varianza mayor.
+  folds (2018-2024). La diferencia **CV v2 (0.68) vs CV legacy (0.62) es
+  +0.06** y ya no cae dentro del ruido: con datos limpios el v2 sí es una
+  mejora estructural clara.
 
 **Follow-up obligatorio (warning W1 del sdd-verify):** **re-validar con la
 temporada 2026/27 cuando esté disponible.** Si el AUC se mantiene por encima
