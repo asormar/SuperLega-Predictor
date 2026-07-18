@@ -796,62 +796,87 @@ class SeasonSimulator:
         return h_new, a_str
 
     @staticmethod
-    def _extract_set_team_features(match_features_df) -> dict:
+    def _extract_set_team_features(
+        match_features_df,
+        set_index: int = 1,
+        sets_h_antes: int = 0,
+        sets_a_antes: int = 0,
+        prev_home_won: int = -1,
+    ) -> dict:
         """
         Extrae features de equipo del DataFrame de match features
-        para pasarselas al SetPredictor como contexto.
+        llamando al contrato build_set_features(SetContext).
+
+        Args:
+            match_features_df: DataFrame con 1 fila de rolling features.
+            set_index: numero de set (1..5).
+            sets_h_antes: sets ganados por local antes de este set.
+            sets_a_antes: sets ganados por visitante antes de este set.
+            prev_home_won: -1 (1er set), 1 (local gano anterior), 0 (perdio).
+
+        Returns:
+            dict con las 21 SET_FEATURE_COLS (o vacio si no hay datos).
         """
         if match_features_df is None or match_features_df.empty:
             return {}
 
-        feats = {}
+        from src.data.set_feature_contract import SetContext, build_set_features
+        from src.data.rolling_features import elo_to_strength
+
         row = match_features_df.iloc[0]
 
-        # Mapeo directo: match_feature_col -> set_feature_col
-        mapping = {
-            "elo_diff": "elo_diff",
-            "diff_set_ratio": "diff_set_ratio",
-            "diff_dominancia": "diff_dominancia",
-        }
-        for src, dst in mapping.items():
-            if src in match_features_df.columns:
-                feats[dst] = float(row[src])
+        elo_h = float(row.get("elo_h", 1500.0))
+        elo_a = float(row.get("elo_a", 1500.0))
 
-        # Features de equipo con prefijos
-        # set_wr_h/a/diff -> h_set_win_rate / a_set_win_rate / diff_set_win_rate
-        if "h_set_win_rate" in match_features_df.columns:
-            feats["set_wr_h"] = float(row["h_set_win_rate"])
-        if "a_set_win_rate" in match_features_df.columns:
-            feats["set_wr_a"] = float(row["a_set_win_rate"])
-        if "diff_set_win_rate" in match_features_df.columns:
-            feats["diff_set_wr"] = float(row["diff_set_win_rate"])
+        # Fallback chain for column names: prefer EWMA (decision #4), fall back
+        # to home/away-only names, then to default 0.5.
+        h_form = float(row.get(
+            "h_form_ewma",
+            row.get("h_forma_home", 0.5),
+        ))
+        a_form = float(row.get(
+            "a_form_ewma",
+            row.get("a_forma_away", 0.5),
+        ))
 
-        # forma_h/a/diff -> h_forma_home / a_forma_away / diff_forma_efectiva
-        if "h_forma_home" in match_features_df.columns:
-            feats["forma_h"] = float(row["h_forma_home"])
-        if "a_forma_away" in match_features_df.columns:
-            feats["forma_a"] = float(row["a_forma_away"])
-        if "diff_forma_efectiva" in match_features_df.columns:
-            feats["diff_forma"] = float(row["diff_forma_efectiva"])
+        # Point ratio: prefer new "h_point_ratio" name, fall back to legacy
+        h_pr = float(row.get(
+            "h_point_ratio",
+            row.get("h_pts_fav_exp", 0.5),
+        ))
+        a_pr = float(row.get(
+            "a_point_ratio",
+            row.get("a_pts_fav_exp", 0.5),
+        ))
 
-        # pts_fav_h/a
-        if "h_pts_fav_exp" in match_features_df.columns:
-            feats["pts_fav_h"] = float(row["h_pts_fav_exp"])
-        if "a_pts_fav_exp" in match_features_df.columns:
-            feats["pts_fav_a"] = float(row["a_pts_fav_exp"])
-
-        # h2h_diff: derivar de h_h2h_win_rate
-        if "h_h2h_win_rate" in match_features_df.columns:
-            feats["h2h_diff"] = (float(row["h_h2h_win_rate"]) - 0.5) * 2.0
-
-        # strength_h/a: derivar del Elo normalizado
-        elo_h = float(row.get("elo_h", 1500))
-        elo_a = float(row.get("elo_a", 1500))
-        feats["strength_h"] = min(0.95, max(0.05, elo_h / 3000))
-        feats["strength_a"] = min(0.95, max(0.05, elo_a / 3000))
-        feats["strength_diff"] = feats["strength_h"] - feats["strength_a"]
-
-        return feats
+        ctx = SetContext(
+            temporada_inicio=int(row.get("temporada_inicio", 0)),
+            jornada_num=int(row.get("jornada_num", 0)),
+            match_id=str(row.get("partido_id", "")),
+            set_index=set_index,
+            equipo_local=str(row.get("local", "")),
+            equipo_visitante=str(row.get("visitante", "")),
+            elo_local=elo_h,
+            elo_visitante=elo_a,
+            strength_local=elo_to_strength(elo_h),
+            strength_visitante=elo_to_strength(elo_a),
+            h_win_rate_global=float(row.get("h_win_rate", 0.5)),
+            a_win_rate_global=float(row.get("a_win_rate", 0.5)),
+            h_set_win_rate=float(row.get("h_set_win_rate", row.get("h_set_ratio", 0.5))),
+            a_set_win_rate=float(row.get("a_set_win_rate", row.get("a_set_ratio", 0.5))),
+            h_form_ewma=h_form,
+            a_form_ewma=a_form,
+            h_set_diff_exp=float(row.get("h_set_diff_exp", 0.0)),
+            a_set_diff_exp=float(row.get("a_set_diff_exp", 0.0)),
+            h_point_ratio=h_pr,
+            a_point_ratio=a_pr,
+            h2h_win_rate=float(row.get("h_h2h_win_rate", 0.5)),
+            sets_h_antes=sets_h_antes,
+            sets_a_antes=sets_a_antes,
+            prev_home_won=prev_home_won,
+            target_score=25 if (sets_h_antes + sets_a_antes) < 8 else 15,
+        )
+        return build_set_features(ctx)
 
     def print_standings(self, standings: list):
         """Imprime la tabla de clasificacion."""
