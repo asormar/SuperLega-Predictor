@@ -119,8 +119,6 @@ class TestPtsFavNoLiveScore:
         assert feats["momentum_h"] == 1.0
 
 
-@pytest.mark.xfail(reason="Wired in T-006 — contract not yet in runtime clamp path",
-                   strict=False)
 class TestPSetDiscriminates:
     """REQ-022, SCN-008: p_set varies across the 132 A5 pairs."""
 
@@ -137,10 +135,24 @@ class TestPSetDiscriminates:
         return loaded
 
     @pytest.fixture(scope="class")
-    def p_set_values(self, v2_model):
-        """Compute p_set for all 132 ordered pairs of TEAMS_12."""
+    def team_data(self):
+        """Real Elo ratings and strengths for TEAMS_12."""
+        from src.data.rolling_features import (
+            get_historical_team_elo, elo_to_strength, ELO_BASE,
+        )
+        elo_dict = get_historical_team_elo()
+        return {
+            t: {
+                "elo": elo_dict.get(t, ELO_BASE),
+                "strength": elo_to_strength(elo_dict.get(t, ELO_BASE)),
+            }
+            for t in TEAMS_12
+        }
+
+    @pytest.fixture(scope="class")
+    def p_set_values(self, v2_model, team_data):
+        """Compute p_set for all 132 ordered pairs of TEAMS_12 with real strengths."""
         import pandas as pd
-        from src.data.rolling_features import elo_to_strength
         from src.data.set_feature_contract import SetContext, build_set_features
 
         model = v2_model["model"]
@@ -148,10 +160,12 @@ class TestPSetDiscriminates:
         results = []
 
         for home in TEAMS_12:
+            hd = team_data[home]
             for away in TEAMS_12:
                 if home == away:
                     continue
-                # Build a SetContext for each pair (set 1, no prior sets)
+                ad = team_data[away]
+                # Build a SetContext using REAL Elo/strength for each pair
                 ctx = SetContext(
                     temporada_inicio=2024,
                     jornada_num=11,
@@ -159,10 +173,10 @@ class TestPSetDiscriminates:
                     set_index=1,
                     equipo_local=home,
                     equipo_visitante=away,
-                    elo_local=1500.0,
-                    elo_visitante=1500.0,
-                    strength_local=0.5,
-                    strength_visitante=0.5,
+                    elo_local=hd["elo"],
+                    elo_visitante=ad["elo"],
+                    strength_local=hd["strength"],
+                    strength_visitante=ad["strength"],
                     h_set_win_rate=0.5,
                     a_set_win_rate=0.5,
                     h_form_ewma=0.5,
@@ -185,7 +199,7 @@ class TestPSetDiscriminates:
         return [r["p_set"] for r in results]
 
     def test_p_set_discriminates(self, p_set_values):
-        """std(p_set) > 0.05 (today it is ~0.007)."""
+        """std(p_set) > 0.05 (today it was ~0.007)."""
         std = float(np.std(p_set_values))
         assert std > 0.05, (
             f"p_set std={std:.4f} across 132 pairs. "
