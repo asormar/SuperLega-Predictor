@@ -159,13 +159,11 @@ def train_set(data: dict) -> dict:
     """Modelo de set: LogReg regularizado con pesos de recencia.
 
     Returns dict con la misma forma que precision_baseline.json (set).
+    Lee el CSV de features v2 (A3 contract) en lugar del legacy de la pipeline.
     """
-    ds = data["set_features"].copy()
-    # Guard defensivo: si el pipeline no inyectó temporada_inicio (p.ej. cache
-    # stale o llamada manual con otro constructor), derivarla del partido_id.
-    if "temporada_inicio" not in ds.columns:
-        ds["temporada_inicio"] = ds["partido_id"].apply(
-            lambda x: int(str(x).split("/")[0]) if "/" in str(x) else 0)
+    v2_path = BASE_DIR / "DB" / "features" / "set_features_v2.csv"
+    ds = pd.read_csv(v2_path)
+    data["set_features"] = ds  # so _set_rolling_cv uses the same v2 data
     cols = [c for c in SET_FEATURE_COLS if c in ds.columns]
 
     tr = ds[ds.temporada_inicio.isin(RECENT_TRAIN_SEASONS)]
