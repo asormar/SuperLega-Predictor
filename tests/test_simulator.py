@@ -113,7 +113,7 @@ class TestAdaptiveClamp:
         team_features = {
             "set_wr_h": 0.5, "set_wr_a": 0.5,
             "forma_h": 0.5, "forma_a": 0.5,
-            "pts_fav_h": 23.5, "pts_fav_a": 23.5,
+            "pts_fav_h": 0.55, "pts_fav_a": 0.45,  # [0,1] ratio scale per Guardrail 4
         }
         match = sim.simulate_match(
             "Trento", "Perugia",
@@ -143,7 +143,7 @@ class TestAdaptiveClamp:
         sim = MatchSimulator()
         team_features = {"set_wr_h": 0.5, "set_wr_a": 0.5,
                          "forma_h": 0.5, "forma_a": 0.5,
-                         "pts_fav_h": 23.5, "pts_fav_a": 23.5}
+                         "pts_fav_h": 0.55, "pts_fav_a": 0.45}  # [0,1] ratio scale per Guardrail 4
         match = sim.simulate_match("Trento", "Perugia", home_strength=0.55,
                                    away_strength=0.52, seed=42,
                                    set_predictor=synthetic_set_predictor,
