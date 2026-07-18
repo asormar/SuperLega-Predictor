@@ -138,7 +138,7 @@ def _run_pair_level(
 
         # Para la config ON, construir team_features desde el feature builder
         team_feats = None
-        if (label == "ON" and set_predictor is not None
+        if (label in ("ON", "NEW") and set_predictor is not None
                 and feature_builder is not None):
             try:
                 feat_df = feature_builder.build_features(home, away, jornada=11)
@@ -481,8 +481,35 @@ def main(
         "time_seconds": round(t_on, 1),
     }
 
-    # ── NEW (placeholder) ──
-    results["config"]["NEW"] = None
+    # ── NEW (contract-based, same as ON after A3) ──
+    # After A3 (task T-005/T-006), _extract_set_team_features delegates to the
+    # contract and _eval_set_predictor no longer overrides with live score.
+    # ON is now effectively the same as NEW.  We record a separate run here
+    # so the comparison table is complete.
+    print("  --- CONFIG: NEW (contract path, A3) ---")
+    t0 = time.perf_counter()
+    pair_new = _run_pair_level(
+        TEAMS_12, elo_dict, strengths,
+        n_sims, set_predictor=set_predictor_v2,
+        feature_builder=feature_builder, label="NEW",
+    )
+    season_new = _run_season_level(
+        TEAMS_12, strengths, elo_dict,
+        n_seeds, ss_on, use_set_calibration=True,
+    )
+    t_new = time.perf_counter() - t0
+    print(f"  NEW: |P_MC-p_elo| media={pair_new['mean_abs_diff']:.5f} "
+          f"p95={pair_new['p95_abs_diff']:.5f} | "
+          f"spearman={season_new['spearman']:.4f} "
+          f"std_pos={season_new['mean_std_position']:.4f} "
+          f"std_pts={season_new['mean_std_total_points']:.4f} | "
+          f"tiempo={t_new:.1f}s")
+    results["config"]["NEW"] = {
+        "pair_level": pair_new,
+        "season_level": season_new,
+        "time_seconds": round(t_new, 1),
+        "note": "A3 contract path — _extract_set_team_features via build_set_features, no live-score override",
+    }
 
     # ── Imprimir tabla ──
     _print_summary_table(results, results["params"])
