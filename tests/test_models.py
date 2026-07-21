@@ -1,6 +1,7 @@
 ﻿"""Smoke tests for the four ML models — synthetic fixtures, no models/*.joblib needed."""
 
 import json
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -533,5 +534,32 @@ class TestLogRegSetPredictorV2:
         assert source == "extra_trees_v1", f"Expected legacy fallback, got {source}"
         from src.models.set_predictor import SetPredictor
         assert isinstance(adapter, SetPredictor)
+
+    def test_predict_proba_warns_on_schema_drift(self):
+        """Warns UserWarning when input columns differ from trained features."""
+        adapter = LogRegSetPredictor.load(self.V2_PATH)
+        # Pass input with a RENAMED feature (extra+missing simultaneously)
+        renamed_cols = [
+            "pts_fav_home_h" if c == "pts_fav_h" else c
+            for c in adapter.feature_names
+        ]
+        df = pd.DataFrame([{c: 0.5 for c in renamed_cols}])
+
+        with pytest.warns(UserWarning, match="Schema drift"):
+            proba = adapter.predict_proba(df)
+
+        _assert_proba_bounded(proba, "LogRegSetPredictorV2 (drifted)")
+        assert proba.shape == (1, 2)
+
+    def test_predict_proba_no_warning_on_exact_match(self):
+        """No warning when input columns exactly match trained features."""
+        adapter = LogRegSetPredictor.load(self.V2_PATH)
+        df = pd.DataFrame([{f: 0.5 for f in adapter.feature_names}])
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # turn warnings into errors
+            proba = adapter.predict_proba(df)
+
+        _assert_proba_bounded(proba, "LogRegSetPredictorV2 (exact match)")
 
 

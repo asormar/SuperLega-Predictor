@@ -14,6 +14,8 @@ Ver `memoria/set_predictor.md` (banner) y `memoria/mejora_precision_2026-07.md`
 §6-§7.2 para el contexto completo (motivación, métricas honestas y caveats).
 """
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import joblib
@@ -61,6 +63,27 @@ class LogRegSetPredictor:
         # Build a DataFrame with columns in the exact order the model expects
         row = {f: X.get(f, pd.Series(0.0, index=X.index)) for f in self.feature_names}
         X_reordered = pd.DataFrame(row, columns=self.feature_names)
+
+        # Warn on schema drift: symmetric difference between the model's trained
+        # feature set and the input columns.  Drift means either a newer contract
+        # renamed/grew features without retraining the model, or the model was
+        # retrained on a different feature set.
+        input_cols_set = set(X.columns)
+        model_cols_set = set(self.feature_names)
+        missing = model_cols_set - input_cols_set
+        extra = input_cols_set - model_cols_set
+        if missing or extra:
+            msg_parts = []
+            if missing:
+                msg_parts.append(f"missing (will fill 0.0): {sorted(missing)}")
+            if extra:
+                msg_parts.append(f"extra (will ignore): {sorted(extra)}")
+            warnings.warn(
+                f"Schema drift between contract and v2 model: {'; '.join(msg_parts)}",
+                UserWarning,
+                stacklevel=2,
+            )
+
         return self.model.predict_proba(X_reordered.fillna(0.0))
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
