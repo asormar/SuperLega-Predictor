@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from src.simulation.set_math import p_point_from_p_set
 from src.simulation.constants import (
-    DEFAULT_CLAMP_RANGE, CLAMP_MARGIN_POINT,
+    DEFAULT_CLAMP_RANGE, CLAMP_MARGIN_POINT, SET_BLEND_WEIGHT_ELO,
     POINT_PROB_CLIP_ADAPTIVE_HARD,
     DEFAULT_SIDEOUT_RATE, POINT_PROB_CLIP,
     GLOBAL_MOMENTUM_FACTOR,
@@ -251,20 +251,36 @@ class MatchSimulator:
         # Clamp adaptativo via SetPredictor: se evalua una vez al inicio del set
         clamp_low, clamp_high = DEFAULT_CLAMP_RANGE
 
-        # Evaluar SetPredictor una vez al inicio para ajustar el clamp
         if set_predictor is not None and set_context_base is not None:
-            p_set_home = self._eval_set_predictor(
-                set_predictor, set_context_base,
-                0, 0, target_score,
-                sets_home_antes, sets_away_antes,
-            )
-            if p_set_home is not None:
-                # A2: p_set vive en escala de SET; el clamp gobierna PUNTOS.
-                # Convertir antes de centrar (un favorito con P(set)=0.75 solo
-                # necesita P(punto)~0.53). target_score es 15 en el quinto set.
-                p_center = p_point_from_p_set(p_set_home, target_score)
-                clamp_low = max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], p_center - CLAMP_MARGIN_POINT)
-                clamp_high = min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], p_center + CLAMP_MARGIN_POINT)
+            # A4: el centro del clamp es una MEZCLA en escala de punto entre la
+            # senal que ya gobierna el punto (`base_p_neutral`, derivada de las
+            # fuerzas ya calibradas por Elo) y la del SetPredictor convertida.
+            base_p_neutral = (
+                point_probs["p_home_serving"] + point_probs["p_home_receiving"]
+            ) / 2
+            p_center = base_p_neutral
+
+            # Con SET_BLEND_WEIGHT_ELO >= 1.0 la aportacion del SetPredictor se
+            # multiplica por 0, asi que ni se le llama: seria coste puro (la
+            # config ON cuesta ~17x la OFF en el backtest A5).
+            if SET_BLEND_WEIGHT_ELO < 1.0:
+                p_set_home = self._eval_set_predictor(
+                    set_predictor, set_context_base,
+                    0, 0, target_score,
+                    sets_home_antes, sets_away_antes,
+                )
+                if p_set_home is not None:
+                    # A2: p_set vive en escala de SET; el clamp gobierna PUNTOS.
+                    # Convertir antes de centrar (un favorito con P(set)=0.75
+                    # solo necesita P(punto)~0.55). target_score es 15 en el 5o.
+                    p_set_punto = p_point_from_p_set(p_set_home, target_score)
+                    p_center = (
+                        SET_BLEND_WEIGHT_ELO * base_p_neutral
+                        + (1 - SET_BLEND_WEIGHT_ELO) * p_set_punto
+                    )
+
+            clamp_low = max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], p_center - CLAMP_MARGIN_POINT)
+            clamp_high = min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], p_center + CLAMP_MARGIN_POINT)
 
         while True:
             point_num += 1

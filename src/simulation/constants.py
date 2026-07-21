@@ -20,6 +20,27 @@ CLAMP_MARGIN = 0.20  # Margen del SetPredictor adaptativo (LEGACY, escala de SET
 # mas el momentum global; un margen por debajo de eso anula el momentum.
 CLAMP_MARGIN_POINT = 0.10
 
+# Peso del blend del clamp adaptativo (A4).
+# El clamp era un override duro del SetPredictor sobre la senal Elo. A4 lo
+# convierte en mezcla en escala de PUNTO:
+#     p_center = w * base_p_neutral + (1 - w) * p_set_punto
+# donde `base_p_neutral` es la senal que YA gobierna el punto (derivada de
+# las fuerzas ya calibradas por Elo en _calibrate_strengths) y `p_set_punto`
+# es la del SetPredictor convertida por set_math (A2).
+# w=1.0 equivale a ignorar al SetPredictor (~clamp OFF).
+#
+# VALOR TUNEADO (A4): w=1.0. El barrido {0.5, 0.7, 0.9, 1.0} sobre el
+# nivel-temporada de A5 (n_sims=100, n_seeds=10, estado aislado) da:
+#     w=0.5  spearman -0.9720  std_pts 0.6285  |P_MC-p_elo| 0.2250
+#     w=0.7  spearman -0.9702  std_pts 0.5458  |P_MC-p_elo| 0.2249
+#     w=0.9  spearman -0.9720  std_pts 0.4006  |P_MC-p_elo| 0.2247
+#     w=1.0  spearman -0.9720  std_pts 0.4006  |P_MC-p_elo| 0.2247
+# w=0.9 y w=1.0 son IDENTICOS, y sus cifras coinciden con la config OFF.
+# Conclusion (resultado negativo, Guardrail 9): el SetPredictor no aporta
+# senal util al clamp ni siquiera con la escala ya corregida por A2. Ver
+# memoria/simulator.md y mejora_precision_2026-07.md §7.1.
+SET_BLEND_WEIGHT_ELO = 1.0
+
 # Probabilidad de sideout (PointProbabilityModel fallback)
 DEFAULT_SIDEOUT_RATE = 0.62
 

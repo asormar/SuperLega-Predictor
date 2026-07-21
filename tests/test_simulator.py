@@ -9,6 +9,7 @@ from src.simulation.constants import (
     POINT_PROB_CLIP_ADAPTIVE_HARD,
     CLAMP_MARGIN,
     CLAMP_MARGIN_POINT,
+    SET_BLEND_WEIGHT_ELO,
     POINT_PROB_CLIP,
     DEFAULT_SIDEOUT_RATE,
 )
@@ -159,17 +160,16 @@ class TestAdaptiveClamp:
             assert high <= POINT_PROB_CLIP_ADAPTIVE_HARD[1], f"high {high} > 0.90"
         assert match.winner in ("home", "away")
 
-    def test_clamp_centered_on_implicit_point_prob(self, synthetic_set_predictor, monkeypatch):
-        """A2: el clamp se centra en p_point_from_p_set(p_set), no en p_set.
-
-        Con p_set_home = 0.75 el centro debe ser ~0.546 (escala de PUNTO),
-        NO 0.75. Es la correccion de escala que motiva A2.
-        """
+    @staticmethod
+    def _run_and_record_bounds(sim, synthetic_set_predictor, monkeypatch, p_set_home):
+        """Corre un partido con p_set fijo y devuelve (bounds_seen, base_p_neutral)."""
         import numpy as np
-        from src.simulation.set_math import p_point_from_p_set
+        from src.data.team_sideout import get_sideout_rates
 
-        monkeypatch.setattr(synthetic_set_predictor, "predict_proba",
-                            lambda _: np.array([[0.25, 0.75]]))
+        monkeypatch.setattr(
+            synthetic_set_predictor, "predict_proba",
+            lambda _: np.array([[1 - p_set_home, p_set_home]]),
+        )
 
         bounds_seen = set()
         original_clip = np.clip
@@ -179,7 +179,6 @@ class TestAdaptiveClamp:
             return original_clip(a, a_min, a_max, **kwargs)
 
         monkeypatch.setattr(np, "clip", recording_clip)
-        sim = MatchSimulator()
         team_features = {"set_wr_h": 0.5, "set_wr_a": 0.5,
                          "forma_h": 0.5, "forma_a": 0.5,
                          "pts_fav_h": 0.55, "pts_fav_a": 0.45}
@@ -188,18 +187,104 @@ class TestAdaptiveClamp:
                            set_predictor=synthetic_set_predictor,
                            team_features=team_features)
 
-        expected_center = p_point_from_p_set(0.75, 25)
+        # Replica exacta de como simulate_match construye point_probs
+        # (point_model=None -> _default_point_probs con sideouts per-team).
+        hs, as_ = get_sideout_rates("Trento", "Perugia")
+        pp = sim._default_point_probs(0.55, 0.52, home_sideout=hs, away_sideout=as_)
+        base_p_neutral = (pp["p_home_serving"] + pp["p_home_receiving"]) / 2
+        return bounds_seen, base_p_neutral
+
+    def test_blend_weight_default_is_one(self):
+        """A4: el valor tuneado es w=1.0 (el SetPredictor no aporta senal).
+
+        Resultado NEGATIVO documentado: el barrido {0.5, 0.7, 0.9, 1.0} sobre
+        el nivel-temporada de A5 da w=0.9 y w=1.0 identicos y coincidentes con
+        la config OFF. Ver constants.py y memoria/simulator.md.
+        """
+        assert SET_BLEND_WEIGHT_ELO == 1.0
+
+    def test_set_predictor_not_called_when_weight_is_one(self, synthetic_set_predictor,
+                                                         monkeypatch):
+        """A4: con w=1.0 no se llama al SetPredictor (su aporte seria x0)."""
+        calls = []
+        original = MatchSimulator._eval_set_predictor
+
+        def counting(self, *a, **kw):
+            calls.append(1)
+            return original(self, *a, **kw)
+
+        monkeypatch.setattr(MatchSimulator, "_eval_set_predictor", counting)
+        sim = MatchSimulator()
+        self._run_and_record_bounds(sim, synthetic_set_predictor, monkeypatch, 0.75)
+        assert not calls, "se evaluo el SetPredictor con w=1.0 (coste puro)"
+
+    def test_clamp_centered_on_blended_point_prob(self, synthetic_set_predictor, monkeypatch):
+        """A2+A4: el clamp se centra en el blend en escala de PUNTO.
+
+        A2: p_set (escala SET) se convierte a punto antes de centrar --- con
+        p_set=0.75 el aporte del SetPredictor es ~0.546, NO 0.75.
+        A4: ese valor se MEZCLA con la senal Elo en vez de sobrescribirla.
+
+        Se fuerza w=0.7 para ejercitar la mezcla: con el default tuneado
+        (w=1.0) el SetPredictor no interviene.
+        """
+        import src.simulation.simulator as sim_mod
+        from src.simulation.set_math import p_point_from_p_set
+
+        w = 0.7
+        monkeypatch.setattr(sim_mod, "SET_BLEND_WEIGHT_ELO", w)
+
+        sim = MatchSimulator()
+        bounds_seen, base_p_neutral = self._run_and_record_bounds(
+            sim, synthetic_set_predictor, monkeypatch, 0.75,
+        )
+
+        p_set_punto = p_point_from_p_set(0.75, 25)
+        p_center = w * base_p_neutral + (1 - w) * p_set_punto
         expected = (
-            max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], expected_center - CLAMP_MARGIN_POINT),
-            min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], expected_center + CLAMP_MARGIN_POINT),
+            max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], p_center - CLAMP_MARGIN_POINT),
+            min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], p_center + CLAMP_MARGIN_POINT),
         )
         assert expected in bounds_seen, (
-            f"clamp centrado en p_punto {expected} no encontrado; "
+            f"clamp con centro mezclado {expected} no encontrado; "
             f"vistos: {sorted(bounds_seen)}"
         )
-        # El centro viejo (p_set directo) NO debe aparecer.
+        # El centro viejo (p_set directo, escala de SET) NO debe aparecer.
         old = (0.75 - CLAMP_MARGIN_POINT, 0.75 + CLAMP_MARGIN_POINT)
         assert old not in bounds_seen, "el clamp sigue centrado en p_set (escala de SET)"
+
+    def test_blend_weight_one_ignores_set_predictor(self, synthetic_set_predictor, monkeypatch):
+        """A4: con w=1.0 el centro es la senal Elo pura, sea cual sea p_set."""
+        import src.simulation.simulator as sim_mod
+        monkeypatch.setattr(sim_mod, "SET_BLEND_WEIGHT_ELO", 1.0)
+
+        sim = MatchSimulator()
+        bounds_low, base_p = self._run_and_record_bounds(
+            sim, synthetic_set_predictor, monkeypatch, 0.95,
+        )
+        expected = (
+            max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], base_p - CLAMP_MARGIN_POINT),
+            min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], base_p + CLAMP_MARGIN_POINT),
+        )
+        assert expected in bounds_low, (
+            f"con w=1.0 el centro debe ser base_p_neutral {expected}; "
+            f"vistos: {sorted(bounds_low)}"
+        )
+
+    def test_blend_moves_center_toward_set_predictor(self, synthetic_set_predictor, monkeypatch):
+        """A4: con w<1, un p_set alto empuja el centro por encima del Elo solo."""
+        import src.simulation.simulator as sim_mod
+        monkeypatch.setattr(sim_mod, "SET_BLEND_WEIGHT_ELO", 0.7)
+
+        sim = MatchSimulator()
+        bounds_hi, base_p = self._run_and_record_bounds(
+            sim, synthetic_set_predictor, monkeypatch, 0.90,
+        )
+        centers = [(lo + hi) / 2 for lo, hi in bounds_hi]
+        assert any(c > base_p for c in centers), (
+            f"ningun centro por encima de base_p_neutral={base_p:.4f}; "
+            f"centros: {sorted(centers)}"
+        )
 
 
 
