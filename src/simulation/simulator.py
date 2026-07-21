@@ -15,8 +15,9 @@ import pandas as pd
 from typing import Optional
 from dataclasses import dataclass, field
 
+from src.simulation.set_math import p_point_from_p_set
 from src.simulation.constants import (
-    DEFAULT_CLAMP_RANGE, CLAMP_MARGIN,
+    DEFAULT_CLAMP_RANGE, CLAMP_MARGIN_POINT,
     POINT_PROB_CLIP_ADAPTIVE_HARD,
     DEFAULT_SIDEOUT_RATE, POINT_PROB_CLIP,
     GLOBAL_MOMENTUM_FACTOR,
@@ -258,8 +259,12 @@ class MatchSimulator:
                 sets_home_antes, sets_away_antes,
             )
             if p_set_home is not None:
-                clamp_low = max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], p_set_home - CLAMP_MARGIN)
-                clamp_high = min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], p_set_home + CLAMP_MARGIN)
+                # A2: p_set vive en escala de SET; el clamp gobierna PUNTOS.
+                # Convertir antes de centrar (un favorito con P(set)=0.75 solo
+                # necesita P(punto)~0.53). target_score es 15 en el quinto set.
+                p_center = p_point_from_p_set(p_set_home, target_score)
+                clamp_low = max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], p_center - CLAMP_MARGIN_POINT)
+                clamp_high = min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], p_center + CLAMP_MARGIN_POINT)
 
         while True:
             point_num += 1

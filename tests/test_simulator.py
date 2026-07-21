@@ -8,6 +8,7 @@ from src.simulation.constants import (
     DEFAULT_CLAMP_RANGE,
     POINT_PROB_CLIP_ADAPTIVE_HARD,
     CLAMP_MARGIN,
+    CLAMP_MARGIN_POINT,
     POINT_PROB_CLIP,
     DEFAULT_SIDEOUT_RATE,
 )
@@ -104,7 +105,12 @@ class TestAdaptiveClamp:
 
     def test_adaptive_clamp_constants(self):
         assert POINT_PROB_CLIP_ADAPTIVE_HARD == (0.10, 0.90)
+        # A2 (Guardrail 4): el clamp adaptativo ya NO usa CLAMP_MARGIN.
+        # Se centra en el p_punto implicito con CLAMP_MARGIN_POINT.
+        # CLAMP_MARGIN sobrevive como constante legacy (pineada todavia en
+        # test_team_mapper.py) hasta que A6 la retire.
         assert CLAMP_MARGIN == 0.20
+        assert CLAMP_MARGIN_POINT == 0.10
 
     def test_adaptive_clamp_narrows_around_predictor_value(self, synthetic_set_predictor):
         """With SetPredictor, the clamp adjusts around p_set_home."""
@@ -152,6 +158,48 @@ class TestAdaptiveClamp:
             assert low >= POINT_PROB_CLIP_ADAPTIVE_HARD[0], f"low {low} < 0.10"
             assert high <= POINT_PROB_CLIP_ADAPTIVE_HARD[1], f"high {high} > 0.90"
         assert match.winner in ("home", "away")
+
+    def test_clamp_centered_on_implicit_point_prob(self, synthetic_set_predictor, monkeypatch):
+        """A2: el clamp se centra en p_point_from_p_set(p_set), no en p_set.
+
+        Con p_set_home = 0.75 el centro debe ser ~0.546 (escala de PUNTO),
+        NO 0.75. Es la correccion de escala que motiva A2.
+        """
+        import numpy as np
+        from src.simulation.set_math import p_point_from_p_set
+
+        monkeypatch.setattr(synthetic_set_predictor, "predict_proba",
+                            lambda _: np.array([[0.25, 0.75]]))
+
+        bounds_seen = set()
+        original_clip = np.clip
+
+        def recording_clip(a, a_min, a_max, **kwargs):
+            bounds_seen.add((a_min, a_max))
+            return original_clip(a, a_min, a_max, **kwargs)
+
+        monkeypatch.setattr(np, "clip", recording_clip)
+        sim = MatchSimulator()
+        team_features = {"set_wr_h": 0.5, "set_wr_a": 0.5,
+                         "forma_h": 0.5, "forma_a": 0.5,
+                         "pts_fav_h": 0.55, "pts_fav_a": 0.45}
+        sim.simulate_match("Trento", "Perugia", home_strength=0.55,
+                           away_strength=0.52, seed=42,
+                           set_predictor=synthetic_set_predictor,
+                           team_features=team_features)
+
+        expected_center = p_point_from_p_set(0.75, 25)
+        expected = (
+            max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], expected_center - CLAMP_MARGIN_POINT),
+            min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], expected_center + CLAMP_MARGIN_POINT),
+        )
+        assert expected in bounds_seen, (
+            f"clamp centrado en p_punto {expected} no encontrado; "
+            f"vistos: {sorted(bounds_seen)}"
+        )
+        # El centro viejo (p_set directo) NO debe aparecer.
+        old = (0.75 - CLAMP_MARGIN_POINT, 0.75 + CLAMP_MARGIN_POINT)
+        assert old not in bounds_seen, "el clamp sigue centrado en p_set (escala de SET)"
 
 
 

@@ -9,7 +9,16 @@ POINT_PROB_CLIP_ADAPTIVE_HARD = (0.10, 0.90)  # Limites duros del clamp adaptati
 
 # Clamp por defecto (sin SetPredictor)
 DEFAULT_CLAMP_RANGE = (0.20, 0.80)
-CLAMP_MARGIN = 0.20  # Margen del SetPredictor adaptativo
+CLAMP_MARGIN = 0.20  # Margen del SetPredictor adaptativo (LEGACY, escala de SET)
+
+# Margen del clamp adaptativo en escala de PUNTO (A2).
+# CLAMP_MARGIN (0.20) se construia alrededor de p_set, que vive en escala de
+# SET: error de escala. A2 centra el clamp en el p_punto implicito
+# (set_math.p_point_from_p_set) y usa este margen, mas estrecho porque la
+# banda util de probabilidad de punto es ~[0.49, 0.55].
+# NOTA: el momentum aporta hasta +-MOMENTUM_BONUS*MOMENTUM_MAX_STREAK (0.06)
+# mas el momentum global; un margen por debajo de eso anula el momentum.
+CLAMP_MARGIN_POINT = 0.10
 
 # Probabilidad de sideout (PointProbabilityModel fallback)
 DEFAULT_SIDEOUT_RATE = 0.62

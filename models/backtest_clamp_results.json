@@ -9,48 +9,48 @@
       "season_level": {
         "spearman": -0.97203,
         "spearman_pvalue": 0.0,
-        "mean_std_position": 0.21498,
-        "mean_std_total_points": 0.57689,
-        "n_seeds": 5
+        "mean_std_position": 0.16667,
+        "mean_std_total_points": 0.49399,
+        "n_seeds": 10
       },
-      "time_seconds": 16.0
+      "time_seconds": 7.9
     },
     "ON": {
       "pair_level": {
-        "mean_abs_diff": 0.26193,
-        "p95_abs_diff": 0.48158,
+        "mean_abs_diff": 0.21637,
+        "p95_abs_diff": 0.37949,
         "n_pairs": 132
       },
       "season_level": {
-        "spearman": -0.93007,
-        "spearman_pvalue": 1.2e-05,
-        "mean_std_position": 0.08165,
-        "mean_std_total_points": 0.24495,
-        "n_seeds": 5
+        "spearman": -0.96503,
+        "spearman_pvalue": 0.0,
+        "mean_std_position": 0.20971,
+        "mean_std_total_points": 0.73704,
+        "n_seeds": 10
       },
-      "time_seconds": 243.3
+      "time_seconds": 131.7
     },
     "NEW": {
       "pair_level": {
-        "mean_abs_diff": 0.25546,
-        "p95_abs_diff": 0.46424,
+        "mean_abs_diff": 0.21637,
+        "p95_abs_diff": 0.37949,
         "n_pairs": 132
       },
       "season_level": {
-        "spearman": -0.91608,
-        "spearman_pvalue": 2.8e-05,
-        "mean_std_position": 0.06667,
-        "mean_std_total_points": 0.19437,
-        "n_seeds": 5
+        "spearman": -0.96503,
+        "spearman_pvalue": 0.0,
+        "mean_std_position": 0.20971,
+        "mean_std_total_points": 0.73704,
+        "n_seeds": 10
       },
-      "time_seconds": 244.7,
+      "time_seconds": 121.8,
       "note": "A3 contract path — _extract_set_team_features via build_set_features, no live-score override"
     }
   },
   "params": {
     "n_sims": 100,
-    "n_seeds": 5,
-    "time_budget_s": 900.0,
+    "n_seeds": 10,
+    "time_budget_s": 1800.0,
     "clamp_range_default": [
       0.2,
       0.8
