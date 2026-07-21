@@ -189,6 +189,50 @@ acabar 4º en un solo seed.
 
 ### 7.1 Validación Monte Carlo — 20 temporadas simuladas
 
+**Corrida vigente (2026-07-21, tras A2/A4).** 20 temporadas completas
+(12 equipos, ida y vuelta, seeds 0-19), Elo sembrado desde el histórico real,
+clamp en la configuración final del Grupo A (`SET_BLEND_WEIGHT_ELO = 1.0`,
+`CLAMP_MARGIN_POINT = 0.10`). Estado dinámico reiniciado en cada temporada.
+Reproducible con `python -m src.models.mc_season_validation --n-seeds 20`;
+cifras en `models/mc_season_validation.json`.
+
+| # | Equipo | Posición media | Pos. std | Fuerza (margin-Elo) |
+|---|---|---:|---:|---:|
+| 1 | Perugia | 1.1 | 0.44 | 0.833 |
+| 2 | Trento | 2.0 | 0.00 | 0.734 |
+| 3 | Verona | 3.4 | 0.86 | 0.672 |
+| 4 | Modena | 4.3 | 0.95 | 0.639 |
+| 5 | Lube | 4.6 | 0.97 | 0.616 |
+| 6 | Piacenza | 5.7 | 0.73 | 0.580 |
+| 7 | Taranto | 7.0 | 0.38 | 0.526 |
+| 8 | Milano | 7.9 | 0.30 | 0.474 |
+| 9 | Monza | 9.2 | 0.43 | 0.374 |
+| 10 | Padova | 9.8 | 0.43 | 0.331 |
+| 11 | Cisterna | 11.0 | 0.00 | 0.275 |
+| 12 | Grottazzolina | 12.0 | 0.00 | 0.183 |
+
+**Spearman fuerza→posición = −1.0000** (p < 1e-16); std media de posición 0.457.
+
+**Lectura honesta:**
+
+- El orden simulado reproduce **exactamente** el orden de fuerza margin-Elo.
+  Las dos anomalías de la corrida vieja desaparecen: Taranto ya no sobrerrinde
+  al 4º puesto (ahora 7º, coherente con su fuerza 0.526 post-B0) y Verona sube
+  al 3º (fuerza 0.672). Ambas eran consecuencia del sembrado roto de Elo y de
+  las fuerzas colisionadas de pre-B0, no del simulador.
+- **Pero un Spearman de −1.0 es demasiado limpio para ser realista.** Con
+  22 jornadas, una liga real reordena el mid-table; aquí cuatro equipos tienen
+  std de posición 0.00. El simulador está **sub-disperso**: produce ligas casi
+  deterministas. Es la misma patología que cuantifica el backtest B1 (ECE 0.242,
+  53% de 3-0 simulados frente a 39% reales) y **no la corrige el Grupo A**,
+  porque su origen está en el modelo de punto, no en el clamp. Queda como
+  trabajo pendiente (B3: `PointProbabilityModel` con regresión continua).
+- Es decir: esta tabla valida que la **señal de fuerza llega íntegra** al
+  simulador, no que la *incertidumbre* esté bien calibrada.
+
+<details>
+<summary>Corrida histórica invalidada (2026-07-08) — se conserva como registro del proceso</summary>
+
 > **⚠️ TABLA INVALIDADA (2026-07-08, misma tarde).** Al investigar el ruido
 > del clamp se descubrió que esta corrida se ejecutó con el sembrado de Elo
 > **roto** (bug `Optional` en `rolling_features.py`: el API caía en silencio
@@ -237,6 +281,40 @@ El ruido del clamp quedó cuantificado y con plan de corrección en
 
 Todo con **142 tests verdes** (134 + 8 nuevos para el adapter v2); el simulador
 y el API arrancan sin cambios de interfaz.
+
+</details>
+
+#### Cierre del Grupo A (2026-07-21)
+
+El clamp adaptativo se cierra con un **resultado negativo documentado**: tras
+corregir su error de escala (A2: centrar en el p_punto implícito vía
+`src/simulation/set_math.py`) y convertirlo en mezcla en vez de override (A4),
+el barrido del peso `w ∈ {0.5, 0.7, 0.9, 1.0}` elige **w = 1.0**, es decir,
+ignorar por completo al SetPredictor. `w = 0.9` y `w = 1.0` dan métricas
+idénticas y coincidentes con la configuración OFF.
+
+Backtest A5 final (`models/backtest_clamp_results.json`):
+
+| Config | \|P_MC − p_elo\| | Spearman | Std pos | Std pts | T(s) |
+|---|---:|---:|---:|---:|---:|
+| OFF | 0.22470 | −0.9720 | 0.1667 | 0.4940 | 7.5 |
+| **NEW (A2+A4)** | **0.22470** | **−0.9720** | **0.0667** | 0.4006 | 9.3 |
+
+Los tres criterios de aceptación del grupo se cumplen por primera vez
+(antes de A2 fallaban dos de tres) y el coste cae **14×** respecto al camino ON
+anterior, porque con `w = 1.0` la llamada al SetPredictor se cortocircuita.
+
+Lo que sobrevive de valor no es el SetPredictor sino el **reescalado**: centrar
+el clamp en la señal Elo viva con ±0.10 en espacio de punto, en lugar del rango
+fijo [0.20, 0.80], mejora la estabilidad entre seeds sin coste en fidelidad de
+ranking. Detalle del mecanismo en [`simulator.md`](simulator.md) §4.3.
+
+**Corrección metodológica encontrada al hacer A2:** el backtest A5 compartía un
+único `RuntimeFeatureBuilder` entre las configs OFF/ON/NEW. Como el builder
+acumula estado Elo en cada temporada simulada, las temporadas de una config
+contaminaban a la siguiente. El síntoma que lo delató: el nivel-par usa seeds
+fijas y debería ser determinista, pero cambiaba al variar `--n-seeds`. Todas las
+cifras de esta sección son posteriores al arreglo (commit `fc8aa6b`).
 
 ### 7.2 Validación per-year del set v2 (post-integración) — el "0.71" es 2025-específico
 

@@ -165,7 +165,44 @@ Datos: DB/sets_partidos.csv (verdad set a set, 725 partidos, temporadas
 
 ---
 
-## GRUPO A — Clamp adaptativo del SetPredictor (`PLAN_MEJORA_CLAMP.md`, 100% pendiente)
+## GRUPO A — Clamp adaptativo del SetPredictor ✅ **CERRADO (2026-07-21)**
+
+> **Desenlace del grupo: resultado negativo para el SetPredictor en el clamp.**
+> A5 ✅, A3 ✅, A2 ✅, A4 ✅, A6 ✅ (A1 se saltó por acuerdo: solo aplicaba si no
+> se hacía el resto). El tuneo de A4 elige `SET_BLEND_WEIGHT_ELO = 1.0`, es
+> decir, **ignorar al SetPredictor**: `w=0.9` y `w=1.0` dan métricas idénticas
+> y coincidentes con la config OFF.
+>
+> Lo que sí aporta valor es el **reescalado de A2**: centrar el clamp en el
+> p_punto implícito (`src/simulation/set_math.py`) con ±0.10 en espacio de
+> punto, en vez del rango fijo [0.20, 0.80]. Backtest A5 final:
+>
+> | Config | \|P_MC − p_elo\| | Spearman | Std pos | Std pts | T(s) |
+> |---|---:|---:|---:|---:|---:|
+> | OFF | 0.22470 | −0.9720 | 0.1667 | 0.4940 | 7.5 |
+> | **NEW (A2+A4)** | **0.22470** | **−0.9720** | **0.0667** | 0.4006 | 9.3 |
+>
+> Los tres criterios de aceptación se cumplen por primera vez y el coste cae
+> **14×** (con `w=1.0` la llamada al SetPredictor se cortocircuita).
+>
+> **Corrección metodológica (commit `fc8aa6b`):** A5 compartía un único
+> `RuntimeFeatureBuilder` entre configs; como acumula estado Elo por temporada
+> simulada, cada config contaminaba a la siguiente. Es el mismo gotcha que este
+> plan documenta en E1. Todas las cifras de arriba son posteriores al arreglo.
+>
+> **Lo que el Grupo A NO arregla:** la sobreconfianza que midió B1 (ECE 0.242,
+> 53% de 3-0 simulados vs 39% reales). Su origen es el modelo de punto, no el
+> clamp. El MC de 20 temporadas post-A2/A4 da Spearman −1.0 con cuatro equipos
+> a std 0.00: el simulador produce ligas casi deterministas. La palanca
+> pendiente es **B3**.
+>
+> Artefactos: `models/backtest_clamp_results.json`,
+> `models/tune_clamp_margin_results.json`, `models/tune_clamp_blend_results.json`,
+> `models/mc_season_validation.json`. Scripts nuevos:
+> `src/models/tune_clamp_margin.py`, `src/models/mc_season_validation.py`.
+> Docs: `memoria/simulator.md` §4.3 y §10.3, `memoria/mejora_precision_2026-07.md` §7.1.
+
+### Contexto original (histórico)
 
 Diagnóstico ya cuantificado (no repetir): el clamp aporta ρ≈0 de señal
 (p_set ∈ [0.537, 0.553] para los 132 pares, std 0.007), +22% de varianza de

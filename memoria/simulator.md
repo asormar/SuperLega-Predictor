@@ -109,9 +109,12 @@ _simulate_set(set_number, point_probs, target_score, home_serves_first, ...)
 │      home_serving = home_serves_first
 │      streak_home = 0, streak_away = 0
 │
-├─ 2. Si set_predictor: evaluar clamp adaptativo
-│      clamp_low = max(0.10, p_set_home - 0.20)
-│      clamp_high = min(0.90, p_set_home + 0.20)
+├─ 2. Si set_predictor: clamp adaptativo en escala de PUNTO (A2/A4)
+│      base_p_neutral = (p_home_serving + p_home_receiving) / 2
+│      p_center = w*base_p_neutral + (1-w)*p_point_from_p_set(p_set_home)
+│                 (w = SET_BLEND_WEIGHT_ELO = 1.0 -> no se llama al predictor)
+│      clamp_low  = max(0.10, p_center - 0.10)
+│      clamp_high = min(0.90, p_center + 0.10)
 │      (si no hay predictor: clamp_low=0.20, clamp_high=0.80)
 │
 ├─ 3. BUCLE: hasta que _set_finished()
@@ -151,9 +154,12 @@ _simulate_set(set_number, point_probs, target_score, home_serves_first, ...)
 | `MOMENTUM_MAX_STREAK` | 4 | `constants.py:78` | Máximo de puntos que acumulan bonus (+6% total) |
 | `MOMENTUM_DECAY` | 0.5 | `constants.py:79` | Decay del momentum entre sets |
 | `sideout` | 0.62 | `_default_point_probs()` (simulator.py:392-419) | P(receptor gana el rally) |
-| Clamp por defecto | [0.20, 0.80] | `_simulate_set()` (simulator.py:247) | Límites de p_home_wins — clamp init |
-| Clamp aplicación | — | `simulator.py:277` | `p_home_wins = np.clip(base_p + adj, clamp_low, clamp_high)` |
-| Clamp con SetPredictor | [0.10, 0.90] | con ajuste dinámico | Se relaja según contexto |
+| Clamp por defecto | [0.20, 0.80] | `DEFAULT_CLAMP_RANGE`, `_simulate_set()` | Límites de p_home_wins cuando no hay SetPredictor |
+| Clamp aplicación | — | `_simulate_set()` | `p_home_wins = np.clip(base_p + adj, clamp_low, clamp_high)` |
+| Límites duros del adaptativo | [0.10, 0.90] | `POINT_PROB_CLIP_ADAPTIVE_HARD` | Salvavidas del clamp adaptativo |
+| `CLAMP_MARGIN_POINT` | 0.10 | `constants.py` | Semiancho del clamp adaptativo en escala de PUNTO (A2) |
+| `SET_BLEND_WEIGHT_ELO` | 1.0 | `constants.py` | Peso de la señal Elo en el centro del clamp (A4); 1.0 = ignorar SetPredictor |
+| `CLAMP_MARGIN` | 0.20 | `constants.py` | **LEGACY** — ya no lo usa el simulador; sobrevive pineada en tests |
 | Target score normal | 25 | — | Sets 1-4 |
 | Target score tie-break | 15 | — | 5º set |
 | Win margin | 2 | `_set_finished()` | Diferencia mínima para ganar |
@@ -206,19 +212,77 @@ Esto modela:
 
 ### 4.3. Clamp Adaptativo (con SetPredictor)
 
-Cuando se activa el `SetPredictor` (típicamente en simulación de temporada), al inicio de cada set se evalúa el modelo y se ajustan los límites del clamp:
+> **⚠️ REESCRITO (2026-07-21) tras A2/A4.** El mecanismo descrito abajo como
+> "versión histórica" tenía un error de escala y quedó retirado de facto. Ver
+> `docs/PLAN_MEJORAS_CONSOLIDADO.md` (Grupo A) y §10.3.
+
+#### Versión actual (A2 + A4)
+
+Al inicio de cada set, el centro del clamp se construye **en escala de punto**:
 
 ```python
-# Si p_set_home = 0.75 (local muy favorito):
-margin = 0.20
-clamp_low = max(0.10, 0.75 - 0.20) = 0.55
-clamp_high = min(0.90, 0.75 + 0.20) = 0.90
+# base_p_neutral: la señal que YA gobierna el punto (fuerzas calibradas por Elo)
+base_p_neutral = (p_home_serving + p_home_receiving) / 2
 
-# El clamp se desplaza hacia arriba: [0.55, 0.90]
-# El local nunca tiene menos de 55% de ganar un punto
+# A4: mezcla en vez de override. w = SET_BLEND_WEIGHT_ELO = 1.0 (tuneado)
+p_center = w * base_p_neutral + (1 - w) * p_set_punto
+
+clamp_low  = max(0.10, p_center - CLAMP_MARGIN_POINT)   # CLAMP_MARGIN_POINT = 0.10
+clamp_high = min(0.90, p_center + CLAMP_MARGIN_POINT)
 ```
 
-Sin calibración, el clamp es fijo [0.20, 0.80]. Con el SetPredictor, se relaja para reflejar mejor las diferencias reales entre equipos cuando el modelo tiene alta confianza.
+Donde `p_set_punto = p_point_from_p_set(p_set_home, target_score)`
+(`src/simulation/set_math.py`) convierte la salida del SetPredictor de escala
+de SET a escala de PUNTO. Con `w = 1.0` esa conversión no llega a usarse y la
+llamada al SetPredictor se **cortocircuita** (sería coste puro).
+
+#### Por qué el mecanismo viejo estaba mal
+
+La versión histórica centraba el clamp de PUNTO directamente en `p_set`:
+
+```python
+# HISTÓRICO — error de escala
+clamp_low  = max(0.10, p_set_home - 0.20)   # p_set=0.75 -> [0.55, 0.90]
+clamp_high = min(0.90, p_set_home + 0.20)
+```
+
+`p_set` y `p_home_wins` viven en escalas distintas. Un favorito con
+P(set) = 0.75 solo necesita **P(punto) ≈ 0.55**, no 0.75: la cadena de Markov
+amplifica cualquier ventaja por punto a lo largo de ~50 puntos por set. Forzar
+un mínimo de 0.55 por punto equivale a P(set) ≈ 0.76 y P(partido) ≈ 0.90.
+
+Además, el margen de ±0.20 era **desproporcionado**: la banda útil de
+probabilidad de punto es aproximadamente `[0.49, 0.55]` (todo el rango de
+P(partido) de 0.36 a 0.89 cabe ahí), así que un clamp de 0.40 de ancho no
+llegaba a morder nunca. Eso explica el diagnóstico previo de "ρ≈0 de señal".
+
+#### Resultado del tuneo (A2/A4) — negativo para el SetPredictor
+
+Barrido de `w ∈ {0.5, 0.7, 0.9, 1.0}` con el nivel-temporada de A5
+(n_sims=100, n_seeds=10, estado aislado):
+
+| w | Spearman | Std pts | \|P_MC − p_elo\| |
+|---|---:|---:|---:|
+| 0.5 | −0.9720 | 0.6285 | 0.2250 |
+| 0.7 | −0.9702 | 0.5458 | 0.2249 |
+| 0.9 | −0.9720 | 0.4006 | 0.2247 |
+| **1.0** | **−0.9720** | **0.4006** | **0.2247** |
+
+`w = 0.9` y `w = 1.0` son idénticos y coinciden con la config OFF: **el
+SetPredictor no aporta señal útil al clamp**, ni siquiera con la escala ya
+corregida por A2 (resultado negativo, Guardrail 9 del plan).
+
+Lo que **sí** aporta valor es el reescalado de A2 en sí: centrar el clamp en la
+señal Elo viva con ±0.10 en espacio de punto, en lugar del rango fijo
+[0.20, 0.80]. Comparativa final del backtest A5:
+
+| Config | \|P_MC − p_elo\| | Spearman | Std pos | Std pts | T(s) |
+|---|---:|---:|---:|---:|---:|
+| OFF | 0.22470 | −0.9720 | 0.1667 | 0.4940 | 7.5 |
+| **NEW (A2+A4)** | **0.22470** | **−0.9720** | **0.0667** | 0.4006 | 9.3 |
+
+Los tres criterios de aceptación del grupo se cumplen por primera vez, y el
+coste cae de 131.7 s a 9.3 s (**14×**) respecto al camino ON anterior.
 
 ---
 
@@ -412,19 +476,29 @@ produce 53% de 3-0 frente al 39% real, y solo 17% de 3-2 frente al 26% real.
 La distancia L1 de 0.286 en la distribución de márgenes cuantifica esta
 distorsión.
 
-### 10.3. Relación con el Grupo A (clamp adaptativo)
+### 10.3. Relación con el Grupo A (clamp adaptativo) — CERRADO (2026-07-21)
 
 El diagnóstico cuantitativo del clamp (ρ≈0 con p_elo, +22% de varianza de
-posición) está en `docs/PLAN_MEJORAS_CONSOLIDADO.md` GRUPO A; el backtest B1
-confirma la necesidad de reescribirlo. Las acciones planificadas son:
+posición) está en `docs/PLAN_MEJORAS_CONSOLIDADO.md` GRUPO A. Estado final:
 
-- **A5**: Backtest reproducible del clamp (`src/models/backtest_clamp.py`).
-- **A3**: Contrato de features runtime + SetPredictor v2 en el camino del clamp.
-- **A2**: Centro del clamp en p_punto implícito (no p_set).
-- **A4**: Blend en espacio de punto en vez de clip duro.
+- **A5** ✅ Backtest reproducible del clamp (`src/models/backtest_clamp.py`).
+- **A3** ✅ Contrato de features runtime + SetPredictor v2 en el camino del clamp.
+- **A2** ✅ Centro del clamp en p_punto implícito (`src/simulation/set_math.py`).
+- **A4** ✅ Blend en espacio de punto; peso tuneado **w = 1.0**.
+- **A6** ✅ Tests, documentación y MC de 20 temporadas regenerado.
 
-Mientras el Grupo A no esté cerrado, se recomienda ejecutar el simulador con
-`use_set_calibration=False` (clamp por defecto [0.20, 0.80]).
+**Desenlace: resultado negativo para el SetPredictor.** El tuneo de A4 elige
+ignorarlo (w = 1.0). Lo que aporta valor es el reescalado de A2 (ver §4.3). Con
+la configuración final el clamp ya no distorsiona la señal Elo —
+`|P_MC − p_elo|` idéntico a OFF— mejora la estabilidad entre seeds y cuesta
+14× menos que el camino ON anterior, así que **ya no hace falta ejecutar con
+`use_set_calibration=False`**: ambas rutas son equivalentes en precisión.
+
+**Lo que el Grupo A NO arregla:** la sobreconfianza que mide §10.2 (ECE 0.242,
+exceso de 3-0). Su origen es el modelo de punto, no el clamp — el MC de 20
+temporadas post-A2/A4 sigue dando ligas casi deterministas (Spearman −1.0,
+cuatro equipos con std de posición 0.00). La palanca pendiente es **B3**
+(`PointProbabilityModel` con regresión continua).
 
 ### 10.4. Archivo de resultados
 
