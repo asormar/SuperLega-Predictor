@@ -5,6 +5,7 @@ REQ-021..025, SCN-001, SCN-002, SCN-007, SCN-008.
 """
 
 import dataclasses
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -201,4 +202,69 @@ class TestPSetDiscriminates:
         assert std > 0.05, (
             f"p_set std={std:.4f} across 132 pairs. "
             f"Expected > 0.05. The contract is not discriminating."
+        )
+
+
+class TestRuntimeConsumerPin:
+    """R3#1 (CRITICAL): The runtime consumer _eval_set_predictor does NOT
+    override contract-passed values with live score.
+
+    Regression guard: if a future commit re-adds live-score override inside
+    _simulate_set, simulate_match, or _eval_set_predictor (e.g., overwriting
+    pts_fav_h with score_home / target_score), this test will fail because the
+    prediction from _eval_set_predictor will differ from the expected value
+    computed from the contract-only path.
+    """
+
+    V2_PATH = (
+        Path(__file__).resolve().parent.parent / "models" / "set_predictor_v2.joblib"
+    )
+
+    @pytest.fixture(scope="class")
+    def v2_adapter(self):
+        """Load the real v2 LogRegSetPredictor."""
+        from src.models.set_predictor_v2 import LogRegSetPredictor
+        return LogRegSetPredictor.load(self.V2_PATH)
+
+    def test_eval_set_predictor_ignores_live_score(self, v2_adapter):
+        """_eval_set_predictor returns prediction consistent with contract
+        pts_fav_h=0.55, NOT with score_home/(score_home+score_away)."""
+        import pandas as pd
+        from src.simulation.simulator import MatchSimulator
+
+        # Build contract features with h_point_ratio=0.55
+        ctx = dataclasses.replace(
+            _BASE_CTX,
+            h_point_ratio=0.55,
+            a_point_ratio=0.45,
+        )
+        feats = build_set_features(ctx)
+
+        # Compute expected prediction directly from the model using
+        # contract-only features (pts_fav_h=0.55 via h_point_ratio)
+        df = pd.DataFrame(
+            [{f: feats.get(f, 0.0) for f in v2_adapter.feature_names}]
+        )
+        expected = float(v2_adapter.predict_proba(df)[0, 1])
+
+        # Call _eval_set_predictor with live-score values that WOULD differ
+        # if the old override were re-added:
+        #   score_home=25, score_away=0  =>  pts_fav would be 1.0 if overridden
+        #   vs contract: pts_fav_h=0.55
+        sim = MatchSimulator()
+        result = sim._eval_set_predictor(
+            set_predictor=v2_adapter,
+            set_context_base=feats,
+            score_home=25,
+            score_away=0,
+            target_score=25,
+            sets_home_antes=0,
+            sets_away_antes=0,
+        )
+
+        assert result is not None, "_eval_set_predictor returned None"
+        assert result == pytest.approx(expected, abs=1e-9), (
+            f"_eval_set_predictor returned {result} but contract-only path "
+            f"gives {expected}. If this fails, a live-score override may "
+            f"have been re-introduced."
         )
