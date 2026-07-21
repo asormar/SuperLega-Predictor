@@ -463,4 +463,75 @@ class TestLogRegSetPredictorV2:
         assert adapter is None
         assert source == "none"
 
+    def test_try_load_v2_falls_back_to_legacy_when_v2_corrupt(self, tmp_path):
+        """When v2 exists but is corrupt/unparseable, fall back to legacy."""
+        # Write a corrupt v2 file (not a valid joblib dict)
+        import joblib
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.calibration import CalibratedClassifierCV
+        from sklearn.ensemble import ExtraTreesClassifier
+
+        corrupt_v2 = tmp_path / "corrupt_v2.joblib"
+        # Write something that joblib.load can parse but has wrong schema
+        joblib.dump({"garbage": True, "meta": "not a real model"}, corrupt_v2)
+
+        # Write a synthetic legacy file
+        legacy_path = tmp_path / "dummy_legacy.joblib"
+        rng = np.random.RandomState(42)
+        scaled_X = pd.DataFrame({"f1": rng.uniform(-1, 1, 20), "f2": rng.uniform(-1, 1, 20)})
+        dummy_y = [0 if i < 10 else 1 for i in range(20)]
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(scaled_X)
+        dummy_model = LogisticRegression(max_iter=100, random_state=42)
+        cal = CalibratedClassifierCV(dummy_model, cv=2, method="isotonic")
+        cal.fit(X_scaled, dummy_y)
+        joblib.dump({
+            "scaler": scaler,
+            "best_model_name": "LogisticRegression",
+            "best_model": dummy_model,
+            "calibrated_model": cal,
+            "feature_names": ["f1", "f2"],
+            "results": {"LogisticRegression": {"accuracy": 0.5, "auc_roc": 0.5, "brier_score": 0.25}},
+        }, legacy_path)
+
+        adapter, source = LogRegSetPredictor.try_load_v2(corrupt_v2, legacy_path)
+        assert source == "extra_trees_v1", f"Expected legacy fallback, got {source}"
+        from src.models.set_predictor import SetPredictor
+        assert isinstance(adapter, SetPredictor)
+
+    def test_try_load_v2_falls_back_on_joblib_load_failure(self, tmp_path):
+        """When v2 exists but joblib.load cannot parse it, fall back to legacy."""
+        import joblib
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.calibration import CalibratedClassifierCV
+
+        corrupt_bytes = tmp_path / "corrupt_bytes.joblib"
+        corrupt_bytes.write_bytes(b"\x00\x01\x02\xFFnot-a-joblib-file")
+
+        # Write a synthetic legacy file
+        legacy_path = tmp_path / "dummy_legacy.joblib"
+        rng = np.random.RandomState(42)
+        scaled_X = pd.DataFrame({"f1": rng.uniform(-1, 1, 20), "f2": rng.uniform(-1, 1, 20)})
+        dummy_y = [0 if i < 10 else 1 for i in range(20)]
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(scaled_X)
+        dummy_model = LogisticRegression(max_iter=100, random_state=42)
+        cal = CalibratedClassifierCV(dummy_model, cv=2, method="isotonic")
+        cal.fit(X_scaled, dummy_y)
+        joblib.dump({
+            "scaler": scaler,
+            "best_model_name": "LogisticRegression",
+            "best_model": dummy_model,
+            "calibrated_model": cal,
+            "feature_names": ["f1", "f2"],
+            "results": {"LogisticRegression": {"accuracy": 0.5, "auc_roc": 0.5, "brier_score": 0.25}},
+        }, legacy_path)
+
+        adapter, source = LogRegSetPredictor.try_load_v2(corrupt_bytes, legacy_path)
+        assert source == "extra_trees_v1", f"Expected legacy fallback, got {source}"
+        from src.models.set_predictor import SetPredictor
+        assert isinstance(adapter, SetPredictor)
+
 

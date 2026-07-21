@@ -78,8 +78,18 @@ class LogRegSetPredictor:
 
     @classmethod
     def load(cls, path: Union[str, Path]) -> "LogRegSetPredictor":
-        """Carga el adapter v2 desde un archivo joblib (dict)."""
+        """Carga el adapter v2 desde un archivo joblib (dict).
+
+        Raises:
+            ValueError: si el artefacto carece de las claves requeridas
+                ``"model"`` o ``"features"``.
+            Exception: cualquier error de joblib.load (archivo corrupto, etc.).
+        """
         data = joblib.load(str(path))
+        if "model" not in data:
+            raise ValueError("v2 artifact missing required key 'model'")
+        if "features" not in data:
+            raise ValueError("v2 artifact missing required key 'features'")
         return cls(
             model=data["model"],
             feature_names=data["features"],
@@ -109,8 +119,12 @@ class LogRegSetPredictor:
         """
         v2_path = Path(v2_path)
         if v2_path.exists():
-            predictor = cls.load(v2_path)
-            return predictor, "logreg_v2"
+            try:
+                predictor = cls.load(v2_path)
+            except Exception as exc:
+                print(f"[WARN] v2 load failed, falling back to legacy: {exc}")
+            else:
+                return predictor, "logreg_v2"
 
         if legacy_path is not None:
             from src.models.set_predictor import SetPredictor as LegacySetPredictor
