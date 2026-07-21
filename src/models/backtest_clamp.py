@@ -403,22 +403,26 @@ def main(
     print(f"  Parametros efectivos: n_sims={actual_n_sims}, n_seeds={actual_n_seeds}")
     print()
 
-    # ── SeasonSimulators para nivel temporada ──
-    # OFF: sin set_predictor
-    ss_off = SeasonSimulator(
-        simulator=MatchSimulator(point_model=None, player_stats_gen=None),
-        team_strengths=strengths,
-        feature_builder=feature_builder,
-        match_predictor=match_predictor,
-    )
-    # ON: con set_predictor v2
-    ss_on = SeasonSimulator(
-        simulator=MatchSimulator(point_model=None, player_stats_gen=None),
-        team_strengths=strengths,
-        set_predictor=set_predictor_v2,
-        feature_builder=feature_builder,
-        match_predictor=match_predictor,
-    )
+    # ── Fabricas de estado LIMPIO por config ──
+    # Gotcha (documentado en el plan, E1): RuntimeFeatureBuilder acumula
+    # estado Elo en cada temporada simulada y `_init_dynamic_state` solo corre
+    # en el constructor. Compartir un builder entre OFF/ON/NEW hace que las
+    # temporadas de una config contaminen el Elo que ve la siguiente, y las
+    # metricas dejan de ser comparables. Sintoma que lo delato: el nivel-par,
+    # que usa seeds FIJAS y deberia ser determinista, cambiaba entre corridas
+    # al variar n_seeds. Por eso cada config estrena builder sembrado desde el
+    # mismo `elo_dict` historico.
+    def _fresh_builder():
+        return RuntimeFeatureBuilder(initial_elo=elo_dict)
+
+    def _fresh_season_sim(with_predictor: bool):
+        return SeasonSimulator(
+            simulator=MatchSimulator(point_model=None, player_stats_gen=None),
+            team_strengths=strengths,
+            set_predictor=set_predictor_v2 if with_predictor else None,
+            feature_builder=_fresh_builder(),
+            match_predictor=match_predictor,
+        )
 
     # ── Resultados ──
     results = {
@@ -441,7 +445,7 @@ def main(
     )
     season_off = _run_season_level(
         TEAMS_12, strengths, elo_dict,
-        n_seeds, ss_off, use_set_calibration=False,
+        n_seeds, _fresh_season_sim(with_predictor=False), use_set_calibration=False,
     )
     t_off = time.perf_counter() - t0
     print(f"  OFF: |P_MC-p_elo| media={pair_off['mean_abs_diff']:.5f} "
@@ -462,11 +466,11 @@ def main(
     pair_on = _run_pair_level(
         TEAMS_12, elo_dict, strengths,
         n_sims, set_predictor=set_predictor_v2,
-        feature_builder=feature_builder, label="ON",
+        feature_builder=_fresh_builder(), label="ON",
     )
     season_on = _run_season_level(
         TEAMS_12, strengths, elo_dict,
-        n_seeds, ss_on, use_set_calibration=True,
+        n_seeds, _fresh_season_sim(with_predictor=True), use_set_calibration=True,
     )
     t_on = time.perf_counter() - t0
     print(f"  ON:  |P_MC-p_elo| media={pair_on['mean_abs_diff']:.5f} "
@@ -491,11 +495,11 @@ def main(
     pair_new = _run_pair_level(
         TEAMS_12, elo_dict, strengths,
         n_sims, set_predictor=set_predictor_v2,
-        feature_builder=feature_builder, label="NEW",
+        feature_builder=_fresh_builder(), label="NEW",
     )
     season_new = _run_season_level(
         TEAMS_12, strengths, elo_dict,
-        n_seeds, ss_on, use_set_calibration=True,
+        n_seeds, _fresh_season_sim(with_predictor=True), use_set_calibration=True,
     )
     t_new = time.perf_counter() - t0
     print(f"  NEW: |P_MC-p_elo| media={pair_new['mean_abs_diff']:.5f} "
