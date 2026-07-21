@@ -2,9 +2,6 @@
 Pinned tests for set_feature_contract.py — contract-only, no runtime wiring.
 
 REQ-021..025, SCN-001, SCN-002, SCN-007, SCN-008.
-
-`test_p_set_discriminates` is marked xfail until T-006 wires the contract into
-the runtime clamp path and removes the live-score override.
 """
 
 import dataclasses
