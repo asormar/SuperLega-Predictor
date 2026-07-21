@@ -127,7 +127,7 @@ class TestPSetDiscriminates:
         BASE_DIR = Path(__file__).resolve().parent.parent
         model_path = BASE_DIR / "models" / "set_predictor_v2.joblib"
         if not model_path.exists():
-            pytest.skip("set_predictor_v2.joblib not on disk; run train_improved first")
+            pytest.fail("set_predictor_v2.joblib required for discrimination test — run `python -m src.models.train_improved` first")
         loaded = joblib.load(model_path)
         return loaded
 
