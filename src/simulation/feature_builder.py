@@ -16,6 +16,7 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 from src.data.team_mapper import normalize_team_name
+from src.data.rolling_features import ELO_K, ELO_HOME_ADV, ELO_BASE
 from src.simulation.constants import AVG_POINTS_PER_SET
 from src.data.feature_store import (
     MATCH_FEATURE_COLS, ENRICHED_MATCH_COLS, ROSTER_BASIC_COLS,
@@ -23,12 +24,9 @@ from src.data.feature_store import (
 
 
 # ─────────────────────────────────────────────────────────────
-# Constantes de Elo
+# Constantes generales (Elo canónico importado de rolling_features)
 # ─────────────────────────────────────────────────────────────
 
-ELO_K = 32          # Factor K para actualizacion
-ELO_BASE = 1500     # Elo inicial para equipos nuevos
-ELO_HOME_ADV = 65   # Ventaja de campo en puntos Elo (~P(home)=0.59 con igualdad)
 ASSUMED_REST_DAYS = 7  # Descanso entre jornadas (simplificado)
 
 
@@ -55,11 +53,23 @@ class RuntimeFeatureBuilder:
     partido simulado.
     """
 
-    def __init__(self, csv_path: Optional[Path] = None):
+    def __init__(self, csv_path: Optional[Path] = None,
+                 initial_elo: Optional[dict] = None):
+        """
+        Args:
+            csv_path: CSV de perfiles estáticos (match_features.csv por defecto).
+            initial_elo: ratings de Elo iniciales por equipo. Si se pasa, el
+                Elo runtime NO arranca plano en 1500 sino desde el histórico
+                (ver rolling_features.get_historical_team_elo). Esto hace que
+                la señal de partido sea fiel desde la jornada 1 en lugar de
+                calentar desde cero y diluir el prior de fuerzas. Si es None
+                (default), se mantiene el arranque plano en ELO_BASE.
+        """
         if csv_path is None:
             csv_path = BASE_DIR / "DB" / "features" / "match_features.csv"
 
         self._lock = threading.Lock()
+        self._initial_elo = initial_elo
         self._load_static_profiles(csv_path)
         self._init_dynamic_state()
 
@@ -122,7 +132,8 @@ class RuntimeFeatureBuilder:
 
     def _init_dynamic_state(self):
         """Inicializa estado dinamico para una nueva temporada."""
-        self.elo = {team: ELO_BASE for team in self.all_teams}
+        init = self._initial_elo or {}
+        self.elo = {team: float(init.get(team, ELO_BASE)) for team in self.all_teams}
         self.results = defaultdict(list)     # team → [(win_bool, is_home, sets_favor, sets_contra, pts_favor, pts_contra)]
         self.h2h = {}                         # (a,b) → (wins_a, total)
         self.streaks = defaultdict(int)       # team → racha (± consecutiva)
@@ -298,12 +309,18 @@ class RuntimeFeatureBuilder:
         with self._lock:
             home_won = (winner == "home")
 
-            # Elo
+            # Elo con margen de victoria (alineado con el modelo offline:
+            # 3-0 mueve más rating que 3-2). margin_mult: 3-0→1.30,
+            # 3-1→1.15, 3-2→1.00. Update zero-sum (el ganador gana lo que
+            # el perdedor pierde).
             elo_h = self.elo.get(local, ELO_BASE)
             elo_a = self.elo.get(visitante, ELO_BASE)
             expected_h = _elo_expected(elo_h + ELO_HOME_ADV, elo_a)
-            self.elo[local] = _elo_update(elo_h, expected_h, 1.0 if home_won else 0.0)
-            self.elo[visitante] = _elo_update(elo_a, 1 - expected_h, 0.0 if home_won else 1.0)
+            mov = abs(sets_local - sets_visitante)
+            margin_mult = 1.0 + 0.15 * (mov - 1)
+            delta = ELO_K * margin_mult * ((1.0 if home_won else 0.0) - expected_h)
+            self.elo[local] = elo_h + delta
+            self.elo[visitante] = elo_a - delta
 
             # Resultados: (win_bool, is_home, sets_favor, sets_contra, pts_favor, pts_contra)
             self.results[local].append((home_won, True, sets_local, sets_visitante,

@@ -2,7 +2,7 @@
 
 ## Descripción
 
-El `PlayerStatsGenerator` genera estadísticas sintéticas de jugadores para partidos simulados. A diferencia del motor de Markov que simula el marcador punto a punto, este generador no simplica cada acción individual: en su lugar, muestrea de distribuciones estadísticas pre-ajustadas a los datos históricos de cada jugador y normaliza los totales al marcador del set. Es un generador de **stats post-hoc**, no un simulador play-by-play.
+El `PlayerStatsGenerator` genera estadísticas sintéticas de jugadores para partidos simulados. A diferencia del motor de Markov que simula el marcador punto a punto, este generador no simula cada acción individual: en su lugar, muestrea de distribuciones estadísticas pre-ajustadas a los datos históricos de cada jugador y normaliza los totales al marcador del set. Es un generador de **stats post-hoc**, no un simulador play-by-play.
 
 *Código: `src/models/player_stats_generator.py` · Parámetros guardados: `models/player_stats_params.json`*
 

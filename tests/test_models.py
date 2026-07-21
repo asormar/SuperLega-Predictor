@@ -1,6 +1,7 @@
 ﻿"""Smoke tests for the four ML models — synthetic fixtures, no models/*.joblib needed."""
 
 import json
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +9,7 @@ import pandas as pd
 import pytest
 
 from src.models.set_predictor import SetPredictor
+from src.models.set_predictor_v2 import LogRegSetPredictor
 from src.models.match_predictor import MatchPredictor
 from src.models.point_probability import PointProbabilityModel
 from src.models.player_stats_generator import PlayerStatsGenerator
@@ -359,5 +361,205 @@ class TestAdaptiveDampingArtifacts:
         from src.models import adaptive_damping_experiment
         assert hasattr(adaptive_damping_experiment, "run_experiment")
         assert callable(adaptive_damping_experiment.run_experiment)
+
+
+_MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+
+
+class TestLogRegSetPredictorV2:
+    """Adapter for the v2 LogReg SetPredictor — loads real artifact from disk."""
+
+    V2_PATH = _MODELS_DIR / "set_predictor_v2.joblib"
+    LEGACY_PATH = _MODELS_DIR / "set_predictor.joblib"
+
+    def test_load_v2_returns_adapter_with_correct_features(self):
+        """The v2 adapter loads and exposes the 21 feature names from the artifact."""
+        adapter = LogRegSetPredictor.load(self.V2_PATH)
+        assert adapter.feature_names is not None
+        assert len(adapter.feature_names) == 21
+        # Spot-check a few known features
+        for key in ("strength_h", "elo_diff", "diff_set_ratio", "es_desempate"):
+            assert key in adapter.feature_names, f"Missing feature: {key}"
+
+    def test_predict_proba_bounded_and_sums_to_one(self):
+        """predict_proba returns [1,2] array with values in [0,1] summing to 1.0."""
+        adapter = LogRegSetPredictor.load(self.V2_PATH)
+        df = pd.DataFrame([{f: 0.5 for f in adapter.feature_names}])
+        proba = adapter.predict_proba(df)
+        _assert_proba_bounded(proba, "LogRegSetPredictorV2")
+        assert proba.shape == (1, 2)
+        np.testing.assert_allclose(proba.sum(axis=1), 1.0, rtol=1e-5)
+
+    def test_predict_returns_int(self):
+        """predict returns int array (0 or 1)."""
+        adapter = LogRegSetPredictor.load(self.V2_PATH)
+        df = pd.DataFrame([{f: 0.5 for f in adapter.feature_names}])
+        preds = adapter.predict(df)
+        assert preds.dtype == np.int_ or preds.dtype == np.int64
+
+    def test_predict_proba_order_agnostic(self):
+        """Columns can be in any order; the result must be identical."""
+        adapter = LogRegSetPredictor.load(self.V2_PATH)
+        df = pd.DataFrame([{f: 0.5 for f in adapter.feature_names}])
+        proba_original = adapter.predict_proba(df)
+
+        # Reverse column order
+        df_shuffled = df[adapter.feature_names[::-1]]
+        proba_shuffled = adapter.predict_proba(df_shuffled)
+        np.testing.assert_allclose(proba_original, proba_shuffled, rtol=1e-10)
+
+    def test_predict_proba_missing_columns_filled_zero(self):
+        """When the input lacks some columns, they are filled with 0.0."""
+        adapter = LogRegSetPredictor.load(self.V2_PATH)
+        # Only pass 3 columns; the rest should be filled with 0
+        partial_cols = ["strength_h", "elo_diff", "diff_set_ratio"]
+        df = pd.DataFrame([{c: 0.5 for c in partial_cols}])
+        proba = adapter.predict_proba(df)
+        _assert_proba_bounded(proba, "LogRegSetPredictorV2 (partial)")
+        assert proba.shape == (1, 2)
+
+    def test_try_load_v2_returns_v2_when_present(self, tmp_path):
+        """try_load_v2 returns the v2 adapter when v2 file exists."""
+        adapter, source = LogRegSetPredictor.try_load_v2(self.V2_PATH, self.LEGACY_PATH)
+        assert source == "logreg_v2"
+        assert type(adapter).__name__ == "LogRegSetPredictor"
+
+    def test_try_load_v2_falls_back_to_legacy_when_v2_missing(self, tmp_path):
+        """When v2 is absent but legacy exists, return legacy SetPredictor."""
+        dummy_v2 = tmp_path / "no_such_v2.joblib"
+
+        # Write a synthetic legacy file — use enough data for cv=2
+        legacy_path = tmp_path / "dummy_legacy.joblib"
+        import joblib
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.calibration import CalibratedClassifierCV
+        rng = np.random.RandomState(42)
+        scaled_X = pd.DataFrame({"f1": rng.uniform(-1, 1, 20), "f2": rng.uniform(-1, 1, 20)})
+        dummy_y = [0 if i < 10 else 1 for i in range(20)]
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(scaled_X)
+        dummy_model = LogisticRegression(max_iter=100, random_state=42)
+        cal = CalibratedClassifierCV(dummy_model, cv=2, method="isotonic")
+        cal.fit(X_scaled, dummy_y)
+        joblib.dump({
+            "scaler": scaler,
+            "best_model_name": "LogisticRegression",
+            "best_model": dummy_model,
+            "calibrated_model": cal,
+            "feature_names": ["f1", "f2"],
+            "results": {"LogisticRegression": {"accuracy": 0.5, "auc_roc": 0.5, "brier_score": 0.25}},
+        }, legacy_path)
+
+        adapter, source = LogRegSetPredictor.try_load_v2(dummy_v2, legacy_path)
+        assert source == "extra_trees_v1"
+        from src.models.set_predictor import SetPredictor
+        assert isinstance(adapter, SetPredictor)
+
+    def test_try_load_v2_returns_none_when_both_missing(self, tmp_path):
+        """When neither file exists, return (None, 'none')."""
+        dummy_v2 = tmp_path / "no_file.joblib"
+        dummy_legacy = tmp_path / "no_file_legacy.joblib"
+        adapter, source = LogRegSetPredictor.try_load_v2(dummy_v2, dummy_legacy)
+        assert adapter is None
+        assert source == "none"
+
+    def test_try_load_v2_falls_back_to_legacy_when_v2_corrupt(self, tmp_path):
+        """When v2 exists but is corrupt/unparseable, fall back to legacy."""
+        # Write a corrupt v2 file (not a valid joblib dict)
+        import joblib
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.calibration import CalibratedClassifierCV
+        from sklearn.ensemble import ExtraTreesClassifier
+
+        corrupt_v2 = tmp_path / "corrupt_v2.joblib"
+        # Write something that joblib.load can parse but has wrong schema
+        joblib.dump({"garbage": True, "meta": "not a real model"}, corrupt_v2)
+
+        # Write a synthetic legacy file
+        legacy_path = tmp_path / "dummy_legacy.joblib"
+        rng = np.random.RandomState(42)
+        scaled_X = pd.DataFrame({"f1": rng.uniform(-1, 1, 20), "f2": rng.uniform(-1, 1, 20)})
+        dummy_y = [0 if i < 10 else 1 for i in range(20)]
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(scaled_X)
+        dummy_model = LogisticRegression(max_iter=100, random_state=42)
+        cal = CalibratedClassifierCV(dummy_model, cv=2, method="isotonic")
+        cal.fit(X_scaled, dummy_y)
+        joblib.dump({
+            "scaler": scaler,
+            "best_model_name": "LogisticRegression",
+            "best_model": dummy_model,
+            "calibrated_model": cal,
+            "feature_names": ["f1", "f2"],
+            "results": {"LogisticRegression": {"accuracy": 0.5, "auc_roc": 0.5, "brier_score": 0.25}},
+        }, legacy_path)
+
+        adapter, source = LogRegSetPredictor.try_load_v2(corrupt_v2, legacy_path)
+        assert source == "extra_trees_v1", f"Expected legacy fallback, got {source}"
+        from src.models.set_predictor import SetPredictor
+        assert isinstance(adapter, SetPredictor)
+
+    def test_try_load_v2_falls_back_on_joblib_load_failure(self, tmp_path):
+        """When v2 exists but joblib.load cannot parse it, fall back to legacy."""
+        import joblib
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.calibration import CalibratedClassifierCV
+
+        corrupt_bytes = tmp_path / "corrupt_bytes.joblib"
+        corrupt_bytes.write_bytes(b"\x00\x01\x02\xFFnot-a-joblib-file")
+
+        # Write a synthetic legacy file
+        legacy_path = tmp_path / "dummy_legacy.joblib"
+        rng = np.random.RandomState(42)
+        scaled_X = pd.DataFrame({"f1": rng.uniform(-1, 1, 20), "f2": rng.uniform(-1, 1, 20)})
+        dummy_y = [0 if i < 10 else 1 for i in range(20)]
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(scaled_X)
+        dummy_model = LogisticRegression(max_iter=100, random_state=42)
+        cal = CalibratedClassifierCV(dummy_model, cv=2, method="isotonic")
+        cal.fit(X_scaled, dummy_y)
+        joblib.dump({
+            "scaler": scaler,
+            "best_model_name": "LogisticRegression",
+            "best_model": dummy_model,
+            "calibrated_model": cal,
+            "feature_names": ["f1", "f2"],
+            "results": {"LogisticRegression": {"accuracy": 0.5, "auc_roc": 0.5, "brier_score": 0.25}},
+        }, legacy_path)
+
+        adapter, source = LogRegSetPredictor.try_load_v2(corrupt_bytes, legacy_path)
+        assert source == "extra_trees_v1", f"Expected legacy fallback, got {source}"
+        from src.models.set_predictor import SetPredictor
+        assert isinstance(adapter, SetPredictor)
+
+    def test_predict_proba_warns_on_schema_drift(self):
+        """Warns UserWarning when input columns differ from trained features."""
+        adapter = LogRegSetPredictor.load(self.V2_PATH)
+        # Pass input with a RENAMED feature (extra+missing simultaneously)
+        renamed_cols = [
+            "pts_fav_home_h" if c == "pts_fav_h" else c
+            for c in adapter.feature_names
+        ]
+        df = pd.DataFrame([{c: 0.5 for c in renamed_cols}])
+
+        with pytest.warns(UserWarning, match="Schema drift"):
+            proba = adapter.predict_proba(df)
+
+        _assert_proba_bounded(proba, "LogRegSetPredictorV2 (drifted)")
+        assert proba.shape == (1, 2)
+
+    def test_predict_proba_no_warning_on_exact_match(self):
+        """No warning when input columns exactly match trained features."""
+        adapter = LogRegSetPredictor.load(self.V2_PATH)
+        df = pd.DataFrame([{f: 0.5 for f in adapter.feature_names}])
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # turn warnings into errors
+            proba = adapter.predict_proba(df)
+
+        _assert_proba_bounded(proba, "LogRegSetPredictorV2 (exact match)")
 
 

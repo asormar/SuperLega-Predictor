@@ -25,13 +25,17 @@ En volleyball, la probabilidad de ganar un punto depende de **quién saca**:
 
 ## 2. Fórmula de Cálculo
 
+> **⚠️ Actualización (Batch 3).** Antes de Batch 3, un único `DEFAULT_SIDEOUT_RATE = 0.62` global se usaba en todos los partidos (ver `src/simulation/constants.py:15`). Desde Batch 3, el proxy per-equipo (calculado desde `DB/sets_partidos.csv` vía `src/data/team_sideout.py`) es el default. La implementación y validación del per-team sideout se detalla en la [§5.1 (Per-team sideout)](#51-per-team-sideout--implementación-y-validación).
+
 ```python
-# point_probability.py:90
+# point_probability.py:128-131
 def get_point_probabilities(
     self,
     match_features: Optional[dict] = None,
     home_strength: float = 0.5,
     away_strength: float = 0.5,
+    home_sideout: float = DEFAULT_SIDEOUT_RATE,
+    away_sideout: float = DEFAULT_SIDEOUT_RATE,
 ) -> dict:
     # 1. Probabilidad base de punto del local
     if match_features and self.is_fitted:
@@ -40,24 +44,22 @@ def get_point_probabilities(
         p_home_dominant = self.model.predict_proba(X_scaled)[0, 1]
         p_home_point = 0.45 + 0.10 * p_home_dominant  # Range: [0.45, 0.55]
     else:
-        # Fallback: usar strength directamente
         total = home_strength + away_strength
         p_home_point = home_strength / total if total > 0 else 0.5
 
     p_away_point = 1.0 - p_home_point
 
-    # 2. Ajuste por sideout rate (0.62)
-    sideout = self.DEFAULT_SIDEOUT_RATE  # 0.62
-
-    # 3. P(local gana | local saca) = p_home × (1-sideout) / [p_home × (1-sideout) + p_away × sideout]
-    p_home_serving = p_home_point * (1 - sideout) / (
-        p_home_point * (1 - sideout) + p_away_point * sideout
+    # 2. Ajuste por sideout PER-TEAM (Batch 3)
+    # Cuando LOCAL saca: la probabilidad depende del AWAY sideout
+    # Cuando VISITANTE saca: depende del HOME sideout
+    p_home_serving = p_home_point * (1 - away_sideout) / (
+        p_home_point * (1 - away_sideout) + p_away_point * away_sideout
     )
-    p_home_receiving = p_home_point * sideout / (
-        p_home_point * sideout + p_away_point * (1 - sideout)
+    p_home_receiving = p_home_point * home_sideout / (
+        p_home_point * home_sideout + p_away_point * (1 - home_sideout)
     )
 
-    # 4. Clamp final
+    # 3. Clamp final
     p_home_serving = np.clip(p_home_serving, 0.25, 0.75)
     p_home_receiving = np.clip(p_home_receiving, 0.25, 0.75)
 
@@ -75,14 +77,11 @@ def get_point_probabilities(
 - **Con modelo entrenado** (`is_fitted=True`): una `LogisticRegression` predice la probabilidad de que el local sea "dominante en puntos" (P(point_ratio_h > 0.5)) en función de 6 features. El output se mapea a `[0.45, 0.55]` para mantener la predicción conservadora.
 - **Sin modelo** (fallback): `p_home_point = home_strength / (home + away)`. Es la probabilidad "naive" basada solo en win rates.
 
-**Paso 2**: `sideout = 0.62`. Es la probabilidad de que el equipo que recibe el saque gane el rally. Valor hardcodeado como `DEFAULT_SIDEOUT_RATE` (point_probability.py:38), estimado de datos históricos de la SuperLega.
+**Paso 2**: Ajuste por sideout rate **per-team** (`home_sideout`, `away_sideout`). En volleyball, el equipo que recibe el saque tiene ventaja (~60-65% de los rallies). La clave asimétrica es:
+- Cuando el **local saca**, su probabilidad se reduce según el **away** sideout (qué tan bueno es el visitante recibiendo): `p_home_serving = p_home × (1 - away_sideout) / [p_home × (1 - away_sideout) + p_away × away_sideout]`.
+- Cuando el **visitante saca**, la probabilidad del local se multiplica por el **home** sideout: `p_home_receiving = p_home × home_sideout / [p_home × home_sideout + p_away × (1 - home_sideout)]`.
 
-**Paso 3**: Se separan las 4 probabilidades aplicando el modelo de sideout:
-- Si el local saca: su probabilidad se reduce por `(1-sideout) = 0.38`.
-- Si el visitante saca: la probabilidad del local se multiplica por `sideout = 0.62`.
-- La normalización por la suma `p_home × adj + p_away × adj_opuesto` garantiza que ambas probabilidades sumen 1.
-
-**Paso 4**: Clamp final a `[0.25, 0.75]` para evitar eventos deterministas en el simulador (un equipo nunca tiene <25% o >75% de probabilidad de ganar un punto individual, sin importar las strengths).
+**Paso 3**: Clamp final a `[0.25, 0.75]` para evitar eventos deterministas en el simulador (un equipo nunca tiene <25% o >75% de probabilidad de ganar un punto individual, sin importar las strengths).
 
 ---
 
@@ -128,7 +127,7 @@ El formato de persistencia es un `dict` con esas keys, restaurado en `PointProba
 El `MatchSimulator` recibe el `PointProbabilityModel` en su constructor (`src/api/main.py:93`) y lo usa en cada rally:
 
 ```python
-# src/simulation/simulator.py:381 (aprox, _default_point_probs fallback)
+# src/simulation/simulator.py:392 (aprox, _default_point_probs fallback)
 # Cuando el point_model está disponible:
 probs = self.point_model.get_point_probabilities(
     home_strength=home_strength,
@@ -148,7 +147,7 @@ El modelo aporta el **componente "fuerza"** del Markov chain. La dinámica intra
 
 ### 4.1. Fallback si el modelo no carga
 
-Si `point_probability.joblib` falta o está corrupto, la API pone `point_model = None` y el `MatchSimulator` usa `_default_point_probs(home_strength, away_strength)` (`simulator.py:381`), que aplica la misma fórmula con `sideout=0.62` hardcodeado pero sin pasar por el LogisticRegression. Es decir, **el simulador sigue funcionando pero sin ajuste por features de partido**.
+Si `point_probability.joblib` falta o está corrupto, la API pone `point_model = None` y el `MatchSimulator` usa `_default_point_probs(home_strength, away_strength)` (`simulator.py:392`), que aplica la misma fórmula con `sideout=0.62` hardcodeado pero sin pasar por el LogisticRegression. Es decir, **el simulador sigue funcionando pero sin ajuste por features de partido**.
 
 ---
 

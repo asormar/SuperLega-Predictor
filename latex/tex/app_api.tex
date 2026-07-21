@@ -1,0 +1,23 @@
+\chapter{Configuraci\'on de la API}
+\label{app:api}
+
+\begin{table}[htbp]
+\centering
+\caption{Endpoints de la API REST.}
+\label{tab:api-endpoints}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{M\'etodo + Path} & \textbf{Descripci\'on} & \textbf{Par\'ametros destacados} \\
+\midrule
+GET /api/equipos & Lista de equipos viables con fuerza y colores & --- \\
+GET /api/equipos/\{nombre\} & Plantilla del equipo y medias por set & nombre \\
+POST /api/simular/partido & Simular un partido individual & local, visitante, fuerza\_local, fuerza\_visitante, semilla, n\_simulaciones\_mc \\
+POST /api/simular/temporada & Simular temporada completa & equipos, doble\_vuelta, semilla, fuerzas \\
+POST /api/simular/temporada/iniciar & Inicializar calendario (sin simular) & equipos, doble\_vuelta, semilla, fuerzas \\
+POST /api/simular/temporada/jornada & Simular una jornada individual & equipos, schedule, jornada\_index, current\_standings \\
+GET /api/modelo/info & Informaci\'on del modelo predictivo activo & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% TODO: ampliar con ejemplos de request/response y configuraci\'on de despliegue.

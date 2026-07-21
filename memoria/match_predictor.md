@@ -1,5 +1,26 @@
 # Match Predictor — Predicción del Ganador de un Partido
 
+> **⚠️ ACTUALIZACIÓN 2026-07-08.** Todo lo que sigue describe el diseño
+> original de 87 features. La auditoría de precisión (ver
+> [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md)) demostró que su
+> **AUC=0.707 era ficticio**: producto de leakage temporal (las features de
+> temporada completa —`enrich_with_team_stats`, `compute_roster_features`— se
+> mezclaban en partidos de esa misma temporada) evaluado sobre un único año de
+> test. Medido con rolling-origin sobre el test held-out 2025/26, el AUC real
+> era **0.53** (nivel de azar).
+>
+> **Estado en producción (API):** la señal del `MatchPredictor` (87 features,
+> leaky) **se ha sustituido por la probabilidad de un Elo con margen de
+> victoria** (AUC 0.75, logloss 0.585, limpio y sin leakage,
+> `src/data/rolling_features.py`) **en el `SeasonSimulator`** — que es el
+> único consumidor real (calibra las fuerzas por partido). El
+> `MatchSimulator.simulate_match()` directo **no usa el `MatchPredictor` para
+> nada**: solo recibe las fuerzas `home_strength/away_strength` y consulta el
+> `SetPredictor` para el clamp adaptativo. El artefacto
+> `match_predictor.joblib` se mantiene cargado en el API solo como fallback. Ver `../models/plots/reliability_match.png` y `../models/plots/reliability_match_calibrado.png` para las curvas de calibración de esta versión legacy.
+> (no se borra para no romper la carga). El texto de abajo se conserva como
+> registro del diseño previo.
+
 ## Descripción
 
 El `MatchPredictor` (`src/models/match_predictor.py`) es un clasificador binario que predice la probabilidad de que el equipo local gane un partido completo de volleyball. Es el más complejo de los tres modelos del proyecto porque integra **87 features** de tres categorías: base (Elo, forma, H2H), team stats agregadas y roster.

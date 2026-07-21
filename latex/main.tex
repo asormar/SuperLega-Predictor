@@ -1,0 +1,41 @@
+\documentclass[12pt,a4paper,oneside]{book}
+
+% Preámbulo completo en archivo separado
+\input{tex/preamble}
+
+\begin{document}
+
+% ============================================================
+% FRONT MATTER (numeración romana)
+% ============================================================
+\frontmatter
+\input{front_matter}
+
+% ============================================================
+% CUERPO (numeración arábiga)
+% ============================================================
+\mainmatter
+\input{tex/cap1_intro}
+\input{tex/cap2_marco_teorico}
+\input{tex/cap3_materiales}
+\input{tex/cap4_metodos}
+\input{tex/cap5_resultados}
+\input{tex/cap6_conclusiones}
+
+% ============================================================
+% BACK MATTER
+% ============================================================
+\backmatter
+\printbibliography[heading=bibintoc]
+
+% ============================================================
+% APÉNDICES
+% ============================================================
+\begin{appendices}
+\input{tex/app_ods}
+\input{tex/app_hiperparametros}
+\input{tex/app_metricas}
+\input{tex/app_api}
+\end{appendices}
+
+\end{document}

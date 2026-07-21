@@ -2,6 +2,17 @@
 
 Documentación técnica del simulador de partidos/temporadas de la SuperLega italiana. Cada documento cubre un subsistema del proyecto.
 
+> **⚠️ ACTUALIZACIÓN 2026-07-08 — Mejora de precisión.** Una auditoría con un
+> protocolo de evaluación honesto (rolling-origin, sin leakage) reveló que el
+> AUC=0.707 del MatchPredictor era **ficticio** (leakage temporal + un año de
+> test afortunado); el valor real era ~0.53. Se reconstruyeron las features sin
+> leakage y se integró un modelo Elo con margen de victoria, subiendo el AUC de
+> partido a **0.75** y las fuerzas de equipo a la jerarquía real de la liga.
+> Proceso completo en [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md)
+> y comparación de cifras en [`../docs/COMPARACION_ANTES_DESPUES.md`](../docs/COMPARACION_ANTES_DESPUES.md).
+> Las secciones marcadas abajo con métricas antiguas se conservan como registro
+> histórico; los valores vigentes están en el documento de proceso.
+
 ## Documentos por Subsistema
 
 ### Predicción (lo más maduro del proyecto)
@@ -15,23 +26,24 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
 
 | Documento | Cubre | Estado |
 |---|---|---|
-| [`set_predictor.md`](set_predictor.md) | `SetPredictor` — ExtraTrees calibrado, AUC=0.654 | ✅ Completo |
-| [`match_predictor.md`](match_predictor.md) | `MatchPredictor` — XGBoost calibrado, AUC=0.707, 87 features | ✅ Completo |
+| [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md) | **Proceso completo de mejora de precisión** (auditoría de leakage, protocolo honesto, integración Elo) | ✅ Nuevo |
+| [`set_predictor.md`](set_predictor.md) | `SetPredictor` — LogReg+recencia v2 en producción (test 2025 AUC 0.697, CV 0.679 ± 0.017, n=1193; legacy ExtraTrees como fallback) | ✅ Completo |
+| [`match_predictor.md`](match_predictor.md) | `MatchPredictor` — el AUC=0.707 era leakage; sustituido por Elo con margen (AUC 0.75); el artefacto viejo queda como fallback | ✅ Completo |
 | [`point_probability.md`](point_probability.md) | `PointProbabilityModel` — LogisticRegression + sideout 0.62 | ✅ Completo |
-| `benchmark.md` | `benchmark.py`, `benchmark_roster.py`, `benchmark_teams.py` — comparativas de modelos | ⏳ Pendiente |
+| `benchmark.md` | `benchmark.py`, `benchmark_roster.py`, `benchmark_teams.py` — comparativas de modelos | ✅ Completo |
 
 ### Capa de Datos
 
 | Documento | Cubre | Estado |
 |---|---|---|
-| `data_layer.md` | `data_pipeline.py`, `feature_store.py`, `team_mapper.py` — pipeline de datos y features | ⏳ Pendiente |
-| `player_stats_generator.md` | `player_stats_generator.py` — generación de stats sintéticas por jugador | ⏳ Pendiente |
+| `data_layer.md` | `data_pipeline.py`, `feature_store.py`, `team_mapper.py` — pipeline de datos y features | ✅ Completo |
+| `player_stats_generator.md` | `player_stats_generator.py` — generación de stats sintéticas por jugador | ✅ Completo |
 
 ### Simulación
 
 | Documento | Cubre | Estado |
 |---|---|---|
-| `simulator.md` | `MatchSimulator` — motor de Markov chain con momentum y sideout | ⏳ Pendiente |
+| `simulator.md` | `MatchSimulator` — motor de Markov chain con momentum y sideout | ✅ Completo |
 
 ### Infra
 
@@ -101,10 +113,13 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
    │                                                  │
    │  Calibrado por:                                  │
    │  ┌────────────────┐  ┌────────────────┐         │
-   │  │ MatchPredictor │  │  SetPredictor  │         │
-   │  │ (XGBoost AUC   │  │ (ExtraTrees    │         │
-   │  │  0.71, damping)│  │  AUC 0.65,     │         │
-   │  └────────────────┘  │  clamp adapt.) │         │
+   │  │ Elo con margen │  │  SetPredictor  │         │
+   │  │  (rolling,     │  │ (LogReg v2     │         │
+    │  │   AUC 0.762)   │  │  test 0.697,  │         │
+    │  │ [MatchPredictor│  │  CV 0.68,      │         │
+   │  │ 87 feats:      │  │  clamp adapt.) │         │
+   │  │ fallback]      │  │ [ExtraTrees:   │         │
+   │  └────────────────┘  │  fallback]     │         │
    │                      └────────────────┘         │
    │  Alimentado por:                                 │
    │  ┌────────────────┐  ┌────────────────┐         │
@@ -129,20 +144,27 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
    └──────────────────────────────────────────────────┘
 ```
 
-**Métricas clave (test 2024, datos no vistos)**:
+**Métricas clave — protocolo honesto (rolling-origin, test held-out 2025/26)**:
 
-| Modelo | AUC | Accuracy | Brier |
+| Modelo | AUC antes* | AUC después | Accuracy después |
 |---|---:|---:|---:|
-| SetPredictor (ExtraTrees + isotonic) | 0.654 | 0.622 | 0.229 |
-| MatchPredictor (XGBoost + isotonic) | 0.707 | 0.514 | 0.245 |
-| PointProbability (LogReg + sideout) | n/a (regresor) | n/a | n/a |
+| MATCH (antes XGBoost / ahora Elo con margen) | 0.53 | **0.762** | 0.70 |
+| SET (ExtraTrees → LogReg+recencia) | 0.65 | **0.697** | 0.65 |
+
+\* "Antes" = medido honestamente. El AUC=0.707 que reportaba el código para el
+match era leakage; el valor real era 0.53. Detalle en
+[`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
+
+\*\* SET v2 tras corrección B0b (2026-07-15): test 2025 AUC **0.697**
+(n=1193), CV rolling-origin 2-fold **0.679 ± 0.017** (frente a 0.631±0.078
+pre-B0b). El detalle y el follow-up obligatorio para 2026/27 están en
+[`mejora_precision_2026-07.md` §7.2](mejora_precision_2026-07.md).
 
 **Limitaciones documentadas**:
-- MatchPredictor con features frías en las primeras jornadas
-- SetPredictor inactivo hasta la jornada 5-6
-- Damping fijo en 0.5 (no se adapta a la fase de la temporada)
+- ~~Elo simplificado (sin ajuste por margen de victoria)~~ → **RESUELTO**: Elo con margen integrado.
+- Dataset pequeño a nivel de partido (~1322 tras B0; 34-59/temporada en las viejas) → régimen donde modelos lineales baten a árboles profundos.
 - Stats de jugadores sintéticas (muestreadas, no simuladas)
-- Sin Monte Carlo a nivel temporada (incertidumbre no cuantificada)
+- Sin Monte Carlo a nivel temporada por defecto (incertidumbre no cuantificada en un solo seed)
 - Sin lesiones ni mercado de fichajes
-- Elo simplificado (sin ajuste por margen de victoria)
+- MatchPredictor de 87 features (leaky) sigue en disco como fallback; el camino de producción usa la probabilidad de Elo limpia.
 - ~40 `print()` con caracteres Unicode que rompen en consola Windows (deuda técnica)

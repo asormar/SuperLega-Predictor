@@ -1,5 +1,30 @@
 # Set Predictor — Predicción del Ganador de un Set
 
+> **⚠️ ACTUALIZACIÓN 2026-07-08 (modelo) + 2026-07-08 (producción).** Medido
+> con el protocolo honesto (rolling-origin, test held-out 2025/26), el
+> ExtraTrees calibrado da AUC **0.65** (no infló como el match: sus features
+> de set no tenían leakage de temporada completa). La auditoría de precisión
+> encontró que un **LogisticRegression regularizado con pesos de recencia**
+> (half-life 2 temporadas, entrenado en 2022-2024) lo mejora a **AUC 0.71 /
+> acc 0.66** en el test de 2025, confirmando que en este régimen de datos
+> pequeños los modelos lineales baten a los árboles profundos.
+>
+> ⚠️ **Importante (validación per-year, ver
+> [`mejora_precision_2026-07.md` §7.2](mejora_precision_2026-07.md)):** el
+> "AUC 0.71" es el test sobre 2025/26 (853 sets, la temporada más grande del
+> dataset). El **CV honesto rolling-origin de 2 folds** da **0.63 ± 0.08** y
+> la **media per-year 2018-2025** da **0.61** (Spearman con val_year = -0.17,
+> p=0.69, sin tendencia monotónica). El legacy ExtraTrees tenía CV 0.62 ± 0.03
+> sobre 4 folds, así que la mejora del v2 en el rolling-origin multi-temporada
+> es +0.01 (dentro del ruido). El +0.06 del test aislado es **2025-específico**
+> y queda pendiente re-validar cuando llegue 2026/27.
+>
+> **Estado en producción (API):** desde este commit el `set_predictor_v2.joblib`
+> (LogReg+recencia) es el campeón de producción que carga `src/api/main.py`,
+> y el `set_predictor.joblib` (ExtraTrees) queda como fallback. El artefacto
+> se regenera con `python -m src.models.train_improved`. Detalle del proceso
+> en [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
+
 ## Descripción
 
 El `SetPredictor` (`src/models/set_predictor.py`) es un clasificador binario que predice la probabilidad de que el equipo local gane un set individual de volleyball. Es uno de los tres modelos entrenados en el pipeline; junto con el `MatchPredictor` forma el núcleo de la calibración ML del simulador.
@@ -62,7 +87,12 @@ Métricas en el set de validación (año 2023, 352 sets, balance de clases ≈ 5
 | XGBoost | 0.540 | 0.556 | 0.2703 | 0.538 | 0.540 |
 | LightGBM | 0.548 | 0.563 | 0.2696 | 0.547 | 0.548 |
 
-**Modelo campeón: ExtraTrees** (AUC = 0.6275). Es elegido por AUC porque es invariante al threshold y captura el ordenamiento de probabilidades, que es lo que el simulador necesita para el clamp adaptativo.
+**Modelo campeón: ExtraTrees** (AUC = 0.6275) en la versión legacy. Es elegido
+por AUC porque es invariante al threshold y captura el ordenamiento de
+probabilidades, que es lo que el simulador necesita para el clamp adaptativo.
+La versión de **producción** (v2) usa LogisticRegression con recencia y
+entrena en 2022-2024 — ver el banner al inicio del documento y
+[`mejora_precision_2026-07.md` §6-§7.2](mejora_precision_2026-07.md).
 
 ---
 
@@ -86,6 +116,11 @@ Reporte de clasificación:
 | **weighted avg** | 0.62 | 0.62 | 0.60 | 482 |
 
 El modelo tiene **alto recall para el local (0.81)** pero bajo recall para el visitante (0.39), lo que sugiere que tiende a sobre-predecir victorias del local. Esto es esperable porque (a) hay leve home advantage en los datos (56% gana_local) y (b) las features reflejan ese sesgo.
+
+![Curva de calibración del SetPredictor legacy (ExtraTrees): sin calibrar (izquierda) y calibrado (derecha)](../models/plots/reliability_set.png)
+![Curva de calibración del SetPredictor legacy calibrado](../models/plots/reliability_set_calibrado.png)
+
+*Figuras: Curvas de calibración del modelo ExtraTrees sin calibrar (arriba) y calibrado con isotonic (abajo). Generadas por `src/models/reliability_curve.py`. La curva calibrada sigue más cerca la diagonal, indicando mejor calibración de probabilidades.*
 
 ---
 
@@ -154,14 +189,20 @@ joblib.dump(save_data, path)
 
 El predictor completo pesa **~19 MB** (el `ExtraTrees` con 300 estimadores es el componente dominante).
 
-### Carga (`load`)
+### Carga (`try_load_v2`)
 
 ```python
-# src/api/main.py:58
-set_predictor = SetPredictor.load(MODELS_DIR / "set_predictor.joblib")
+# src/api/main.py:65-68
+set_predictor, sp_source = LogRegSetPredictor.try_load_v2(
+    MODELS_DIR / "set_predictor_v2.joblib",
+    MODELS_DIR / "set_predictor.joblib",
+)
+# sp_source: "v2_logreg_recency" o "legacy_extratrees"
 ```
 
-Si la carga falla (archivo corrupto o ausente), la API arranca en modo degraded: el `set_predictor` queda en `None` y el simulador usa el clamp por defecto `[0.20, 0.80]` sin calibración ML.
+El adaptador v2 (`LogRegSetPredictor`, `src/models/set_predictor_v2.py`) implementa una carga en cascada: primero intenta cargar `set_predictor_v2.joblib` (LogReg+recencia en producción); si no existe o falla, cae al `set_predictor.joblib` (ExtraTrees legacy, entrenado por `SetPredictor.train()`). Si ambos fallan, el `set_predictor` queda en `None` y el simulador usa el clamp por defecto `[0.20, 0.80]`.
+
+El retorno `sp_source` es un string que indica qué camino se cargó (`"v2_logreg_recency"` o `"legacy_extratrees"`), para trazabilidad en los logs del API y en el endpoint `/api/modelo/info`.
 
 ---
 
@@ -179,3 +220,55 @@ Si la carga falla (archivo corrupto o ausente), la API arranca en modo degraded:
 El `SetPredictor` implementa un patrón estándar de **comparar 6 modelos, seleccionar el mejor por AUC, y calibrar con isotonic**. El champion (ExtraTrees) alcanza un AUC de 0.65 en test, lo que está por encima del azar pero lejos de un predictor fuerte — lo cual es esperable porque la varianza intra-partido es alta y el volleyball tiene mucho "ruido" (puntos i.i.d. en rallies cortos).
 
 La integración con el simulador (clamp adaptativo) le da un rol práctico: relaja el clamp cuando el modelo está seguro de quién gana el set, y lo mantiene estricto cuando no. Esto reduce la varianza del simulador sin sobre-ajustar.
+
+---
+
+## 10. Adaptador LogRegSetPredictor (v2)
+
+El adaptador `LogRegSetPredictor` (`src/models/set_predictor_v2.py`, ~121 líneas) envuelve el modelo de producción **LogisticRegression con recencia** que sustituyó al ExtraTrees calibrado como campeón de la API en julio de 2026.
+
+### 10.1. Motivación
+
+El modelo legacy (ExtraTrees + calibración isotonic) tenía tres problemas en producción:
+
+1. **Tamaño**: ~19 MB frente a ~5 KB del LogReg, por los 300 estimadores del ExtraTrees.
+2. **AUC estancado**: AUC 0.65 en test, con validación cruzada 4 folds de 0.62 ± 0.03, sin tendencia de mejora al añadir más datos.
+3. **Calibración isotonic frágil**: con solo 1345 sets de entrenamiento, `CalibratedClassifierCV(cv=3, method="isotonic")` corría riesgo de sobre-ajuste.
+
+El LogisticRegression con recencia (half-life 2 temporadas, C=0.5) resuelve los tres: es órdenes de magnitud más pequeño, alcanza AUC 0.71 en test 2025 (CV 0.63 ± 0.08), y al no necesitar calibración post-hoc elimina una fuente de varianza.
+
+### 10.2. Contrato Duck-Typed
+
+El adaptador expone la misma interfaz que el `SetPredictor` legacy para que el API y el simulador puedan usar cualquiera de los dos sin cambios:
+
+```python
+# Contrato mínimo:
+#   .feature_names: list[str]     — 21 features de set
+#   .predict_proba(df) → ndarray  — forma [n, 2], columna 1 = P(local gana set)
+```
+
+El `try_load_v2` devuelve `(LogRegSetPredictor, "v2_logreg_recency")` si carga el artefacto v2, o `(SetPredictor, "legacy_extratrees")` si cae al fallback. Esto permite que `src/api/main.py` maneje la selección en una sola línea.
+
+### 10.3. Entrenamiento
+
+El modelo v2 se entrena con `python -m src.models.train_improved`, que:
+
+- Usa datos de 2022-2024 (recencia: half-life=2 temporadas, ponderando más los sets recientes).
+- Entrena un `LogisticRegression(C=0.5, max_iter=2000, random_state=42)` sobre 21 features de set.
+- NO aplica scaler ni calibración post-hoc (el LogReg ya produce probabilidades calibradas por construcción).
+- Serializa el artefacto como `models/set_predictor_v2.joblib`.
+
+### 10.4. Validación
+
+| Métrica | Valor |
+|---|---:|
+| AUC test 2025 (1193 sets) | **0.697** |
+| CV rolling-origin 2 folds | 0.679 ± 0.017 |
+| Accuracy test 2025 | 0.650 |
+| Brier Score test 2025 | 0.216 |
+
+Cifras tras corrección B0b (2026-07-15): `set_features.csv` regenerado sin
+colisión (n 853→1193). Datos pre-B0b en
+[`registro_historico_b0.md`](registro_historico_b0.md) §B.2.
+
+El desglose completo de la validación (incluyendo el análisis per-year y la discusión de por qué el "AUC 0.71" es 2025-específico) está en [`mejora_precision_2026-07.md` §6-§7.2](mejora_precision_2026-07.md) y [`prediccion_temporadas.md` §7](prediccion_temporadas.md).

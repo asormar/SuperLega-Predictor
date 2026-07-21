@@ -1,10 +1,15 @@
 # Motor de Simulación (MatchSimulator)
 
+> **⚠️ ACTUALIZACIÓN 2026-07-15** — B0 (colisión `partido_id`) + B0b
+> (`set_features.csv` regenerado) + B1 (backtest end-to-end del simulador)
+> aplicados. Ver sección §10 al final para los resultados del backtest y las
+> implicaciones para el plan de mejoras (Grupo A: clamp adaptativo).
+
 ## Descripción
 
 El `MatchSimulator` es el núcleo del sistema. Implementa un motor de simulación punto a punto basado en **Cadenas de Markov** que modela partidos de voleibol de la SuperLega. Cada punto se decide probabilísticamente en función de la fuerza relativa de los equipos, quién está sacando (sideout), el momentum acumulado (rachas), y el estado actual del set. El motor también soporta un modo **Monte Carlo** que ejecuta N simulaciones completas para obtener distribuciones de probabilidad.
 
-*Código: `src/simulation/simulator.py` (504 líneas)*
+*Código: `src/simulation/simulator.py` (452 líneas)*
 
 ---
 
@@ -14,10 +19,13 @@ El `MatchSimulator` es el núcleo del sistema. Implementa un motor de simulació
 ┌─────────────────────────────────────────────────────────────┐
 │                    MatchSimulator                            │
 │                                                             │
-│  Atributos:                                                  │
-│  ├─ set_predictor (opcional) → clamp adaptativo             │
+│  Atributos de __init__():                                    │
 │  ├─ point_model (opcional) → PointProbabilityModel          │
 │  └─ player_stats_gen (opcional) → PlayerStatsGenerator      │
+│                                                              │
+│  Parámetro por llamada:                                      │
+│  └─ set_predictor (duck-typed: .feature_names +             │
+│       .predict_proba(df)→[n,2]) → clamp adaptativo          │
 │                                                             │
 │  Métodos públicos:                                          │
 │  ├─ simulate_match() → MatchResult                          │
@@ -139,11 +147,12 @@ _simulate_set(set_number, point_probs, target_score, home_serves_first, ...)
 
 | Parámetro | Valor | Constante | Efecto |
 |---|---|---|---|
-| `MOMENTUM_BONUS` | 0.015 | `simulator.py:72` | +1.5% por punto consecutivo |
-| `MOMENTUM_MAX_STREAK` | 4 | `simulator.py:73` | Máximo de puntos que acumulan bonus (+6% total) |
-| `MOMENTUM_DECAY` | 0.5 | `simulator.py:74` | Decay del momentum entre sets |
-| `sideout` | 0.62 | `_default_point_probs()` | P(receptor gana el rally) |
-| Clamp por defecto | [0.20, 0.80] | `_simulate_set()` | Límites de p_home_wins |
+| `MOMENTUM_BONUS` | 0.015 | `constants.py:77` | +1.5% por punto consecutivo |
+| `MOMENTUM_MAX_STREAK` | 4 | `constants.py:78` | Máximo de puntos que acumulan bonus (+6% total) |
+| `MOMENTUM_DECAY` | 0.5 | `constants.py:79` | Decay del momentum entre sets |
+| `sideout` | 0.62 | `_default_point_probs()` (simulator.py:392-419) | P(receptor gana el rally) |
+| Clamp por defecto | [0.20, 0.80] | `_simulate_set()` (simulator.py:247) | Límites de p_home_wins — clamp init |
+| Clamp aplicación | — | `simulator.py:277` | `p_home_wins = np.clip(base_p + adj, clamp_low, clamp_high)` |
 | Clamp con SetPredictor | [0.10, 0.90] | con ajuste dinámico | Se relaja según contexto |
 | Target score normal | 25 | — | Sets 1-4 |
 | Target score tie-break | 15 | — | 5º set |
@@ -357,3 +366,67 @@ El `MatchSimulator` acepta tres componentes opcionales que se conectan en distin
 ## 9. Conclusión
 
 El `MatchSimulator` implementa un motor de Cadenas de Markov con dos innovaciones clave para un TFG: (a) modelado de momentum a dos niveles (rachas intra-set y momentum entre sets), y (b) clamp adaptativo vía SetPredictor que ajusta dinámicamente el rango de probabilidad punto a punto. El modo Monte Carlo permite obtener distribuciones de probabilidad completas con ~2000 iteraciones en ~1 segundo. El motor es el orquestador central que integra los tres modelos ML (PointProbability, SetPredictor, PlayerStatsGenerator), cada uno operando a un nivel diferente de la simulación.
+
+---
+
+## 10. Backtest end-to-end (B1, 2026-07-15)
+
+### 10.1. Resultados
+
+Se ejecutó un backtest completo del simulador contra la temporada real 2024
+(222 partidos, n=500 simulaciones MC, clamp OFF, damping=0.5) comparando la
+calidad de probabilidad del simulador con la señal Elo pura.
+
+**Comando para reproducir:**
+```bash
+python -m src.models.backtest_simulator --season 2024 --n-sims 500
+```
+
+**Métricas (simulator vs Elo puro):**
+
+| Métrica | Simulador (MC) | Elo (señal pura) | Δ |
+|---|---:|---:|---:|
+| Brier | 0.273 | 0.194 | +0.079 |
+| LogLoss | 0.824 | 0.569 | +0.255 |
+| ECE | 0.242 | 0.044 | +0.198 |
+| Accuracy | 0.649 | 0.694 | −0.045 |
+| L1 distancia (3-0/3-1/3-2) | 0.286 | — | — |
+
+**Distribución de márgenes:**
+
+| Marcador | Simulado | Real |
+|---|---:|---:|
+| 3-0 | 53.0% | 38.7% |
+| 3-1 | 30.4% | 35.1% |
+| 3-2 | 16.6% | 26.1% |
+
+### 10.2. Interpretación
+
+El simulador **destruye calidad de probabilidad** respecto a la señal Elo pura:
+Brier +0.079, logloss +0.255, y la calibración (ECE) empeora drásticamente de
+0.044 (bien calibrado) a 0.242 (mal calibrado, sobreconfiado). La accuracy baja
+de 0.694 a 0.649.
+
+La causa principal es la **sobreconfianza en los favoritos**: el simulador
+produce 53% de 3-0 frente al 39% real, y solo 17% de 3-2 frente al 26% real.
+La distancia L1 de 0.286 en la distribución de márgenes cuantifica esta
+distorsión.
+
+### 10.3. Relación con el Grupo A (clamp adaptativo)
+
+El diagnóstico cuantitativo del clamp (ρ≈0 con p_elo, +22% de varianza de
+posición) está en `docs/PLAN_MEJORAS_CONSOLIDADO.md` GRUPO A; el backtest B1
+confirma la necesidad de reescribirlo. Las acciones planificadas son:
+
+- **A5**: Backtest reproducible del clamp (`src/models/backtest_clamp.py`).
+- **A3**: Contrato de features runtime + SetPredictor v2 en el camino del clamp.
+- **A2**: Centro del clamp en p_punto implícito (no p_set).
+- **A4**: Blend en espacio de punto en vez de clip duro.
+
+Mientras el Grupo A no esté cerrado, se recomienda ejecutar el simulador con
+`use_set_calibration=False` (clamp por defecto [0.20, 0.80]).
+
+### 10.4. Archivo de resultados
+
+El backtest genera `models/backtest_simulator_2024.json` con todas las métricas
+y `models/plots/backtest_simulator_2024.png` con la curva de fiabilidad.

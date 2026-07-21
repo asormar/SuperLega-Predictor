@@ -1,0 +1,63 @@
+\babel@toc {spanish}{}\relax 
+\contentsline {chapter}{Declaraci\'on de autor\'ia}{\es@scroman {i}}{chapter*.1}%
+\contentsline {chapter}{Resumen}{\es@scroman {ii}}{chapter*.2}%
+\contentsline {chapter}{Abstract}{\es@scroman {iii}}{chapter*.3}%
+\contentsline {chapter}{Agradecimientos}{\es@scroman {iv}}{chapter*.4}%
+\contentsline {chapter}{\numberline {1}Introducci\'on}{1}{chapter.1}%
+\contentsline {section}{\numberline {1.1}Motivaci\'on}{1}{section.1.1}%
+\contentsline {section}{\numberline {1.2}Preguntas de investigaci\'on}{1}{section.1.2}%
+\contentsline {section}{\numberline {1.3}Contribuciones}{1}{section.1.3}%
+\contentsline {section}{\numberline {1.4}Estructura del trabajo}{1}{section.1.4}%
+\contentsline {chapter}{\numberline {2}Marco te\'orico y conceptos previos}{2}{chapter.2}%
+\contentsline {section}{\numberline {2.1}Cadenas de Markov}{2}{section.2.1}%
+\contentsline {section}{\numberline {2.2}Sistemas de rating ELO}{2}{section.2.2}%
+\contentsline {section}{\numberline {2.3}Machine learning supervisado}{2}{section.2.3}%
+\contentsline {section}{\numberline {2.4}Validaci\'on temporal sin leakage}{2}{section.2.4}%
+\contentsline {chapter}{\numberline {3}Arquitectura general del sistema}{3}{chapter.3}%
+\contentsline {section}{\numberline {3.1}Visi\'on general}{3}{section.3.1}%
+\contentsline {section}{\numberline {3.2}Componentes principales}{3}{section.3.2}%
+\contentsline {section}{\numberline {3.3}Flujo de datos}{3}{section.3.3}%
+\contentsline {chapter}{\numberline {4}Predicci\'on de partidos individuales}{4}{chapter.4}%
+\contentsline {section}{\numberline {4.1}Punto de entrada: \texttt {POST /api/simular/partido}}{4}{section.4.1}%
+\contentsline {section}{\numberline {4.2}C\'alculo de fuerzas por defecto}{5}{section.4.2}%
+\contentsline {section}{\numberline {4.3}Arquitectura del motor de simulaci\'on}{5}{section.4.3}%
+\contentsline {section}{\numberline {4.4}Modelado del momentum}{5}{section.4.4}%
+\contentsline {section}{\numberline {4.5}Generaci\'on de estad\'isticas de jugadores}{5}{section.4.5}%
+\contentsline {section}{\numberline {4.6}Modo Monte Carlo}{5}{section.4.6}%
+\contentsline {section}{\numberline {4.7}Salida de la simulaci\'on individual (sin Monte Carlo)}{5}{section.4.7}%
+\contentsline {section}{\numberline {4.8}Flujo completo (diagrama de secuencia)}{5}{section.4.8}%
+\contentsline {section}{\numberline {4.9}Limitaciones}{5}{section.4.9}%
+\contentsline {section}{\numberline {4.10}Conclusi\'on}{5}{section.4.10}%
+\contentsline {chapter}{\numberline {5}Predicci\'on de temporadas}{6}{chapter.5}%
+\contentsline {section}{\numberline {5.1}Simulaci\'on round-robin}{6}{section.5.1}%
+\contentsline {section}{\numberline {5.2}Calibraci\'on con modelos ML}{6}{section.5.2}%
+\contentsline {section}{\numberline {5.3}Distribuci\'on de resultados}{6}{section.5.3}%
+\contentsline {section}{\numberline {5.4}Limitaciones}{6}{section.5.4}%
+\contentsline {chapter}{\numberline {6}Modelos de machine learning}{7}{chapter.6}%
+\contentsline {section}{\numberline {6.1}PointProbabilityModel}{7}{section.6.1}%
+\contentsline {section}{\numberline {6.2}SetPredictor v2}{7}{section.6.2}%
+\contentsline {section}{\numberline {6.3}MatchPredictor y Elo con margen}{7}{section.6.3}%
+\contentsline {section}{\numberline {6.4}Mejora de precisi\'on (auditor\'ia 2026-07)}{7}{section.6.4}%
+\contentsline {section}{\numberline {6.5}Comparativa de modelos (benchmark)}{7}{section.6.5}%
+\contentsline {chapter}{\numberline {7}Capa de datos}{8}{chapter.7}%
+\contentsline {section}{\numberline {7.1}Pipeline de ingesta}{8}{section.7.1}%
+\contentsline {section}{\numberline {7.2}Feature store y split temporal}{8}{section.7.2}%
+\contentsline {section}{\numberline {7.3}Normalizaci\'on de equipos}{8}{section.7.3}%
+\contentsline {section}{\numberline {7.4}Construcci\'on de features en runtime}{8}{section.7.4}%
+\contentsline {chapter}{\numberline {8}Motor de simulaci\'on}{9}{chapter.8}%
+\contentsline {section}{\numberline {8.1}Modelo de Markov}{9}{section.8.1}%
+\contentsline {section}{\numberline {8.2}Momentum y sideout}{9}{section.8.2}%
+\contentsline {section}{\numberline {8.3}Generaci\'on de estad\'isticas sint\'eticas}{9}{section.8.3}%
+\contentsline {chapter}{\numberline {9}Experimentaci\'on y resultados}{10}{chapter.9}%
+\contentsline {section}{\numberline {9.1}Protocolo de evaluaci\'on}{10}{section.9.1}%
+\contentsline {section}{\numberline {9.2}Resultados de predicci\'on de partido}{10}{section.9.2}%
+\contentsline {section}{\numberline {9.3}Resultados de predicci\'on de set}{10}{section.9.3}%
+\contentsline {section}{\numberline {9.4}Simulaciones de temporada completa}{10}{section.9.4}%
+\contentsline {section}{\numberline {9.5}Discusi\'on}{10}{section.9.5}%
+\contentsline {chapter}{\numberline {10}Conclusiones y trabajo futuro}{11}{chapter.10}%
+\contentsline {section}{\numberline {10.1}Resumen del trabajo realizado}{11}{section.10.1}%
+\contentsline {section}{\numberline {10.2}Limitaciones}{11}{section.10.2}%
+\contentsline {section}{\numberline {10.3}Trabajo futuro}{11}{section.10.3}%
+\contentsline {chapter}{Hiperpar\'ametros y configuraci\'on}{12}{appendix*.9}%
+\contentsline {chapter}{M\'etricas detalladas}{13}{appendix*.10}%
+\contentsline {chapter}{Configuraci\'on de la API}{14}{appendix*.11}%

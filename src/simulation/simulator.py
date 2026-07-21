@@ -144,6 +144,7 @@ class MatchSimulator:
 
         sets_home = 0
         sets_away = 0
+        prev_home_won = -1  # track previous-set winner for contract momentum_h
         sets_results = []
         momentum_home = 0.0
         momentum_away = 0.0
@@ -163,6 +164,7 @@ class MatchSimulator:
                 set_context = self._build_set_context_base(
                     set_number, home_team, away_team,
                     sets_home, sets_away, team_features,
+                    prev_home_won=prev_home_won,
                 )
 
             # Simular set
@@ -195,10 +197,12 @@ class MatchSimulator:
 
             if set_result.winner == "home":
                 sets_home += 1
+                prev_home_won = 1
                 momentum_home = momentum_home * self.MOMENTUM_DECAY + 0.5
                 momentum_away = momentum_away * self.MOMENTUM_DECAY - 0.3
             else:
                 sets_away += 1
+                prev_home_won = 0
                 momentum_away = momentum_away * self.MOMENTUM_DECAY + 0.5
                 momentum_home = momentum_home * self.MOMENTUM_DECAY - 0.3
 
@@ -333,22 +337,32 @@ class MatchSimulator:
         sets_home_antes: int,
         sets_away_antes: int,
         team_features: dict,
+        prev_home_won: int = -1,
     ) -> dict:
-        """Construye la parte estatica del contexto para SetPredictor."""
+        """Construye el contexto completo para SetPredictor via contract.
+
+        The contract-built dict from team_features (a full 21-col dict after
+        T-005) is used as the base.  In-match fields (set_num_norm, sets_h/a,
+        diff_sets_antes, es_desempate, momentum_h) are overwritten with the
+        correct per-set values, so the contract's set-1 default values for
+        those fields are replaced.
+        """
+        feats = dict(team_features or {})
+
+        # Correct in-match fields from the simulation loop
         is_tiebreak = (sets_home_antes == 2 and sets_away_antes == 2)
-
-        feats = {
-            "set_num_norm": (set_number - 1) / 4.0,
-            "sets_h_antes": sets_home_antes,
-            "sets_a_antes": sets_away_antes,
-            "diff_sets_antes": sets_home_antes - sets_away_antes,
-            "es_desempate": 1 if is_tiebreak else 0,
-        }
-
-        # Team-level features from feature_builder
-        for k, v in (team_features or {}).items():
-            if k not in feats:
-                feats[k] = v
+        feats["set_num_norm"] = (set_number - 1) / 4.0
+        feats["sets_h_antes"] = float(sets_home_antes)
+        feats["sets_a_antes"] = float(sets_away_antes)
+        feats["diff_sets_antes"] = float(sets_home_antes - sets_away_antes)
+        feats["es_desempate"] = 1.0 if is_tiebreak else 0.0
+        # momentum_h: discrete based on prev_home_won (decision #2)
+        if prev_home_won < 0:
+            feats["momentum_h"] = 0.5
+        elif prev_home_won == 1:
+            feats["momentum_h"] = 1.0
+        else:
+            feats["momentum_h"] = 0.0
 
         return feats
 
@@ -356,34 +370,33 @@ class MatchSimulator:
         self,
         set_predictor,
         set_context_base: dict,
-        score_home: int,
-        score_away: int,
-        target_score: int,
-        sets_home_antes: int,
-        sets_away_antes: int,
+        score_home: int = 0,
+        score_away: int = 0,
+        target_score: int = 25,
+        sets_home_antes: int = 0,
+        sets_away_antes: int = 0,
     ) -> Optional[float]:
-        """Evalua el SetPredictor con el estado actual del set."""
+        """Evalua el SetPredictor con el contexto del contrato.
+
+        NOTE: score_home, score_away, target_score, sets_home_antes, and
+        sets_away_antes are kept in the signature only for backward-compat
+        with existing call sites.  They are NOT used — the feature dict comes
+        entirely from the contract (set_context_base), which uses historical
+        pre-set state, NOT live set score (decision #1, #2).
+
+        The live-score override block that was here (lines 372-378) has been
+        REMOVED (T-006).  pts_fav_h/a now come from h_point_ratio/a_point_ratio
+        and momentum_h from prev_home_won, all via the contract.
+        """
         if set_context_base is None or set_predictor is None:
             return None
 
         try:
-            feats = dict(set_context_base)
-
-            # Actualizar features que dependen del marcador actual
-            total_points = max(score_home + score_away, 1)
-            momentum = (score_home - score_away) / total_points
-
-            feats["momentum_h"] = momentum
-            feats["pts_fav_h"] = score_home
-            feats["pts_fav_a"] = score_away
-
-            # Build DataFrame con las columnas que espera el modelo
-            if set_predictor.feature_names:
-                row = {f: feats.get(f, 0.0) for f in set_predictor.feature_names}
-                df = pd.DataFrame([row])
-            else:
+            if not set_predictor.feature_names:
                 return None
 
+            row = {f: set_context_base.get(f, 0.0) for f in set_predictor.feature_names}
+            df = pd.DataFrame([row])
             proba = set_predictor.predict_proba(df)
             return float(proba[0, 1])
         except Exception:

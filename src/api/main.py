@@ -29,7 +29,7 @@ from src.simulation.simulator import MatchSimulator
 from src.simulation.season_simulator import SeasonSimulator, generate_jornadas
 from src.simulation.feature_builder import RuntimeFeatureBuilder
 from src.simulation.constants import MAX_MC_ITERATIONS
-from src.models.set_predictor import SetPredictor
+from src.models.set_predictor_v2 import LogRegSetPredictor
 from src.models.match_predictor import MatchPredictor
 from src.models.point_probability import PointProbabilityModel, build_features_from_strengths
 from src.models.player_stats_generator import PlayerStatsGenerator
@@ -62,8 +62,11 @@ app.add_middleware(
 MODELS_DIR = BASE_DIR / "models"
 
 try:
-    set_predictor = SetPredictor.load(MODELS_DIR / "set_predictor.joblib")
-    print("[API] Set predictor cargado OK")
+    set_predictor, sp_source = LogRegSetPredictor.try_load_v2(
+        MODELS_DIR / "set_predictor_v2.joblib",
+        MODELS_DIR / "set_predictor.joblib",
+    )
+    print(f"[API] Set predictor cargado OK — fuente: {sp_source}")
 except Exception as e:
     print(f"[API] WARN: No se pudo cargar set_predictor: {e}")
     set_predictor = None
@@ -90,8 +93,17 @@ except Exception as e:
     match_predictor = None
 
 try:
-    feature_builder = RuntimeFeatureBuilder()
-    print("[API] Feature builder cargado OK")
+    # Sembrar el Elo runtime desde el histórico (margin-Elo) para que la
+    # señal de partido sea fiel desde la jornada 1 en lugar de arrancar plano.
+    try:
+        from src.data.rolling_features import get_historical_team_elo
+        _initial_elo = get_historical_team_elo()
+    except Exception as _e:
+        print(f"[API] WARN: no se pudo sembrar Elo historico ({_e}); arranque plano")
+        _initial_elo = None
+    feature_builder = RuntimeFeatureBuilder(initial_elo=_initial_elo)
+    print("[API] Feature builder cargado OK"
+          f"{' (Elo sembrado)' if _initial_elo else ''}")
 except Exception as e:
     print(f"[API] WARN: No se pudo cargar feature_builder: {e}")
     feature_builder = None
@@ -102,9 +114,23 @@ simulator = MatchSimulator(
     player_stats_gen=player_gen,
 )
 
-# ─── Fuerzas de equipos (calculadas desde match_features) ───
+# ─── Fuerzas de equipos ───
 def _compute_team_strengths() -> dict:
-    """Calcula la fuerza de cada equipo desde sus win rates en match_features."""
+    """
+    Fuerza [0,1] por equipo desde el rating final de Elo con margen
+    (src/data/rolling_features.py). Prior mucho más fiel que el win-rate
+    plano anterior: incorpora recencia (regresión entre temporadas) y
+    margen de victoria, y ordena los equipos según la jerarquía real de
+    la SuperLega. Si falla, cae al win-rate histórico de match_features.
+    """
+    try:
+        from src.data.rolling_features import get_historical_team_strengths
+        strengths = {t: round(float(v), 3)
+                     for t, v in get_historical_team_strengths().items()}
+        print(f"[API] Fuerzas (margin-Elo) calculadas para {len(strengths)} equipos")
+        return strengths
+    except Exception as e:
+        print(f"[API] WARN: margin-Elo fallo ({e}); fallback a win-rate")
     try:
         mf = pd.read_csv(BASE_DIR / "DB" / "features" / "match_features.csv", encoding="utf-8")
         mf["local"] = mf["local"].apply(normalize_team_name)
@@ -119,7 +145,7 @@ def _compute_team_strengths() -> dict:
                 continue
             wins = home["gana_local"].sum() + (1 - away["gana_local"]).sum()
             strengths[team] = round(float(wins / total), 3)
-        print(f"[API] Fuerzas calculadas para {len(strengths)} equipos")
+        print(f"[API] Fuerzas (win-rate fallback) calculadas para {len(strengths)} equipos")
         return strengths
     except Exception as e:
         print(f"[API] WARN: No se pudieron calcular fuerzas: {e}")
@@ -714,18 +740,29 @@ async def modelo_info():
     }
 
     if set_predictor:
-        info["set_predictor"] = {
-            "modelo": set_predictor.best_model_name,
+        # Preferencia: el campo `type_` del artefacto v2 ("logreg_recency") o el
+        # `best_model_name` del legacy ("ExtraTrees"). Fallback al nombre de la
+        # clase del adapter para casos no esperados.
+        _model_label = (
+            getattr(set_predictor, "type_", None)
+            or getattr(set_predictor, "best_model_name", None)
+            or type(set_predictor).__name__
+        )
+        payload = {
+            "modelo": _model_label,
             "features": set_predictor.feature_names or [],
-            "resultados_validacion": {
+        }
+        results = getattr(set_predictor, "results", None)
+        if results:
+            payload["resultados_validacion"] = {
                 name: {
                     "accuracy": round(r["accuracy"], 4),
                     "auc_roc": round(r["auc_roc"], 4),
                     "brier_score": round(r["brier_score"], 4),
                 }
-                for name, r in set_predictor.results.items()
-            },
-        }
+                for name, r in results.items()
+            }
+        info["set_predictor"] = payload
 
     if player_gen:
         info["player_stats"] = {

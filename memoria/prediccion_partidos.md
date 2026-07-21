@@ -4,7 +4,7 @@
 
 La sección de predicción de partidos individuales permite simular un partido concreto entre dos equipos (local y visitante) de la SuperLega. Ofrece dos modos de operación: **simulación detallada** (un solo partido punto a punto) y **simulación Monte Carlo** (N iteraciones para obtener distribución de probabilidades y marcadores).
 
-*Endpoints: `POST /api/simular/partido` · Código: `src/api/main.py` (líneas 228-304), `src/simulation/simulator.py`*
+*Endpoints: `POST /api/simular/partido` · Código: `src/api/main.py` (líneas 424-508), `src/simulation/simulator.py`*
 
 ---
 
@@ -21,7 +21,7 @@ El endpoint recibe los nombres normalizados de los dos equipos, opcionalmente fu
   "semilla": 42,
   "generar_puntos": true,
   "generar_stats_jugadores": true,
-  "n_simulaciones_mc": 0
+  "n_simulaciones_mc": null
 }
 ```
 
@@ -32,7 +32,7 @@ El endpoint recibe los nombres normalizados de los dos equipos, opcionalmente fu
 | `semilla` | int | `None` | Semilla para `random` y `np.random` (reproducibilidad) |
 | `generar_puntos` | bool | `true` | Registrar secuencia de puntos con marcador, ganador y sacador |
 | `generar_stats_jugadores` | bool | `true` | Generar stats por jugador para cada set |
-| `n_simulaciones_mc` | int | `0` | Si >0, ejecutar Monte Carlo en lugar de simulación única |
+| `n_simulaciones_mc` | int | `null` | Si >0, ejecutar Monte Carlo en lugar de simulación única |
 
 Cuando `n_simulaciones_mc > 0`, el endpoint delega en `MatchSimulator.monte_carlo_simulate()` y devuelve distribución agregada. En caso contrario, delega en `MatchSimulator.simulate_match()` y devuelve el resultado punto a punto.
 
@@ -40,22 +40,36 @@ Cuando `n_simulaciones_mc > 0`, el endpoint delega en `MatchSimulator.monte_carl
 
 ## 2. Cálculo de Fuerzas por Defecto
 
-Cuando el usuario no envía `fuerza_local` o `fuerza_visitante`, se obtienen de la variable global `TEAM_STRENGTHS` calculada al arrancar la API (`src/api/main.py:84-118`):
+> **⚠️ ACTUALIZACIÓN 2026-07-15** — Fuerzas recalculadas tras B0 (colisión
+> `partido_id` arreglada). 1322 partidos válidos desde el margin-Elo rolling.
 
-1. Se lee `DB/features/match_features.csv` y se agrupa por equipo.
-2. Para cada equipo con al menos 10 partidos, se calcula `wins / total_matches`.
-3. Los equipos con menos de 10 partidos reciben un valor de fallback hardcodeado (`_STRENGTH_DEFAULTS`).
+Cuando el usuario no envía `fuerza_local` o `fuerza_visitante`, se obtienen de la variable global `TEAM_STRENGTHS` calculada al arrancar la API (`src/api/main.py:118-164`):
 
-Esto produce una tabla de fuerzas en el rango [0.35, 0.68] para la temporada 2024/2025:
+1. Se computa el **margin-Elo rolling** desde `sets_partidos.csv` corregido
+   (1322 partidos reales, sin colisión `partido_id`).
+2. Se mapea el rating Elo final a [0,1] mediante una logística centrada en 1500
+   con escala 400.
+3. Los equipos sin suficientes datos (menos de 10 partidos) reciben un valor de
+   fallback hardcodeado (`_STRENGTH_DEFAULTS`).
+
+Tras B0 (2026-07-15), las fuerzas se recalculan desde el margin-Elo limpio
+sobre 1322 partidos válidos (sin colisión `partido_id`). La jerarquía refleja
+el margin-Elo rolling con recencia:
 
 | Equipo | Fuerza | Equipo | Fuerza |
 |---|---|---|---|
-| Trento | 0.68 | Modena | 0.52 |
-| Perugia | 0.65 | Monza | 0.48 |
-| Verona | 0.60 | Padova | 0.47 |
-| Piacenza | 0.58 | Cisterna | 0.45 |
-| Lube | 0.56 | Taranto | 0.40 |
-| Milano | 0.53 | Grottazzolina | 0.35 |
+| Perugia | 0.833 | Milano | ~0.55 |
+| Trento | 0.734 | Monza | ~0.52 |
+| Lube | ~0.67 | Padova | ~0.48 |
+| Piacenza | ~0.64 | Cisterna | ~0.45 |
+| Verona | ~0.62 | Taranto | **0.526** |
+| Modena | ~0.58 | Grottazzolina | 0.183 |
+
+Nota: los valores marcados con `~` son aproximados; la jerarquía exacta se
+obtiene del API en tiempo de ejecución. Los cambios más notables respecto a la
+tabla pre-B0 son: **Perugia** escala de 0.65 a 0.833 (confirma su dominancia),
+**Taranto** sube de 0.40 a 0.526 (resuelve la anomalía previa), y
+**Grottazzolina** baja de 0.35 a 0.183.
 
 ---
 
@@ -118,13 +132,13 @@ Estado = (puntos_local, puntos_visitante, quién_saca, rachas, momentum)
 
 | Parámetro | Valor | Constante | Descripción |
 |---|---|---|---|
-| `MOMENTUM_BONUS` | 0.015 | `simulator.py:72` | Bonus por cada punto consecutivo |
-| `MOMENTUM_MAX_STREAK` | 4 | `simulator.py:73` | Máximo de puntos que acumulan bonus |
-| `MOMENTUM_DECAY` | 0.5 | `simulator.py:74` | Decay del momentum al cambiar de set |
-| `sideout_rate` | 0.62 | `point_probability.py:38` | Probabilidad de que el receptor gane el rally |
+| `MOMENTUM_BONUS` | 0.015 | `constants.py:77` | Bonus por cada punto consecutivo |
+| `MOMENTUM_MAX_STREAK` | 4 | `constants.py:78` | Máximo de puntos que acumulan bonus |
+| `MOMENTUM_DECAY` | 0.5 | `constants.py:79` | Decay del momentum al cambiar de set |
+| `sideout_rate` | 0.62 | `constants.py:15` | Probabilidad de que el receptor gane el rally (fallback global) |
 | `target_score` | 25 / 15 | — | Normal / tie-break (5º set) |
 | `win_margin` | 2 | `simulator.py:272` | Diferencia mínima para ganar un set |
-| Clamp `p_home_wins` | [0.20, 0.80] | `simulator.py:229` | Evita probabilidades deterministas |
+| Clamp `p_home_wins` | [0.20, 0.80] | `simulator.py:247` | Evita probabilidades deterministas |
 
 ---
 

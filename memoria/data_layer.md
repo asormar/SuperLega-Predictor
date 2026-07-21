@@ -1,10 +1,20 @@
 # Capa de Datos
 
+> **⚠️ ACTUALIZACIÓN 2026-07-08.** Se añadió `src/data/rolling_features.py`,
+> que reconstruye las features a nivel de partido desde `sets_partidos.csv`
+> **sin leakage temporal** (recorrido cronológico, solo información previa) e
+> incorpora un **Elo con margen de victoria**. Reemplaza en producción a las
+> features enriquecidas (`enrich_with_team_stats`, `compute_roster_features`),
+> que tenían leakage de temporada completa. Expone `get_historical_team_elo` y
+> `get_historical_team_strengths`, usadas por el API para sembrar fuerzas y Elo
+> runtime. Contexto completo en
+> [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
+
 ## Descripción
 
 La capa de datos es el cimiento del sistema. Se encarga de cargar, limpiar, normalizar y preparar los 22 archivos CSV de la carpeta `DB/`, que contienen datos históricos de la SuperLega italiana desde 2014 hasta 2024. Estos datos alimentan tanto el entrenamiento de los modelos ML como, indirectamente, la simulación en tiempo real (a través de los perfiles estáticos de equipo cargados por el `RuntimeFeatureBuilder`).
 
-*Código: `src/data/data_pipeline.py`, `src/data/feature_store.py`, `src/data/team_mapper.py`*
+*Código: `src/data/data_pipeline.py` (275 líneas), `src/data/feature_store.py` (356 líneas), `src/data/team_mapper.py` (258 líneas), `src/data/rolling_features.py` (246 líneas, produce las features de partido vía Elo cronológico + EWMA + H2H desde `sets_partidos.csv`), `src/data/team_sideout.py` (109 líneas, sideout por equipo proxy)*
 
 ---
 
@@ -51,7 +61,9 @@ La capa de datos se compone de tres módulos con responsabilidades bien definida
 |--------|---------|-----------------|
 | Normalización | `team_mapper.py` | Unificar nombres de equipos (MonzaMonza → Monza) |
 | Pipeline | `data_pipeline.py` | Cargar y limpiar los 6 grupos de CSVs |
-| Features | `feature_store.py` | Construir splits temporales y enriquecer features |
+| Features offline | `feature_store.py` | Construir splits temporales y enriquecer features |
+| Features rolling | `rolling_features.py` | Features de partido sin leakage (Elo+EWMA+H2H) desde `sets_partidos.csv` |
+| Sideout proxy | `team_sideout.py` | Sideout estimado por equipo a partir de datos históricos |
 
 ---
 
@@ -161,9 +173,9 @@ TEMPORAL_SPLITS = {
 
 **IMPORTANTE**: este split es estrictamente temporal. Nunca se barajan temporadas ni se usa información futura en el entrenamiento.
 
-### 3.2. Features para MatchPredictor (87 columnas)
+### 3.2. Features base para partido (57 columnas)
 
-`MATCH_FEATURE_COLS` define 35 features base, que se agrupan en categorías:
+`MATCH_FEATURE_COLS` define 57 features base, que se agrupan en categorías:
 
 | Categoría | Features | Descripción |
 |---|---|---|
@@ -174,21 +186,21 @@ TEMPORAL_SPLITS = {
 | Forma | `h_forma_home`, `h_forma_away`, `diff_forma_efectiva` | Forma reciente con desglose local/visitante |
 | H2H | `h_h2h_win_rate`, `h_h2h_set_diff_exp` | Historial de enfrentamientos directos |
 | Momentum | `h_racha`, `a_racha`, `diff_ultimo_set_diff` | Rachas y diferencia del último set |
-| Descanso | `h_descanso`, `a_descanso` | Días de descanso |
-| Ranking | `h_rank_season`, `a_rank_season` | Posición en la tabla |
-| Elo | `elo_h`, `elo_a`, `elo_diff`, `elo_win_prob_h` | Sistema de rating Elo |
-| Ratios | `set_ratio_h`, `point_ratio_h`, `dominancia_h` | Ratios de rendimiento |
-| SOS | `sos_h`, `sos_a` | Strength of schedule |
+| Descanso | `h_descanso`, `a_descanso`, `diff_descanso` | Días de descanso |
+| Ranking | `h_rank_season`, `a_rank_season`, `diff_rank_season` | Posición en la tabla |
+| Elo | `elo_h`, `elo_a`, `elo_diff`, `elo_win_prob_h`, `elo_h_home`, `elo_a_away` | Sistema de rating Elo |
+| Ratios | `set_ratio_h`, `set_ratio_a`, `diff_set_ratio`, `point_ratio_h`, `point_ratio_a`, `dominancia_h`, `dominancia_a`, `diff_dominancia` | Ratios de rendimiento |
+| SOS | `sos_h`, `sos_a`, `diff_sos` | Strength of schedule |
 | Jornada | `jornada_num` | Número de jornada |
 
-A estas 35 se suman:
-- **35 features enriquecidas** de `enrich_with_team_stats()` (puntos/set, aces/set, %ataque, eficacia recepción, bloqueos/set, ratio aces → diferencias local-visitante)
-- **14 features de roster básico** de `compute_roster_features()`: top_scorer_avg, roster_depth, ace_threat + diferencias
-- **87 total** para el MatchPredictor oficial
+A estas 57 se suman:
+- **21 features enriquecidas** de `enrich_with_team_stats()` (7 stats de equipo × 3 columnas: local, visitante, diferencia)
+- **9 features de roster básico** de `compute_roster_features()`: top_scorer_avg, roster_depth, ace_threat + diferencias local-visitante
+- **87 total** para el MatchPredictor legacy (57+21+9)
 
-### 3.3. Features para SetPredictor (20 columnas)
+### 3.3. Features para SetPredictor (21 columnas)
 
-`SET_FEATURE_COLS` define 16 features que capturan el contexto del set:
+`SET_FEATURE_COLS` define 21 features que capturan el contexto del set:
 
 | Feature | Descripción |
 |---|---|
@@ -234,9 +246,13 @@ Para cada columna se crean tres versiones: `h_{short_name}`, `a_{short_name}`, `
 | `block_power` | Mean(bloqueos/set) de top 3 bloqueadores | Potencia de bloqueo |
 | `rec_quality` | Max(% recepción excelente) de jugadores con >10 recepciones | Mejor receptor |
 
-Las `ROSTER_BASIC_COLS` (14 columnas: top_scorer, depth, ace_threat + diferencias) son las que se usan en el entrenamiento oficial del MatchPredictor. Las `ROSTER_FULL_COLS` (9 adicionales: block_power, rec_quality + diferencias) se usan solo en benchmarks para evaluar si añadir bloqueo/recepción mejora el modelo.
+Las `ROSTER_BASIC_COLS` (9 columnas: top_scorer, depth, ace_threat + diferencias local-visitante) son las que se usan en el entrenamiento oficial del MatchPredictor legacy. Las `ROSTER_FULL_COLS` (6 adicionales: block_power, rec_quality + diferencias, total 15) se usan solo en benchmarks para evaluar si añadir bloqueo/recepción mejora el modelo.
 
-### 3.6. Persistencia
+### 3.6. Nota sobre el camino activo de producción
+
+`enrich_with_team_stats()` y `compute_roster_features()` **no están en el camino activo de producción**. Permanecen en el código y se usan en `benchmark_roster.py` y en el `match_predictor.joblib` legacy (fallback en disco), pero la ruta de producción usa `rolling_features.build_rolling_match_features()` desde `sets_partidos.csv`, que produce features sin leakage (Elo+EWMA+H2H).
+
+### 3.7. Persistencia
 
 Los splits se guardan en `models/feature_cache/` para reutilización rápida:
 
