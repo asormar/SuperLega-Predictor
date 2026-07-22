@@ -698,8 +698,6 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 
 ### C1 — Ruff + Black + CI  🚧 PENDIENTE
 
-### C1 — Ruff + Black + CI
-
 1. Añadir a [pyproject.toml](../pyproject.toml) (hoy solo tiene project+pytest):
    ```toml
    [tool.ruff]
