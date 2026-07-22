@@ -147,26 +147,63 @@ Importancia según `ExtraTrees.feature_importances_`:
 
 ## 6. Uso en el Simulador
 
-El `SetPredictor` se usa en el simulador de temporadas (no en el simulador de partido suelto) para **relajar el clamp de probabilidad punto a punto** del Markov chain. El flujo es:
+El `SetPredictor` se usa en el simulador de temporadas (no en el simulador de partido suelto) como **señal candidata para relajar el clamp de probabilidad punto a punto** del Markov chain. El flujo en el código actual es:
 
 ```python
-# src/simulation/simulator.py + season_simulator.py
-match_features_df = self.feature_builder.build_features(home, away, jornada)
-team_feats = self._extract_set_team_features(match_features_df)
+# src/simulation/simulator.py:251-283
+# Clamp adaptativo via SetPredictor: se evalúa una vez al inicio del set
+clamp_low, clamp_high = DEFAULT_CLAMP_RANGE  # [0.20, 0.80] por defecto
 
-# Al inicio de cada set, en MatchSimulator.simulate_match()
-p_set_home = set_predictor.predict_proba(set_context_df)[0, 1]
-margin = 0.20
-clamp_low = max(0.10, p_set_home - margin)
-clamp_high = min(0.90, p_set_home + margin)
-# El clamp ahora es [clamp_low, clamp_high] en vez de [0.20, 0.80]
+if set_predictor is not None and set_context_base is not None:
+    # Centro del clamp: señal del Elo viva (no del SetPredictor)
+    base_p_neutral = (
+        point_probs["p_home_serving"] + point_probs["p_home_receiving"]
+    ) / 2
+    p_center = base_p_neutral
+
+    # Cortocircuito: con w >= 1.0 ni se llama al SetPredictor
+    # (sería coste puro: la salida se multiplicaría por 0)
+    if SET_BLEND_WEIGHT_ELO < 1.0:
+        p_set_home = self._eval_set_predictor(
+            set_predictor, set_context_base, 0, 0, target_score,
+            sets_home_antes, sets_away_antes,
+        )
+        if p_set_home is not None:
+            # A2: p_set vive en escala de SET; el clamp gobierna PUNTOS.
+            # Convertir antes de centrar (un favorito con P(set)=0.75
+            # solo necesita P(punto)~0.55).
+            p_set_punto = p_point_from_p_set(p_set_home, target_score)
+            p_center = (
+                SET_BLEND_WEIGHT_ELO * base_p_neutral
+                + (1 - SET_BLEND_WEIGHT_ELO) * p_set_punto
+            )
+
+    clamp_low = max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], p_center - CLAMP_MARGIN_POINT)
+    clamp_high = min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], p_center + CLAMP_MARGIN_POINT)
 ```
 
-### 6.1. Limitación actual
+El blend es `p_center = w·base_p_neutral + (1−w)·p_set_punto`. Las constantes vigentes tras el Grupo A del plan consolidado:
 
-En las **primeras jornadas** de la temporada, las features de equipo están en valores por defecto (los equipos aún no han jugado en la simulación, así que el `feature_builder` no tiene datos de `results`, `streaks`, `elo` actualizados). En ese caso, el `SetPredictor` predice ~0.5 para todos los partidos, y el clamp no se desvía del rango por defecto `[0.20, 0.80]`.
+| Constante | Valor | Significado |
+|---|---:|---|
+| `SET_BLEND_WEIGHT_ELO` | `1.0` | Peso del Elo en el centro. **1.0 ≡ ignorar al SetPredictor** (A4) |
+| `CLAMP_MARGIN_POINT` | `0.10` | Margen del clamp en escala de PUNTO (A2 corrige error de escala histórico) |
+| `POINT_PROB_CLIP_ADAPTIVE_HARD` | `(0.10, 0.90)` | Suelo y techo duros del clamp adaptativo |
+| `CLAMP_MARGIN` | `0.20` | **LEGACY** (escala de SET). Ya no se usa en runtime; pineado en `test_team_mapper.py` hasta limpieza |
 
-**El efecto del SetPredictor aumenta a medida que avanza la temporada**, cuando las features de equipo se van "calentando" con resultados simulados.
+### 6.1. Estado real (post-A4)
+
+Con `SET_BLEND_WEIGHT_ELO = 1.0` (adoptado tras A4), el método `_eval_set_predictor` **nunca se invoca** en runtime: la guarda `if SET_BLEND_WEIGHT_ELO < 1.0` corta antes de la llamada. El centro del clamp es siempre `base_p_neutral` (la media de `p_home_serving` y `p_home_receiving`, derivada de las fuerzas calibradas por Elo), y el margen es `CLAMP_MARGIN_POINT = 0.10`.
+
+**Qué sobrevive del SetPredictor en el sistema** (cuesta poco, queda por compatibilidad y trazabilidad):
+
+- El artefacto `set_predictor_v2.joblib` se regenera con `python -m src.models.train_improved` (2 KB).
+- El API lo carga al arrancar (`src/api/main.py:65`) y lo expone en `GET /api/modelo/info`.
+- El contexto `set_context_base` se construye en cada set vía `_build_set_context_base` (línea 162-169 de `simulator.py`) **si el caller pasa `set_predictor` y `team_features`**. Es un dict, coste despreciable.
+- Los tests pinean el contrato A3 (determinismo, pureza, no-live-score, discriminación) en `tests/test_set_contract.py`.
+- `use_set_calibration` (flag del API) hoy controla solo si se construye el contexto; con `w=1.0` la salida se descartaría aunque se evaluase.
+
+**Por qué se mantiene el cableado**: el plan consolidado preveía como Guardrail 9 que el clamp pudiese no aportar; la opción de borrar el cableado no se ejecutó porque (a) deja el sistema "vivo" para una futura re-evaluación si llegan datos más informativos, (b) el coste es despreciable, (c) argumentar el resultado negativo en la defensa requiere mostrar el cableado y el tuneo. Detalle completo del desenlace en `mejora_precision_2026-07.md` §7 y en `simulator.md` §4.3.
 
 ---
 
@@ -209,17 +246,17 @@ El retorno `sp_source` es un string que indica qué camino se cargó (`"v2_logre
 ## 8. Limitaciones y Trabajo Futuro
 
 1. **Recall bajo para visitante (0.39)**: el modelo sub-predice victorias visitantes. Podría corregirse con class_weight, oversampling o features que capten mejor el "away upset".
-2. **Features frías al inicio de temporada**: el `SetPredictor` no aporta valor hasta la jornada 5-6 de la simulación. Un fix sería inicializar las features con valores históricos del `match_features.csv` en vez de defaults.
-3. **Sin features de momentum entre sets**: el modelo usa `momentum_h` intra-set pero no captura momentum entre sets (racha de sets ganados/perdidos).
-4. **Calibración isotonic puede sobre-ajustar**: con `cv=3` y 1345 sets de train, hay riesgo de sobrecalibración. Una alternativa es Platt scaling o `cv=5`.
+2. **No aporta señal útil al clamp (resultado negativo A4, Guardrail 9)**: con el reescalado a espacio de punto de A2 y el blend en `w ∈ {0.5, 0.7, 0.9, 1.0}`, los tuneos de A4 fueron indistinguibles del baseline `OFF` a partir de `w = 0.9`. El desenlace del plan consolidado fue adoptar `w = 1.0` (no consultar al SetPredictor en el clamp) y documentar el resultado negativo. La causa no fue la hipótesis previa de "features frías en las primeras jornadas": A4 midió con estado limpio y el resultado fue el mismo con o sin features calientes. La conclusión es que, **con los datos actuales**, el SetPredictor no añade señal al clamp del Markov chain que la del Elo con margen ya no provea. Pendiente para B3: revisar si el origen de la sub-dispersión detectada en A6 (Spearman = −1.0 con cuatro equipos a `std = 0.00`) está en el modelo de punto y abre la puerta a un SetPredictor de otro tipo (p. ej. con features de jugador o de momentum entre sets). Detalle en `mejora_precision_2026-07.md` §7 y en `simulator.md` §4.3.
+3. **Sin features de momentum entre sets**: el modelo usa `momentum_h` intra-set pero no captura momentum entre sets (racha de sets ganados/perdidos). Útil si se reabre el debate post-B3.
+4. **Calibración isotonic puede sobre-ajustar** (solo afecta al legacy ExtraTrees, no al v2 en producción): con `cv=3` y 1345 sets de train, hay riesgo de sobrecalibración. Una alternativa es Platt scaling o `cv=5`. El v2 LogReg+recencia no usa calibración post-hoc porque el LogReg ya produce probabilidades calibradas por construcción.
 
 ---
 
 ## 9. Conclusión
 
-El `SetPredictor` implementa un patrón estándar de **comparar 6 modelos, seleccionar el mejor por AUC, y calibrar con isotonic**. El champion (ExtraTrees) alcanza un AUC de 0.65 en test, lo que está por encima del azar pero lejos de un predictor fuerte — lo cual es esperable porque la varianza intra-partido es alta y el volleyball tiene mucho "ruido" (puntos i.i.d. en rallies cortos).
+El `SetPredictor` implementa un patrón estándar de **comparar 6 modelos, seleccionar el mejor por AUC, y calibrar con isotonic** (legacy ExtraTrees) o un esquema más simple con **LogisticRegression regularizado y pesos de recencia** (v2 en producción, 2026-07). El champion actual (v2 LogReg+recencia) alcanza un AUC test 2025 de **0.697** con CV rolling-origin de **0.679 ± 0.017** (n=1193), por encima del azar pero lejos de un predictor fuerte — esperable porque la varianza intra-partido es alta y el volleyball tiene mucho ruido.
 
-La integración con el simulador (clamp adaptativo) le da un rol práctico: relaja el clamp cuando el modelo está seguro de quién gana el set, y lo mantiene estricto cuando no. Esto reduce la varianza del simulador sin sobre-ajustar.
+La integración con el simulador (clamp adaptativo) le da un rol **candidato, no activo**: el plan consolidado demostró experimentalmente (Grupo A, items A2-A4) que con los datos actuales la señal del SetPredictor no mejora el clamp del Markov chain más allá de lo que ya aporta el Elo con margen. El desenlace honesto (Guardrail 9) fue `SET_BLEND_WEIGHT_ELO = 1.0`, equivalente a no consultar al SetPredictor. El modelo se queda cableado y validado por tests (contrato A3) por dos razones: (a) deja el sistema listo para una futura re-evaluación si llegan features más informativas, y (b) el resultado negativo es defendible en la memoria del TFG mostrando el tuneo completo.
 
 ---
 
@@ -272,3 +309,24 @@ colisión (n 853→1193). Datos pre-B0b en
 [`registro_historico_b0.md`](registro_historico_b0.md) §B.2.
 
 El desglose completo de la validación (incluyendo el análisis per-year y la discusión de por qué el "AUC 0.71" es 2025-específico) está en [`mejora_precision_2026-07.md` §6-§7.2](mejora_precision_2026-07.md) y [`prediccion_temporadas.md` §7](prediccion_temporadas.md).
+
+### 10.5. Estado en Runtime (post-A4)
+
+El adaptador `LogRegSetPredictor` se carga al arrancar el API y se mantiene cableado al `MatchSimulator` (se pasa como argumento `set_predictor=sp`), pero **en la configuración actual su predicción no entra al clamp**. El motivo es el resultado negativo del Grupo A del plan consolidado:
+
+- **A2** corrigió un error de escala histórico: el clamp se construía alrededor de `p_set` (escala de SET) pero la cadena de Markov va en `p_punto`. Ahora el clamp se centra con `p_point_from_p_set(p_set, target_score)` y un margen de `0.10` en espacio de punto (constante `CLAMP_MARGIN_POINT`).
+- **A4** probó un blend `p_center = w·base_p_neutral + (1−w)·p_set_punto` con `w ∈ {0.5, 0.7, 0.9, 1.0}`. Resultado: `w=0.9` y `w=1.0` son **idénticos** entre sí e idénticos al baseline `OFF` (sin SetPredictor). El plan preveía esto como Guardrail 9 y el desenlace fue `w=1.0`: la llamada a `_eval_set_predictor` queda **cortocircuitada** por la guarda `if SET_BLEND_WEIGHT_ELO < 1.0` en `src/simulation/simulator.py:266`. Lo que sí aporta valor es el reescalado de A2.
+
+**Tabla resumen de qué hace y qué no hace el SetPredictor hoy**:
+
+| Capa | Estado | Coste |
+|---|---|---|
+| Entrenar (`train_improved.py`) | Se regenera el `.joblib` | bajo (manual) |
+| Cargar (`main.py:65`) | Sí, con fallback legacy | despreciable |
+| Exponer en `GET /api/modelo/info` | Sí (nombre + features) | despreciable |
+| Construir `set_context` (`_build_set_context_base`, `simulator.py:165`) | Sí, si el caller pasa `set_predictor` y `team_features` | bajo (un dict por set) |
+| Evaluar el modelo (`_eval_set_predictor`, `simulator.py:390`) | **No** (cortocircuito `w=1.0`) | 0 |
+| Aplicar salida al clamp | **No** (descartado) | 0 |
+| Tests pinned (contrato A3) | 188 tests verdes | 0 en runtime |
+
+**Por qué no se borra el cableado**: (a) el plan lo previó como resultado defendible, no como limpieza; (b) el coste de mantenerlo es despreciable; (c) deja el sistema listo para reactivar la mezcla si en el futuro (post-B3) se demuestra que un SetPredictor con features de jugador o momentum entre-sets sí aporta. Ver `mejora_precision_2026-07.md` §7 (cierre del Grupo A) y `simulator.md` §4.3 (mecanismo final A2+A4) para el detalle completo.

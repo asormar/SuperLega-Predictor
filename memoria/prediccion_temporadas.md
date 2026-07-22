@@ -2,6 +2,9 @@
 
 > **⚠️ ACTUALIZACIÓN 2026-07-13 — Señal de partido y set predictor en producción.**
 > La señal de partido es el **Elo con margen** (rolling, sin leakage, AUC 0.75→**0.762** tras B0 en test 2025/26, n=314); el `MatchPredictor` de 87 features queda solo como fallback. El set predictor de producción es la **v2 LogReg con recencia** (test 2025 AUC **0.697**, n=1193, CV 0.679±0.017; legacy ExtraTrees como fallback). El proceso completo de mejora y las cifras detalladas están en [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md).
+>
+> **⚠️ ACTUALIZACIÓN 2026-07-21 — Resultado negativo del SetPredictor en el clamp (Grupo A).**
+> El Grupo A del plan consolidado (items A2+A3+A4+A5, cerrados el 2026-07-21) demostró experimentalmente que el SetPredictor **no aporta señal útil al clamp** del Markov chain con los datos actuales. La configuración vigente es `SET_BLEND_WEIGHT_ELO = 1.0` (ignorar al SetPredictor) con `CLAMP_MARGIN_POINT = 0.10` (reescalado a espacio de punto). El SetPredictor se mantiene cableado y validado por tests (contrato A3) por compatibilidad y para futura re-evaluación. Detalle completo en `mejora_precision_2026-07.md` §7, `simulator.md` §4.3 y `set_predictor.md` §10.5.
 
 ## Descripción
 
@@ -327,7 +330,7 @@ Con `damping=0.5` se aplica `√k` al odds ratio: si el MatchPredictor sugiere e
 
 ---
 
-## 7. SetPredictor — Clamp Adaptativo
+## 7. SetPredictor — Cableado y Resultado Negativo (post-A4)
 
 El set predictor de producción es `set_predictor_v2.py` (`LogRegSetPredictor`: LogReg C=0.5, recency half-life=2 temporadas, 21 features, entrenado en 2022-2024). Predice `P(local gana set)` a partir de 21 features que incluyen fuerza de equipo, diferencia Elo, win rate en sets, forma reciente, enfrentamientos directos y estado in-match (`set_num_norm`, `sets_h_antes`, `momentum_h`, `es_desempate`).
 
@@ -342,32 +345,90 @@ Cifras tras corrección B0b (2026-07-15): `set_features.csv` regenerado sin
 colisión. Datos pre-B0b en
 [`registro_historico_b0.md`](../memoria/registro_historico_b0.md) §B.3.
 
-El legacy `set_predictor.py` (ExtraTrees calibrado, CV 4 folds 0.62 ± 0.03) queda en disco como fallback. En el flujo de temporada, el v2 se usa para **relajar el clamp** de probabilidad punto a punto que la simulación de Markov aplica por defecto.
+El legacy `set_predictor.py` (ExtraTrees calibrado, CV 4 folds 0.62 ± 0.03) queda en disco como fallback. En el flujo de temporada, el v2 se cablea como **candidato a relajar el clamp** de probabilidad punto a punto, pero tras el Grupo A del plan consolidado (2026-07-21) el resultado experimental es que **no aporta señal útil al clamp** con los datos actuales (ver §7.4).
 
-### 7.1. Clamp por Defecto vs. Adaptativo
+### 7.1. Mecanismo del Clamp (A2 + A4)
+
+El clamp vigente tiene tres componentes:
+
+1. **Rango por defecto** (`DEFAULT_CLAMP_RANGE = (0.20, 0.80)`): el clamp "sin nada" que se aplica si el caller no pasa `set_predictor` o `team_features`, o si `_eval_set_predictor` devuelve `None`.
+2. **Centro del clamp**: una mezcla entre la señal viva del Elo (`base_p_neutral`, media de `p_home_serving` y `p_home_receiving`) y la salida del SetPredictor convertida a espacio de punto:
+   ```python
+   p_center = SET_BLEND_WEIGHT_ELO * base_p_neutral + (1 - SET_BLEND_WEIGHT_ELO) * p_set_punto
+   ```
+   donde `p_set_punto = p_point_from_p_set(p_set_home, target_score)` convierte la salida del SetPredictor (escala de SET) a la escala de PUNTO que necesita la cadena de Markov. La conversión vive en `src/simulation/set_math.py` y usa 15 como `target_score` en el quinto set.
+3. **Suelo y techo duros** (`POINT_PROB_CLIP_ADAPTIVE_HARD = (0.10, 0.90)`) y **margen** (`CLAMP_MARGIN_POINT = 0.10`):
+   ```python
+   clamp_low  = max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], p_center - CLAMP_MARGIN_POINT)
+   clamp_high = min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], p_center + CLAMP_MARGIN_POINT)
+   ```
+
+**Configuración vigente** (post-A4):
+
+| Constante | Valor | Origen |
+|---|---:|---|
+| `SET_BLEND_WEIGHT_ELO` | `1.0` | A4: equivalente a no consultar al SetPredictor |
+| `CLAMP_MARGIN_POINT` | `0.10` | A2: corrige error de escala histórico (margen en `p_punto`, no en `p_set`) |
+| `POINT_PROB_CLIP_ADAPTIVE_HARD` | `(0.10, 0.90)` | Suelo/techo duros del clamp adaptativo |
+| `CLAMP_MARGIN` | `0.20` | **LEGACY** (escala de SET). Ya no se usa en runtime; pineado en `test_team_mapper.py` hasta limpieza |
+| `DEFAULT_CLAMP_RANGE` | `(0.20, 0.80)` | Clamp estático cuando no hay SetPredictor |
+
+### 7.2. Cortocircuito con `w = 1.0`
+
+Con `SET_BLEND_WEIGHT_ELO = 1.0` (adoptado tras A4), la guarda `if SET_BLEND_WEIGHT_ELO < 1.0` corta antes de la llamada:
 
 ```python
-# src/simulation/simulator.py:247
-p_home_wins = np.clip(base_p + momentum_adj, 0.20, 0.80)  # comportamiento por defecto
+# src/simulation/simulator.py:254-283 (extracto)
+if set_predictor is not None and set_context_base is not None:
+    base_p_neutral = (
+        point_probs["p_home_serving"] + point_probs["p_home_receiving"]
+    ) / 2
+    p_center = base_p_neutral
+
+    # Cortocircuito: con w >= 1.0 ni se llama al SetPredictor
+    # (la salida se multiplicaría por 0; sería coste puro)
+    if SET_BLEND_WEIGHT_ELO < 1.0:
+        p_set_home = self._eval_set_predictor(set_predictor, set_context_base, ...)
+        if p_set_home is not None:
+            p_set_punto = p_point_from_p_set(p_set_home, target_score)
+            p_center = (
+                SET_BLEND_WEIGHT_ELO * base_p_neutral
+                + (1 - SET_BLEND_WEIGHT_ELO) * p_set_punto
+            )
+
+    clamp_low = max(POINT_PROB_CLIP_ADAPTIVE_HARD[0], p_center - CLAMP_MARGIN_POINT)
+    clamp_high = min(POINT_PROB_CLIP_ADAPTIVE_HARD[1], p_center + CLAMP_MARGIN_POINT)
 ```
 
-Sin calibración, el clamp es fijo en [0.20, 0.80]. Con el SetPredictor activado, al inicio de cada set se evalúa el modelo y se ajusta el clamp:
+**Consecuencia práctica**: `_eval_set_predictor` **nunca se invoca** en una simulación real. El centro del clamp es siempre `base_p_neutral` y el margen es siempre `0.10` en espacio de punto. El SetPredictor queda como **mecanismo candidato cableado, no activo**.
 
-```python
-# src/simulation/simulator.py:_eval_set_predictor
-p_set_home = set_predictor.predict_proba(set_context_df)[0, 1]
-margin = 0.20
-clamp_low = max(0.10, p_set_home - margin)    # si p=0.75, clamp_low=0.55
-clamp_high = min(0.90, p_set_home + margin)   # si p=0.75, clamp_high=0.90
-```
+### 7.3. Cableado que SÍ se Ejecuta (coste despreciable)
 
-### 7.2. Contexto de Set
+Aunque el modelo no se evalúa, el código del simulador hace este trabajo cuando el caller pasa `set_predictor` y `team_features` (es lo que hace `SeasonSimulator` por defecto):
 
-El `_extract_set_team_features` en `season_simulator.py` mapea las 87 features del match a las 15 features de equipo que el SetPredictor espera (`strength_h`, `elo_diff`, `set_wr_h`, `forma_h`, `pts_fav_h`, `h2h_diff`, etc.). Las features in-match (`set_num_norm`, `sets_h_antes`, `momentum_h`) se calculan dentro del simulador a partir del estado actual.
+- **Construcción del contexto** (`_build_set_context_base`, `simulator.py:165`): arma un dict con las 21 features a partir de las `team_features` del match, sobreescribiendo las in-match (`set_num_norm`, `sets_h_antes`, `momentum_h`, `es_desempate`) con los valores correctos del estado del set. Coste: bajo (es un dict).
+- **Carga del modelo** (`LogRegSetPredictor.try_load_v2`, `main.py:65`): al arrancar el API, con fallback al `SetPredictor` legacy ExtraTrees. Coste: despreciable.
+- **Exposición en `GET /api/modelo/info`**: nombre del modelo cargado + lista de `feature_names`. Coste: despreciable.
+- **Tests pinned** (188 tests, A3): el contrato `build_set_features` se valida en `tests/test_set_contract.py`. Coste: 0 en runtime.
 
-### 7.3. Limitación Actual
+El flag `use_set_calibration: bool` del API (default `True`) controla hoy solo si se pasa `set_predictor` y `team_features` al `simulate_match`, es decir, si se construye o no el contexto. Con `w = 1.0`, la salida del modelo se descartaría aunque se evaluase, así que el flag no tiene efecto sobre la simulación efectiva.
 
-En las primeras jornadas de la temporada, las features de equipo están en valores por defecto (los equipos aún no han jugado y no hay resultados para el `feature_builder`). Esto hace que el SetPredictor prediga ~0.5 para todos los partidos, por lo que el clamp no se desvía del rango por defecto. El efecto del SetPredictor aumenta a medida que avanza la temporada.
+### 7.4. Resultado del Tuneo (A4) y Limitación Real
+
+El plan consolidó la investigación del clamp del SetPredictor en el Grupo A. El desenlace fue **negativo para el SetPredictor** (Guardrail 9):
+
+| Métrica de backtest (nivel-temporada, 100 sims × 10 seeds, A5 final) | OFF (sin clamp adapt.) | NEW (w=1.0, A2+A4) |
+|---|---:|---:|
+| `|P_MC − p_elo|` (fidelidad) | 0.2247 | 0.2247 (idéntico) |
+| Spearman fuerza→posición | −0.9720 | −0.9720 (idéntico) |
+| `std_pos` (estabilidad entre seeds) | 0.1667 | 0.0667 (mejor) |
+| Coste por temporada | 7.5 s | 9.3 s (14× más barato que el ON viejo: 131.7 s) |
+
+El nivel-par de `NEW` es **idéntico** a `OFF` porque con `w = 1.0` no se consulta al SetPredictor. La diferencia está en la estabilidad entre seeds (`std_pos` baja de 0.1667 a 0.0667), que es mérito del **reescalado de A2** (centrar el clamp en la señal del Elo viva, con margen 0.10 en espacio de punto), no del SetPredictor.
+
+**Conclusión del Grupo A**: el SetPredictor, con los datos actuales y las features de que dispone, no aporta señal al clamp del Markov chain que el Elo con margen ya no provea. La causa no fue la hipótesis previa de "features frías en las primeras jornadas" — A4 midió con estado limpio y el resultado fue el mismo con o sin features calientes. La sub-dispersión detectada en A6 (Spearman = −1.0 con cuatro equipos a `std = 0.00`) sigue ahí, pero su origen es el modelo de punto, no el clamp. Pendiente: B3.
+
+Detalle completo del proceso en `mejora_precision_2026-07.md` §7 (cierre del Grupo A) y de la mecánica final en `simulator.md` §4.3. Tabla de tuneo de `w` y de `CLAMP_MARGIN_POINT` en `models/tune_clamp_blend_results.json` y `models/tune_clamp_margin_results.json`.
 
 ---
 
@@ -386,6 +447,9 @@ Para cada (home, away) en el calendario:
   │
   ├─ (3) Si use_set_calibration: preparar team_features para SetPredictor
   │       └─ _extract_set_team_features(match_features_df) → dict
+  │       (Nota post-A4: con SET_BLEND_WEIGHT_ELO=1.0 la predicción del
+  │        SetPredictor se cortocircuita en _simulate_set; este paso solo
+  │        construye el contexto que se pasaría al modelo si se reactivase)
   │
   ├─ (4) MatchSimulator.simulate_match(
   │       home_team=home, away_team=away,
@@ -398,6 +462,8 @@ Para cada (home, away) en el calendario:
   │       │
   │       └─ Para cada set:
   │            ├─ Si set_predictor: ajustar clamp al inicio del set
+  │            │   (post-A4: con w=1.0 el cortocircuito salta la evaluación
+  │            │    y el clamp queda [base_p_neutral ± 0.10])
   │            ├─ Loop punto a punto con momentum y sideout
   │            └─ PlayerStatsGenerator.generate_set_stats()
   │
@@ -505,9 +571,15 @@ Comparativa de la distribución de marcadores con seed=42 (12 equipos, 132 parti
 |---|---:|---:|---:|---|
 | Baseline (sin ML) | 65.9% | 15.9% | 18.2% | Demasiados barridos, pocos partidos competitivos |
 | MatchPredictor | 43.9% | 29.5% | 26.5% | Distribución más realista, liga más igualada |
-| Match + Set | 45.5% | 30.3% | 24.2% | Similar a Match, con variabilidad extra |
+| Match + Set (post-A4) | ~43.9% | ~29.5% | ~26.5% | Idéntico a Match: con `w=1.0` el SetPredictor se cortocircuita y no aporta variabilidad extra |
 
-**Interpretación:** la calibración con MatchPredictor reduce la proporción de 3-0 (del 66% al 44%) porque ajusta las fuerzas de los equipos débiles al alza cuando se enfrentan a rivales de su nivel, generando más sets competitivos. Sin calibración, los barridos están sobre-representados.
+> **Nota post-A4 (2026-07-21):** la fila "Match + Set" se reporta en la tabla
+> por compatibilidad con el histórico, pero la configuración vigente
+> (`SET_BLEND_WEIGHT_ELO = 1.0`) la hace **numéricamente equivalente a
+> "Match"**. El cableado del SetPredictor se mantiene para una futura
+> re-evaluación (ver §7.4 y `set_predictor.md` §10.5).
+
+**Interpretación:** la calibración con MatchPredictor reduce la proporción de 3-0 (del 66% al 44%) porque ajusta las fuerzas de los equipos débiles al alza cuando se enfrentan a rivales de su nivel, generando más sets competitivos. Sin calibración, los barridos están sobre-representados. El SetPredictor, en las pruebas del Grupo A, no modificó esta distribución más allá de lo que el MatchPredictor ya conseguía.
 
 ---
 
@@ -517,9 +589,10 @@ Comparativa de la distribución de marcadores con seed=42 (12 equipos, 132 parti
 |---|---|---|
 | Baseline (sin ML) | 132 | ~10 s |
 | MatchPredictor activado | 132 | ~70 s |
-| Match + Set | 132 | ~72 s |
+| Match + Set (post-A4) | 132 | ~70 s (idéntico: el cortocircuito evita la evaluación del SetPredictor) |
+| Match + Set (pre-A4, ON) | 132 | ~72 s (referencia histórica) |
 
-La calibración con MatchPredictor añade ~60s (de 10s a 70s) porque se evalúa el modelo 132 veces. La calibración con SetPredictor añade solo ~2s adicionales (se evalúa una vez por set, ~4 veces por partido × 132 partidos).
+La calibración con MatchPredictor añade ~60s (de 10s a 70s) porque se evalúa el modelo 132 veces. La calibración con SetPredictor (cuando estaba activa, pre-A4) añadía solo ~2s adicionales (se evaluaba una vez por set, ~4 veces por partido × 132 partidos). **Post-A4, con `w=1.0`, ese coste desaparece**: el cortocircuito evita la llamada a `_eval_set_predictor` y la simulación efectiva es indistinguible de la de "MatchPredictor activado" en tiempo y resultado. El cableado del contexto (`_build_set_context_base`) sigue ejecutándose si el caller pasa `set_predictor` + `team_features`, pero su coste es despreciable.
 
 ---
 
@@ -527,18 +600,22 @@ La calibración con MatchPredictor añade ~60s (de 10s a 70s) porque se evalúa 
 
 1. **MatchPredictor con features frías**: en las primeras jornadas, todas las features dinámicas (Elo, forma, rachas) están en valores por defecto. El modelo predice ~0.5 para casi todos los partidos, por lo que la calibración tiene poco efecto hasta la jornada 5-6.
 
-2. **SetPredictor no efectivo por ahora**: las features de equipo que recibe están en valores por defecto hasta que la temporada avance, así que su predicción es ~0.5 y el clamp no se desvía del rango por defecto.
+2. **SetPredictor no efectivo (resultado negativo post-A4, Guardrail 9)**: con los datos actuales, el SetPredictor no aporta señal útil al clamp del Markov chain más allá de lo que el Elo con margen ya provee. El plan consolidado lo verificó experimentalmente con el backtest A5: el blend `p_center = w·base_p_neutral + (1−w)·p_set_punto` para `w ∈ {0.5, 0.7, 0.9, 1.0}` es indistinguible del baseline `OFF` a partir de `w = 0.9`. Se adoptó `w = 1.0` (no consultar al SetPredictor) y la causa **no** es la hipótesis previa de "features frías" — A4 midió con estado limpio y el resultado fue el mismo. La sub-dispersión residual (Spearman = −1.0 con cuatro equipos a `std = 0.00` en A6) tiene su origen en el modelo de punto, no en el clamp, y queda como tarea para B3. Detalle completo en `mejora_precision_2026-07.md` §7 y `set_predictor.md` §10.5.
 
 3. **Damping fijo en 0.5**: el factor de damping es estático. Podría ajustarse dinámicamente (mayor damping al inicio de la temporada, menor al final cuando las features están más informadas).
 
 4. **Sin Monte Carlo a nivel temporada**: cada partido se simula una sola vez. Para cuantificar la incertidumbre sobre la posición final, sería necesario ejecutar la temporada completa N veces.
 
-5. **Sin lesiones ni mercado de fichajes**: el rendimiento de los equipos es constante durante toda la temporada.
+5. **Sin lesiones ni mercado de fichajes**: el rendimiento de los equipos es constante durante toda la simulación.
 
-6. **Elo simplificado**: se usa Elo clásico con K=28, sin ajustes por margen de victoria o importancia del partido.
+6. **Elo simplificado (corregido)**: se usa Elo con margen (`K=28`, `HOME_ADV=60`, margen de victoria integrado en `src/data/rolling_features.py`). El Elo plano se descartó tras la auditoría de precisión.
 
 ---
 
 ## 15. Conclusión
 
-La predicción de temporadas integra el motor de Cadenas de Markov con dos modelos ML de calibración: el MatchPredictor ajusta las fuerzas de equipo antes de cada partido en función del estado dinámico de la temporada (Elo, forma, rachas, H2H, roster), y el SetPredictor ajusta el clamp de probabilidad punto a punto al inicio de cada set. El RuntimeFeatureBuilder mantiene el estado dinámico y construye las 87 features que necesita el MatchPredictor en tiempo real. El resultado es una simulación con distribución de marcadores más realista (más 3-1 y 3-2, menos 3-0) que el baseline, manteniendo el tiempo de ejecución en ~70 segundos para una temporada completa de 132 partidos con stats de jugadores.
+La predicción de temporadas integra el motor de Cadenas de Markov con **un** modelo ML de calibración activo: el **MatchPredictor** (señal de Elo con margen, rolling, sin leakage) ajusta las fuerzas de equipo antes de cada partido en función del estado dinámico de la temporada (Elo, forma, rachas, H2H, roster). El `RuntimeFeatureBuilder` mantiene el estado dinámico y construye las features que la calibración de fuerzas necesita en tiempo real.
+
+El `SetPredictor` (v2 LogReg+recencia) está **cableado pero inactivo en runtime** tras el cierre del Grupo A del plan consolidado (2026-07-21): con `SET_BLEND_WEIGHT_ELO = 1.0` la llamada al modelo se cortocircuita y la simulación efectiva es indistinguible de la baseline con MatchPredictor. El cableado y los tests del contrato A3 se mantienen por dos razones: (a) deja el sistema listo para reactivar la mezcla si en el futuro (post-B3) se demuestra que un SetPredictor con features de jugador o de momentum entre-sets sí aporta, y (b) el resultado negativo es defendible en la memoria del TFG mostrando el tuneo completo.
+
+El resultado operativo de la temporada simulada con la configuración vigente es: distribución de marcadores más realista (más 3-1 y 3-2, menos 3-0) que el baseline, manteniendo el tiempo de ejecución en ~70 segundos para una temporada completa de 132 partidos con stats de jugadores. La sub-dispersión residual (A6) es el siguiente objetivo a corregir, con B3 ya planificado.

@@ -27,7 +27,7 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
 | Documento | Cubre | Estado |
 |---|---|---|
 | [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md) | **Proceso completo de mejora de precisión** (auditoría de leakage, protocolo honesto, integración Elo) | ✅ Nuevo |
-| [`set_predictor.md`](set_predictor.md) | `SetPredictor` — LogReg+recencia v2 en producción (test 2025 AUC 0.697, CV 0.679 ± 0.017, n=1193; legacy ExtraTrees como fallback) | ✅ Completo |
+| [`set_predictor.md`](set_predictor.md) | `SetPredictor` — LogReg+recencia v2 en producción (test 2025 AUC 0.697, CV 0.679 ± 0.017, n=1193; legacy ExtraTrees como fallback). **Resultado negativo del Grupo A (2026-07-21)**: el SetPredictor se mantiene cableado pero su predicción se cortocircuita en runtime (`SET_BLEND_WEIGHT_ELO = 1.0`). Ver §10.5 del doc. | ✅ Completo |
 | [`match_predictor.md`](match_predictor.md) | `MatchPredictor` — el AUC=0.707 era leakage; sustituido por Elo con margen (AUC 0.75); el artefacto viejo queda como fallback | ✅ Completo |
 | [`point_probability.md`](point_probability.md) | `PointProbabilityModel` — LogisticRegression + sideout 0.62 | ✅ Completo |
 | `benchmark.md` | `benchmark.py`, `benchmark_roster.py`, `benchmark_teams.py` — comparativas de modelos | ✅ Completo |

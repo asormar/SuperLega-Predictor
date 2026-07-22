@@ -204,7 +204,7 @@ El predictor pesa **~1.5 MB** (XGBoost con 300 estimadores es mucho más compact
 
 3. **Damping fijo en 0.5**: el shrinkage es estático. Podría ajustarse dinámicamente — mayor damping al inicio de la temporada (cuando el MatchPredictor tiene features frías) y menor al final.
 
-4. **Features frías al inicio de temporada**: igual que el `SetPredictor`, en las primeras jornadas las features de `elo`, `streaks`, `results` están en valores por defecto. El modelo predice ~0.5 y la calibración no tiene efecto hasta la jornada 5-6.
+4. **Features frías al inicio de temporada**: en las primeras jornadas, las features de `elo`, `streaks`, `results` están en valores por defecto. El modelo predice ~0.5 y la calibración tiene poco efecto hasta la jornada 5-6. (Nota post-A4: la limitación análoga del `SetPredictor` se demostró en el Grupo A del plan consolidado que **no era realmente esa**: con `w=1.0` la llamada al SetPredictor se cortocircuita en runtime independientemente del estado de las features. Ver `set_predictor.md` §10.5.)
 
 ### 8.2. Damping adaptativo (Batch 3 mid-effort #3)
 
