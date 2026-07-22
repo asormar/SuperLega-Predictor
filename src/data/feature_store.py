@@ -282,7 +282,11 @@ def compute_roster_features(
     ps["equipo"] = ps["equipo_id"].apply(normalize_team_name)
 
     # Filtrar solo jugadores individuales (no totales de equipo)
-    ps = ps[ps["es_total_equipo"] != True].copy()
+    # noqa E712 a proposito: esto es una Series de pandas, no un bool. La
+    # correccion que sugiere ruff (`not ps[...]`) lanzaria "truth value of a
+    # Series is ambiguous". Ademas `!= True` es defensivo frente a NaN, que
+    # `~col` no maneja.
+    ps = ps[ps["es_total_equipo"] != True].copy()  # noqa: E712
 
     # Calcular features por equipo-temporada
     roster_agg = {}

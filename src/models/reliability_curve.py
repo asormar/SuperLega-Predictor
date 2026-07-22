@@ -124,8 +124,6 @@ def print_calibration_analysis(y_true, y_prob, name, n_bins=10):
 
     # Resumen
     ece = compute_ece(y_true, y_prob, n_bins=n_bins)
-    over_mask = y_prob > y_true.mean()
-    under_mask = y_prob < y_true.mean()
     print(f"  {'-'*66}")
     print(
         f"  ECE: {ece:.4f}  |  Media real (y): {y_true.mean():.3f}  "

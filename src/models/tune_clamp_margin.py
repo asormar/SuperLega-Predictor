@@ -140,7 +140,9 @@ def run(
     # Time-box (Guardrail 8): medir UNA config antes de lanzar el grid.
     t0 = time.perf_counter()
     original = getattr(C, label)
-    first = _measure(elo_dict, strengths, set_predictor, match_predictor, n_sims, n_seeds)
+    # El resultado se descarta: esta corrida existe solo para CRONOMETRAR una
+    # config antes de comprometerse al grid entero.
+    _measure(elo_dict, strengths, set_predictor, match_predictor, n_sims, n_seeds)
     t_one = time.perf_counter() - t0
     projected = t_one * len(grid)
     print(

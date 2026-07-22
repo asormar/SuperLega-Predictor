@@ -261,7 +261,6 @@ def _project_time(
     """
     teams_short = TEAMS_12[:4]  # 4 equipos para la medicion rapida
     sim = MatchSimulator(point_model=None, player_stats_gen=None)
-    elo_dummy = {t: ELO_BASE for t in teams_short}
 
     # Coste de 1 partido MC
     t0 = time.perf_counter()
@@ -384,10 +383,13 @@ def main(
     for t in TEAMS_12:
         strengths[t] = elo_to_strength(elo_dict.get(t, ELO_BASE))
 
-    # ── Feature builder (con estado historico sembrado) ──
-    feature_builder = None
+    # ── Feature builder: solo se comprueba que se puede construir ──
+    # Tras el aislamiento por config (ver `_fresh_builder` mas abajo), cada
+    # config estrena el suyo, asi que aqui no se guarda ninguna instancia:
+    # esto es un smoke check de arranque para fallar pronto y con mensaje
+    # claro si el Elo historico no carga.
     try:
-        feature_builder = RuntimeFeatureBuilder(initial_elo=elo_dict)
+        RuntimeFeatureBuilder(initial_elo=elo_dict)
         print("  FeatureBuilder:  OK")
     except Exception as e:
         print(f"  FeatureBuilder:  NO DISPONIBLE ({e})")
