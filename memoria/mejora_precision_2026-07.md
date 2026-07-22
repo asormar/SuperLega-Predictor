@@ -492,6 +492,135 @@ queda algo de sobreconfianza residual. Y el modelo tiene ahora más rango
 dinámico en las colas (elo_diff = ±400 da P = 0.95 / 0.085), lo que conviene
 vigilar si en el futuro se amplía el dataset (B6) con más partidos desiguales.
 
+### 7.4 B2 — Tuneo de las constantes del simulador: RESULTADO NEGATIVO (2026-07-22)
+
+`MOMENTUM_BONUS = 0.015`, `GLOBAL_MOMENTUM_FACTOR = 0.01` y
+`MATCH_PREDICTOR_DAMPING = 0.5` se fijaron *a priori* y nunca se habían
+contrastado con datos. B2 las somete al backtest B1.
+
+**Protocolo.** Grid sobre `MOMENTUM_BONUS ∈ {0, 0.01, 0.015, 0.03}` ×
+`GLOBAL_MOMENTUM_FACTOR ∈ {0, 0.01, 0.02}` × `damping ∈ {0.3, 0.5, 0.7}`.
+Tune sobre **2023 y 2024**; 2025 se reserva para una única validación final.
+Modelo de punto entrenado solo con historia < 2024 (sin leakage). Dos pasadas:
+n = 100 sobre 2024 para descartar, n = 500 sobre 2023+2024 para decidir.
+Reproducible con `python -m src.models.tune_simulator_constants`.
+
+#### Hallazgo previo: el eje `damping` es degenerado
+
+De los 36 combos, solo **12 son distintos**. `damping` no tiene ningún efecto
+en este camino: solo influye en `SeasonSimulator._calibrate_strengths`, que
+produce `home_strength` / `away_strength`, pero
+`PointProbabilityModel.get_point_probabilities` entra en la rama
+`if match_features and self.is_fitted:` y **no usa esos argumentos**.
+Verificado a dos niveles:
+
+1. Modelo: salida bit a bit idéntica para fuerzas 0.50/0.50 y 0.80/0.20.
+2. Backtest completo de 2024 (n = 100): `damping` 0.3 y 0.7 dan métricas
+   idénticas (Brier 0.1850, LogLoss 0.5432, Acc 0.7252, ECE 0.0594).
+
+Es decir: toda la calibración Elo→fuerza (`_calibrate_strengths`,
+`HOME_ADVANTAGE_STRENGTH_BONUS`, `MATCH_PREDICTOR_DAMPING`) es **código muerto**
+siempre que el modelo de punto esté cargado, que es el caso en producción
+(`src/api/main.py:112`). Queda anotado como trabajo aparte: decidir entre
+re-cablear las fuerzas o retirarlas.
+
+#### Pasada 1 — 12 combos, 2024, n = 100
+
+| MOMENTUM_BONUS | GLOBAL_MOM. | Brier | LogLoss | ECE | Acc | L1 márg. |
+|---:|---:|---:|---:|---:|---:|---:|
+| 0.03 | 0.02 | 0.1836 | 0.5416 | 0.0526 | 0.7207 | 0.0996 |
+| 0.01 | 0.01 | 0.1836 | 0.5431 | 0.0844 | 0.7297 | 0.0205 |
+| 0.015 | 0.0 | 0.1837 | 0.5426 | 0.0477 | 0.7162 | 0.1457 |
+| 0.01 | 0.0 | 0.1839 | 0.5426 | 0.0682 | 0.7342 | 0.1358 |
+| 0.0 | 0.0 | 0.1843 | 0.5437 | 0.0534 | 0.7117 | 0.1362 |
+| 0.03 | 0.01 | 0.1844 | 0.5434 | 0.0584 | 0.7117 | 0.0333 |
+| 0.015 | 0.02 | 0.1845 | 0.5424 | 0.0469 | 0.7207 | 0.1006 |
+| 0.0 | 0.02 | 0.1849 | 0.5440 | 0.0866 | 0.6802 | 0.0999 |
+| **0.015** | **0.01** | **0.1850** | 0.5432 | 0.0594 | 0.7252 | 0.0292 |
+| 0.01 | 0.02 | 0.1851 | 0.5439 | 0.0528 | 0.7072 | 0.1039 |
+| 0.0 | 0.01 | 0.1858 | 0.5467 | 0.0622 | 0.7162 | 0.0207 |
+| 0.03 | 0.0 | 0.1862 | 0.5456 | 0.0511 | 0.7117 | 0.1487 |
+
+*(En negrita el baseline actual. Cada fila representa 3 de las 36
+combinaciones: las tres de `damping`, idénticas por construcción.)*
+Ningún combo supera el umbral de descarte (Brier > 0.20): sobreviven 12/12.
+
+#### Pasada 2 — top-5, 2023 + 2024, n = 500
+
+| MOMENTUM_BONUS | GLOBAL_MOM. | Brier ponderado | 2023 | 2024 | ECE 2024 | L1 2024 |
+|---:|---:|---:|---:|---:|---:|---:|
+| **0.015** | **0.01** | **0.20889** | 0.2464 | 0.1815 | 0.0565 | 0.0315 |
+| 0.015 | 0.0 | 0.20922 | 0.2464 | 0.1821 | 0.0546 | 0.1397 |
+| 0.03 | 0.02 | 0.20953 | 0.2475 | 0.1818 | 0.0540 | 0.1068 |
+| 0.01 | 0.01 | 0.21003 | 0.2488 | 0.1817 | 0.0595 | 0.0257 |
+| 0.01 | 0.0 | 0.21046 | 0.2479 | 0.1832 | 0.0582 | 0.1398 |
+
+**Ganador: el baseline actual, con delta = +0.00000.**
+
+#### Por qué es un resultado negativo, no una confirmación
+
+Sería tentador leer esto como "los valores a priori estaban bien". No es lo
+que dicen los datos. Dos evidencias muestran que **el grid entero está por
+debajo del ruido**:
+
+1. **Inestabilidad de ranking entre pasadas.** El combo ganador de la pasada 2
+   (`0.015 | 0.01`) era el **9.º de 12** en la pasada 1; el mejor de la pasada 1
+   (`0.03 | 0.02`) cae al 3.º en la pasada 2. Si las diferencias fuesen reales,
+   el orden sería estable al aumentar n.
+2. **Suelo de ruido medido.** Se corrió la configuración baseline sobre 2024
+   (n = 500) con 6 semillas base distintas, cambiando *solo* las semillas:
+
+   | | media | std | rango |
+   |---|---:|---:|---:|
+   | Brier | 0.18317 | **0.00127** | 0.00341 |
+   | ECE | 0.06208 | **0.01108** | — |
+
+   El rango completo del grid en la pasada 2 es **0.00157**, es decir, ~1,2 σ
+   del ruido y menos de la mitad del rango que produce cambiar solo la semilla.
+   Las diferencias de ECE del grid (0.047–0.087) son igualmente indistinguibles
+   de un ruido con σ = 0.011.
+
+**Conclusión: no se adoptan valores nuevos.** No porque los actuales hayan
+ganado, sino porque **ningún valor del grid es distinguible de otro** con el
+poder estadístico disponible (222 partidos en 2024, 162 en 2023). Cambiar las
+constantes en base a este grid sería sobreajustar ruido. Se mantienen
+`MOMENTUM_BONUS = 0.015` y `GLOBAL_MOMENTUM_FACTOR = 0.01`, y por tanto no se
+tocan `constants.py`, los pines de `tests/test_team_mapper.py` ni `AGENTS.md`.
+
+**Lectura de fondo:** tras B3, el modelo de punto domina la calidad de
+probabilidad hasta el punto de que el momentum —cuyo efecto máximo es
+±0.06 sobre `p_home_wins`— no mueve la aguja de forma medible a nivel de
+partido. Para resolver este grid haría falta o bien mucho más dato (B6), o
+bien una métrica más sensible al detalle intra-set que el Brier del resultado
+del partido.
+
+#### Validación única sobre el test held-out 2025
+
+Aunque no se adopta ningún cambio, se ejecutó **una sola vez** el backtest
+sobre 2025 con la configuración vigente, para dejar la cifra de referencia del
+simulador en la temporada que nunca se ha usado para tunear. Modelo de punto
+entrenado solo con historia < 2025 (1008 partidos). 314 partidos, n = 500:
+
+| Métrica | Simulador | Elo (ref) | Δ |
+|---|---:|---:|---:|
+| Brier | **0.1878** | 0.1924 | −0.0046 |
+| LogLoss | **0.5544** | 0.5645 | −0.0102 |
+| Accuracy | **0.7134** | 0.6975 | +0.0159 |
+| ECE | 0.0626 | 0.0494 | +0.0133 |
+
+| Marcador | Simulado | Real |
+|---|---:|---:|
+| 3-0 | 40.7 % | 44.6 % |
+| 3-1 | 34.0 % | 30.9 % |
+| 3-2 | 25.3 % | 24.5 % |
+
+L1 (márgenes) = 0.0771.
+
+**El patrón de 2024 se reproduce en held-out:** el simulador supera al Elo en
+Brier, logloss y accuracy, y mantiene una sobreconfianza residual pequeña en
+ECE. Es la confirmación de que la mejora de B3 (§7.3) generaliza y no era
+específica de 2024. Cifras en `models/backtest_simulator_2025.json`.
+
 ## 8. Qué NO se hizo (honestidad de alcance)
 
 - No se amplió el nº de partidos históricos: `sets_partidos.csv` tiene ~1322
