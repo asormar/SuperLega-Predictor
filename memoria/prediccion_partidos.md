@@ -95,10 +95,12 @@ Convierte las fuerzas relativas de los equipos en **cuatro probabilidades de pun
 | `p_away_serving` | P(visitante gana el punto \| visitante saca) |
 | `p_away_receiving` | P(visitante gana el punto \| local saca) |
 
-**Cálculo:**
-1. Probabilidad base `p_base = home_strength / (home + away)`.
-2. Ajuste por **sideout rate** (0.62): en volleyball masculino profesional, el equipo que recibe el saque gana ~62% de los rallies.
-3. Clamp final al rango **[0.25, 0.75]** para evitar eventos deterministas.
+**Cálculo (post-B3, 2026-07-22):**
+1. **Probabilidad base** del local: con modelo entrenado (`Ridge(alpha=1.0)`), se predice directamente el ratio de puntos `point_ratio_h` y se clipa a `POINT_RATIO_CLIP = (0.40, 0.60)` solo de salvavidas. Sin modelo, fallback a `p_base = home_strength / (home + away)`.
+2. Ajuste por **sideout rate per-team** (default 0.62; el `MatchSimulator` resuelve los valores desde `src/data/team_sideout.py`): en volleyball masculino profesional, el equipo que recibe el saque gana ~62% de los rallies.
+3. Clamp final al rango **`POINT_PROB_CLIP = (0.25, 0.75)`** para evitar eventos deterministas.
+
+> **Cambio B3:** el modelo dejó de binarizar el target y de mapear la salida a `0.45 + 0.10·p_dominante`. Esa fórmula sesgaba la salida hacia el local (intercept 0.5387 con features neutras) y la cadena de Markov amplificaba el sesgo ~7× hasta P(local) = 0.845 entre iguales — el origen de la sobreconfianza en favoritos que corregía B3. Detalle en `point_probability.md` §3 y `mejora_precision_2026-07.md` §7.3.
 
 ### 3.2. MatchSimulator — Cadenas de Markov (`src/simulation/simulator.py`)
 

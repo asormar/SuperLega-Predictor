@@ -12,7 +12,7 @@ Esta guía resume el estado del TFG PREDICTOR(2) y los próximos pasos recomenda
 
 - **Repo**: `C:\Users\Alejandro\Desktop\Universidad\4toCarrera\TFG\PREDICTOR(2)`. 18 commits en `main`. Sin remote (queda para cuando hagas `gh auth login`).
 - **Documentación**: 10 archivos en `memoria/` (ver `memoria/INDICE.md` para el índice).
-- **Modelos entrenados**: SetPredictor (LogReg+recencia v2, test 2025 AUC 0.71; CV 0.63 ± 0.08; legacy ExtraTrees como fallback), MatchPredictor (margin-Elo, test 2025/26 AUC 0.75; artefacto viejo de 87 features como fallback), PointProbabilityModel (LogReg), PlayerStatsGenerator (22 equipos).
+- **Modelos entrenados**: SetPredictor (LogReg+recencia v2, test 2025 AUC 0.71; CV 0.63 ± 0.08; legacy ExtraTrees como fallback), MatchPredictor (margin-Elo, test 2025/26 AUC 0.75; artefacto viejo de 87 features como fallback), PointProbabilityModel (Ridge con regresión continua del ratio de puntos, post-B3 2026-07-22; legacy LogReg binarizado como fallback si el v2 no está), PlayerStatsGenerator (22 equipos).
 - **API funcionando**: 7 endpoints (incluyendo `/temporada/iniciar` y `/temporada/jornada`), validación Pydantic, CORS dev-only, Monte Carlo determinista con seed.
 - **Tests**: 142 verdes (134 + 8 del v2 adapter).
 - **Linter/Format**: 0. Ruff + Black recomendados.
