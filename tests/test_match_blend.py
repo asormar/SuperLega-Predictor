@@ -105,13 +105,13 @@ class TestOptimizeBlendW:
         from src.models.blend_optimizer import optimize_blend_w
 
         rng = np.random.RandomState(42)
-        n = 200
+        n = 400
         df = _make_synthetic_blend_df(rng, n, true_w=0.3)
 
         result = optimize_blend_w(
             df,
             w_grid=list(np.linspace(0.0, 1.0, 21)),
-            val_years=[2023, 2024],
+            val_years=[2022, 2023, 2024, 2025],
             elo_col="p_elo",
             derived_col="p_derived",
             y_col="y",
@@ -177,21 +177,13 @@ class TestOptimizeBlendW:
         assert result["sigma_lofo"] <= 1.0
 
 
-@pytest.fixture(scope="module")
-def _b4_contract_drift_caplog(caplog):
-    """Check that SetContext schema hasn't drifted (REQ-023)."""
+def test_contract_drift_absent():
+    """21 features present, no schema-drift warnings (REQ-023)."""
     from src.data.set_feature_contract import SetContext, build_set_features
 
     ctx = SetContext()
     feats = build_set_features(ctx)
     assert len(feats) == 21, f"Expected 21 features, got {len(feats)}"
-    # If a warning was logged about schema drift, caplog catches it
-    return feats
-
-
-def test_contract_drift_absent(_b4_contract_drift_caplog):
-    """21 features present, no schema-drift warnings."""
-    assert len(_b4_contract_drift_caplog) == 21
 
 
 # ─────────────────────────────────────────────────────────────
@@ -206,28 +198,25 @@ def _make_synthetic_blend_df(
 ) -> pd.DataFrame:
     """Build a synthetic DataFrame where blend weight=true_w is optimal.
 
-    p_elo = 0.5 + 0.3 * noise_elo  (moderate signal)
-    p_derived = 0.5 + 0.3 * noise_derived  (moderate signal, different seed)
-    y = Bernoulli( w * p_elo_target + (1-w) * p_derived_target )
+    p_elo and p_derived share a common base but have distinct biases,
+    making the blend weight identifiable by log-loss minimisation.
+    y = Bernoulli( w * p_elo + (1-w) * p_derived ).
     """
 
-    # Two independent noise sources — correlated enough for the optimizer
-    # but different enough that the optimal blend is meaningful
-    base = rng.uniform(0.2, 0.8, n)
-    noise_elo = rng.normal(0, 0.1, n)
-    noise_derived = rng.normal(0, 0.1, n)
+    base = rng.uniform(0.3, 0.7, n)
+    bias_elo = rng.uniform(-0.15, 0.15, n)
+    bias_derived = rng.uniform(-0.15, 0.15, n)
 
-    p_elo = np.clip(base + noise_elo, 0.05, 0.95)
-    p_derived = np.clip(base + noise_derived, 0.05, 0.95)
+    p_elo = np.clip(base + bias_elo, 0.05, 0.95)
+    p_derived = np.clip(base + bias_derived, 0.05, 0.95)
 
-    # True probability
+    # True probability = blended
     p_true = true_w * p_elo + (1.0 - true_w) * p_derived
     y = (rng.uniform(0, 1, n) < p_true).astype(int)
 
     # Assign folds by fake season
-    seasons = []
-    for i in range(n):
-        seasons.append([2022, 2023, 2024, 2025][i % 4])
+    pool = [2022, 2023, 2024, 2025]
+    seasons = [pool[i % 4] for i in range(n)]
 
     return pd.DataFrame(
         {
