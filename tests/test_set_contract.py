@@ -124,6 +124,7 @@ class TestPtsFavNoLiveScore:
         assert feats["momentum_h"] == 1.0
 
 
+@pytest.mark.slow
 class TestPSetDiscriminates:
     """REQ-022, SCN-008: p_set varies across the 132 A5 pairs."""
 
@@ -218,6 +219,7 @@ class TestPSetDiscriminates:
         )
 
 
+@pytest.mark.slow
 class TestRuntimeConsumerPin:
     """R3#1 (CRITICAL): The runtime consumer _eval_set_predictor does NOT
     override contract-passed values with live score.

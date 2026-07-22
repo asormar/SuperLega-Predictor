@@ -407,6 +407,7 @@ class TestAdaptiveDampingArtifacts:
 _MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 
 
+@pytest.mark.slow
 class TestLogRegSetPredictorV2:
     """Adapter for the v2 LogReg SetPredictor — loads real artifact from disk."""
 
