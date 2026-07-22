@@ -14,6 +14,55 @@ para que un agente ejecutor pueda implementarla sin re-derivar el contexto.
 
 ---
 
+## 📊 Estado del plan al 2026-07-22
+
+Leyenda: ✅ HECHO · 🚧 PENDIENTE · ⏸️ BLOQUEADO (por calendario / datos / decisión externa)
+
+### GRUPO A — Clamp adaptativo del SetPredictor
+
+✅ **CERRADO (2026-07-21)** — desenlace: `SET_BLEND_WEIGHT_ELO = 1.0` (SetPredictor cableado pero inactivo en runtime, ver `simulator.md` §4.3 y `set_predictor.md` §10.5). Items A1–A6 todos cerrados.
+
+### GRUPO B — Precisión end-to-end del simulador
+
+| Item | Estado | Notas |
+|---|---|---|
+| B1 — Backtest del simulador | ✅ HECHO (2026-07-15) | Cuantificó la sobreconfianza pre-B3 (ECE 0.242, 53% de 3-0) |
+| B2 — Tuning de constantes del simulador | 🚧 PENDIENTE | Siguiente palanca del simulador, B1 lo hace medible |
+| **B3** — PointProbabilityModel: regresión continua | ✅ **HECHO (2026-07-22)** | Ridge(α=1.0) sobre target continuo + clip (0.40, 0.60). Brier 0.273→0.182, ECE 0.242→0.057, 3-0 53%→37.6% (real 38.7%). El simulador pasa de degradar al Elo a superarlo. |
+| B4 — Predictor de partido best-of-5 | 🚧 PENDIENTE | Retorno marginal no compensaba; re-evaluar post-B2/B3 |
+| B5 — Roster churn | 🚧 PENDIENTE | Única señal pre-temporada de fichajes |
+| B6 — Ampliar dataset | 🚧 PENDIENTE | Palanca grande y cara; mejor tras A+B hechos |
+| B7 — Re-validación 2026/27 | ⏸️ BLOQUEADO | Depende de calendario; dejar script listo |
+
+### GRUPO C — Infra y calidad
+
+| Item | Estado | Notas |
+|---|---|---|
+| C1 — Ruff + Black + CI | 🚧 PENDIENTE | Tras C2 |
+| **C2** — Remote de GitHub | ✅ **HECHO** | `asormar/SuperLega-Predictor` activo, PR #1 mergeado, B3 mergeado |
+| C3 — Migración de logging | 🚧 PENDIENTE | 260+ `print()` → `logging` |
+| C4 — Hardening del API | 🚧 PENDIENTE | Pre-deploy |
+| C5 — Deploy (Docker) | 🚧 PENDIENTE | Multi-stage build |
+| C6 — Tests del frontend | 🚧 PENDIENTE | Vitest + MSW |
+
+### GRUPO D — Backlog de "Limitaciones"
+
+Todos 🚧 PENDIENTES (D1 arranque en frío features, D2 player stats realista, D3 saneamiento data layer, D4 sideout por forma).
+
+### GRUPO E — Extras
+
+Todos 🚧 PENDIENTES (E1 MC en UI, E2 explicabilidad, E3 `precision_report.py`, E4 predicción jornada real, E5 blindaje contra regresión).
+
+### Resumen ejecutivo
+
+- **Items cerrados**: B0 (colisión partido_id), B0b (regen set_features), B1, A1–A6, B3, C2. Total: **9 items**.
+- **Items pendientes no bloqueados**: B2, B4, B5, B6, C1, C3, C4, C5, C6, D1–D4, E1–E5. Total: **17 items**.
+- **Items bloqueados externamente**: B7. Total: **1 item**.
+
+---
+
+---
+
 ## ⚠️ HALLAZGO CRÍTICO (2026-07-15, al implementar B1) — BLOQUEA la validez del pipeline
 
 **`partido_id` colisiona ida y vuelta en `DB/sets_partidos.csv`.** El id abrevia
@@ -392,7 +441,9 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 
 ---
 
-## GRUPO B — Fase 4 pendiente: precisión end-to-end del simulador
+## GRUPO B — Fase 4 (parcialmente completada): precisión end-to-end del simulador
+
+> **Estado al 2026-07-22**: B1 ✅ y B3 ✅ cerrados. Pendientes: B2 (próxima palanca), B4, B5, B6. B7 bloqueado por calendario.
 
 ### B1 — Backtest del simulador contra la temporada real (`src/models/backtest_simulator.py`)  ✅ IMPLEMENTADO (2026-07-15)
 
@@ -453,7 +504,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 - **Esfuerzo**: 4–6 h + CPU. **Riesgo**: nulo. **Dependencias**: ninguna.
   Ejecutarlo con `use_set_calibration` OFF y ON si el grupo A no está cerrado.
 
-### B2 — Ajustar las constantes del simulador contra el backtest
+### B2 — Ajustar las constantes del simulador contra el backtest  🚧 PENDIENTE
 
 - **Qué**: primer contraste con datos de `MOMENTUM_BONUS=0.015`,
   `GLOBAL_MOMENTUM_FACTOR=0.01`, `MATCH_PREDICTOR_DAMPING=0.5` y el clamp
@@ -471,7 +522,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 - **Esfuerzo**: 2–3 h + CPU (36 combos × ~132 partidos × 500 sims — time-box;
   si excede, bajar a n=200). **Dependencias**: B1.
 
-### B3 — PointProbabilityModel: regresión continua ✅ **HECHO (2026-07-22)**
+### B3 — PointProbabilityModel: regresión continua  ✅ **HECHO (2026-07-22)**
 
 > **Resultado POSITIVO y grande.** `Ridge(alpha=1.0)` sobre target continuo
 > `point_ratio_h`, features rolling sin leakage, salida
@@ -557,7 +608,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 - **Esfuerzo**: 3–4 h. **Riesgo**: medio (afecta a toda la distribución punto a
   punto). **Dependencias**: B1 para validar; A2 aporta `p_set_from_p_point`.
 
-### B4 — Predictor de partido derivado del SetPredictor (best-of-5)
+### B4 — Predictor de partido derivado del SetPredictor (best-of-5)  🚧 PENDIENTE
 
 - **Qué**: segundo estimador independiente de P(match) desde p_set (entrenado
   sobre ~5000 sets, no ~500 partidos). Se pospuso por retorno marginal; es el
@@ -580,7 +631,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
      artefacto (guardar `w` y la config en el joblib).
 - **Esfuerzo**: 3–4 h. **Riesgo**: bajo (gated por folds). **Dependencias**: A3 (contrato).
 
-### B5 — Feature de continuidad de plantilla (roster churn)
+### B5 — Feature de continuidad de plantilla (roster churn)  🚧 PENDIENTE
 
 - **Qué**: % de los puntos de la temporada T−1 anotados por jugadores que siguen
   en el equipo en T. Única señal de fichajes/éxodos disponible; pre-temporada,
@@ -604,7 +655,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 - **Esfuerzo**: 3–5 h (el join de jugadores es lo laborioso). **Riesgo**: bajo
   (gated). **Dependencias**: ninguna dura; sinergia con A3/B4.
 
-### B6 — Ampliar el dataset de partidos (la palanca grande, la más cara)
+### B6 — Ampliar el dataset de partidos (la palanca grande, la más cara)  🚧 PENDIENTE
 
 - **Qué**: las temporadas viejas tienen 34-59 partidos de ~132-182 reales (solo
   se scrapeó a equipos "viables"). El generador de `sets_partidos.csv` NO está
@@ -626,7 +677,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 - **Esfuerzo**: 6–12 h. **Riesgo**: medio (datos externos, nombres nuevos).
   **Dependencias**: ninguna, pero hacer DESPUÉS de A+B1 para poder medir su efecto.
 
-### B7 — Re-validación con 2026/27 (bloqueada por calendario; dejar preparado)
+### B7 — Re-validación con 2026/27 (bloqueada por calendario; dejar preparado)  ⏸️ BLOQUEADO
 
 - **Qué**: el follow-up obligatorio W1 de mejora_precision §7.2 — decidir si el
   AUC 0.71 del set v2 en 2025 fue estructural o suerte.
@@ -641,7 +692,11 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 
 ---
 
-## GRUPO C — Infra y calidad (Batch 2c/2d pendientes)
+## GRUPO C — Infra y calidad (Batch 2c/2d parcialmente avanzados)
+
+> **Estado al 2026-07-22**: C2 ✅ (remote activo en `asormar/SuperLega-Predictor`, PR #1 y B3 mergeados). Pendientes: C1, C3, C4, C5, C6.
+
+### C1 — Ruff + Black + CI  🚧 PENDIENTE
 
 ### C1 — Ruff + Black + CI
 
@@ -668,7 +723,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
    `train_improved` antes.
 - **Esfuerzo**: ~2 h. **Dependencias**: C2 para que el workflow corra de verdad.
 
-### C2 — Remote de GitHub (seguro de vida del TFG)
+### C2 — Remote de GitHub (seguro de vida del TFG)  ✅ **HECHO**
 
 - Hoy el repo existe SOLO en el disco local. Requiere login del usuario:
   ```bash
@@ -682,7 +737,17 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
   si aparece: añadir a .gitignore y `git rm -r --cached`).
 - **Esfuerzo**: 10-20 min. **Bloqueo**: interactivo (login del usuario).
 
-### C3 — Migración de logging
+**Implementación real (2026-07-15):** repo creado en `github.com/asormar/SuperLega-Predictor`
+(privado), `git remote add origin` configurado, y dos PRs mergeados a `main`:
+- PR #1 (merge 2026-07-21, commit `d26a9b0`): Grupo A del plan consolidado
+  (A5, A3, A2, A4, A6 — `mejora-precision` branch).
+- B3 (merge 2026-07-22, commit `26439cb`): PointProbabilityModel con regresión
+  continua (`b3-point-prob-regression` branch).
+
+`origin/main` y `main` local sincronizados en `07e6316`. C1 ya puede correr
+workflows sobre el remote.
+
+### C3 — Migración de logging  🚧 PENDIENTE
 
 - 260+ `print()` en `src/` → `logging`. Crear `src/logging_config.py` con
   `logging.basicConfig`/dictConfig (formato `%(levelname)s %(name)s: %(message)s`,
@@ -697,7 +762,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
   tras cada módulo migrado.
 - **Esfuerzo**: ~2 h.
 
-### C4 — Hardening del API
+### C4 — Hardening del API  🚧 PENDIENTE
 
 - CORS: `allow_origins` desde env var `PREDICTOR_CORS_ORIGINS` (default `*` en
   dev) en [main.py:53-59](../src/api/main.py). Rate limiting con `slowapi`
@@ -705,7 +770,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
   por header `X-API-Key` con env var.
 - **Esfuerzo**: 1–2 h. Solo tiene sentido antes de C5/deploy público.
 
-### C5 — Deploy (Docker)
+### C5 — Deploy (Docker)  🚧 PENDIENTE
 
 - Dockerfile multi-stage: (1) `node:20` → `npm ci && npm run build` en
   `src/web` → `dist/`; (2) `python:3.12-slim` → `pip install -e .` +
@@ -720,7 +785,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
   documentarlo).
 - **Esfuerzo**: 3–4 h.
 
-### C6 — Tests del frontend
+### C6 — Tests del frontend  🚧 PENDIENTE
 
 - Vitest + @testing-library/react para las 4 páginas de `src/web/src/pages/`
   (Dashboard, EquipoDetalle, SimularPartido, SimularTemporada). Prioridad: el
@@ -731,7 +796,9 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 
 ---
 
-## GRUPO D — Backlog de las secciones "Limitaciones" de memoria/
+## GRUPO D — Backlog de las secciones "Limitaciones" de memoria/  🚧 PENDIENTE
+
+> **Estado al 2026-07-22**: D1–D4 todos pendientes. Ningún avance aún.
 
 ### D1 — Arranque en frío de las features dinámicas no-Elo
 
@@ -786,7 +853,9 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 
 ---
 
-## GRUPO E — Extras (propuestos, no están en ningún md)
+## GRUPO E — Extras (propuestos, no están en ningún md)  🚧 PENDIENTE
+
+> **Estado al 2026-07-22**: E1–E5 todos pendientes. Ningún avance aún.
 
 ### E1 — Monte Carlo de temporada como producto en la UI
 
@@ -863,20 +932,22 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 
 ---
 
-## Priorización recomendada
+## Priorización recomendada (actualizada al 2026-07-22)
 
-| Prioridad | Item(s) | Por qué |
-|---|---|---|
-| **0** | **B0** arreglar colisión `partido_id` | Bloquea la validez del pipeline entero (Elo/fuerzas/AUC). Decisión del usuario: reescribe cifras del TFG. |
-| 1 | ~~**B1** backtest simulador~~ ✅ HECHO | Reveló que el simulador está sobreconfiado (Brier +0.079, ECE +0.198 vs Elo). |
-| 2 | **Grupo A** (A5→A3→A2→A4→A6) | Diagnóstico hecho; elimina ruido cuantificado y ×60 de coste. El backtest B1 ya lo confirma como necesario. |
-| 3 | **B3** PointProb continuo + **B2** tuning de constantes | Las dos palancas restantes del simulador; B1 las hace medibles. |
-| 4 | **C2 + C1** remote + CI | Barato; hoy no hay backup remoto del TFG. |
-| 5 | **E1** MC de temporada en UI + **E3** reporte reproducible | Máximo valor de defensa por hora. |
-| 6 | **B4, B5, D1, D3, E5** | Backlog medio; cada uno se cierra en una tarde. |
-| 7 | **B6** ampliar dataset | La palanca de modelo más grande, pero la más cara; tras A+B. |
-| — | **B7** re-validación 2026/27 | Bloqueado por calendario; dejar el script listo. |
-| baja | C3–C6, D2, D4, E2, E4 | Valor real, no crítico; según tiempo hasta la entrega. |
+| Prioridad | Item(s) | Estado | Por qué |
+|---|---|---|---|
+| **0** | ~~**B0** arreglar colisión `partido_id`~~ | ✅ HECHO (2026-07-15) | Bloqueaba la validez del pipeline entero (Elo/fuerzas/AUC). Rescrito. |
+| 1 | ~~**B1** backtest simulador~~ | ✅ HECHO (2026-07-15) | Reveló que el simulador estaba sobreconfiado (Brier +0.079, ECE +0.198 vs Elo). |
+| 2 | ~~**Grupo A** (A5→A3→A2→A4→A6)~~ | ✅ HECHO (2026-07-21) | Diagnóstico hecho; elimina ruido cuantificado y ×60 de coste. Desenlace: `w=1.0` (SetPredictor cableado pero inactivo). |
+| 3 | **B3** PointProb continuo | ✅ HECHO (2026-07-22) | Brier 0.273→0.182, ECE 0.242→0.057, 3-0 53%→37.6%. El simulador pasa de degradar al Elo a superarlo. |
+| 4 | **B2** tuning de constantes del simulador | 🚧 PENDIENTE | Siguiente palanca del simulador, B1 lo hace medible. Empezar por aquí. |
+| 5 | ~~**C2** remote de GitHub~~ | ✅ HECHO | `asormar/SuperLega-Predictor` activo, PRs mergeados. |
+| 6 | **C1** Ruff + Black + CI | 🚧 PENDIENTE | Ahora ya tiene sentido: C2 listo. |
+| 7 | **E1** MC de temporada en UI + **E3** reporte reproducible | 🚧 PENDIENTE | Máximo valor de defensa por hora. |
+| 8 | **B4, B5, D1, D3, E5** | 🚧 PENDIENTE | Backlog medio; cada uno se cierra en una tarde. |
+| 9 | **B6** ampliar dataset | 🚧 PENDIENTE | La palanca de modelo más grande, pero la más cara; tras B2. |
+| — | **B7** re-validación 2026/27 | ⏸️ BLOQUEADO | Bloqueado por calendario; dejar el script listo. |
+| baja | C3–C6, D2, D4, E2, E4 | 🚧 PENDIENTE | Valor real, no crítico; según tiempo hasta la entrega. |
 
 ---
 
