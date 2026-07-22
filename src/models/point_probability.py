@@ -11,16 +11,102 @@ import joblib
 from pathlib import Path
 from typing import Optional
 
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
-from src.simulation.constants import DEFAULT_SIDEOUT_RATE, POINT_PROB_CLIP
+from src.simulation.constants import (
+    DEFAULT_SIDEOUT_RATE, POINT_PROB_CLIP, POINT_RATIO_CLIP,
+)
 
 # Feature keys esperados por el modelo entrenado
 _FEATURE_KEYS = [
     "elo_diff", "diff_win_rate_global", "diff_set_win_rate",
     "diff_dominancia", "diff_set_ratio", "diff_forma_efectiva",
 ]
+
+# Mapeo de las 6 `_FEATURE_KEYS` (nombres del RUNTIME) a sus equivalentes en
+# `build_rolling_match_features` (nombres del ENTRENAMIENTO). Guardrail 3:
+# la definicion debe ser la MISMA a ambos lados.
+#
+# NOTA — desviacion consciente respecto al plan (B3, paso 1). El plan mapea
+# `diff_dominancia` -> `diff_set_diff_exp`. Eso introduciria train/serve skew,
+# porque en el runtime `diff_dominancia` NO es una diferencia de sets
+# esperados: `feature_builder.py:264-266` define
+#     dominancia_x = x_set_win_rate - 0.5
+# luego `diff_dominancia = (h_swr - 0.5) - (a_swr - 0.5) = h_swr - a_swr`,
+# que es EXACTAMENTE `diff_set_win_rate` y `diff_set_ratio`. Es decir: en
+# runtime esas tres features son algebraicamente identicas. Se mapean las tres
+# a `diff_set_ratio` para reproducir esa identidad en el entrenamiento. La
+# colinealidad resultante es justo lo que la regularizacion L2 de Ridge
+# maneja bien, y es preferible a entrenar con una senal que en produccion
+# nunca se sirve.
+_ROLLING_FEATURE_MAP = {
+    "elo_diff": "elo_diff",
+    "diff_win_rate_global": "diff_win_rate",
+    "diff_set_win_rate": "diff_set_ratio",
+    "diff_dominancia": "diff_set_ratio",
+    "diff_set_ratio": "diff_set_ratio",
+    "diff_forma_efectiva": "diff_form_ewma",
+}
+
+
+def build_point_training_data(max_season: Optional[int] = None) -> pd.DataFrame:
+    """Construye el dataset de entrenamiento del PointProbabilityModel (B3).
+
+    Usa features rolling PRE-partido (sin leakage) y como target el ratio de
+    puntos REAL del partido, que es un outcome y por tanto valido como target.
+
+    Args:
+        max_season: si se indica, se excluyen los partidos con
+            `temporada_inicio >= max_season`. OBLIGATORIO para backtestear una
+            temporada sin leakage temporal (Guardrail 1): el modelo de
+            produccion se entrena con todo, pero para medir en la temporada T
+            hay que entrenar solo con historia < T.
+
+    Returns:
+        DataFrame con las 6 columnas de `_FEATURE_KEYS` (renombradas desde sus
+        equivalentes rolling) mas `point_ratio_h` / `point_ratio_a` y
+        `temporada_inicio`.
+    """
+    # Import diferido: backtest_simulator importa este modulo de forma lazy.
+    from src.data.rolling_features import build_rolling_match_features
+    from src.models.backtest_simulator import load_real_matches
+
+    sp = pd.read_csv(BASE_DIR / "DB" / "sets_partidos.csv", encoding="utf-8")
+
+    feats = build_rolling_match_features(sp)
+    matches = load_real_matches(sp)
+
+    # Clave natural, unica en ambos lados (verificado: 0 duplicados). No se
+    # usa `partido_id` porque colisiona entre ida y vuelta (bug B0) y ademas
+    # `load_real_matches` no lo expone.
+    join_key = ["temporada_inicio", "jornada_num", "local", "visitante"]
+    merged = feats.merge(
+        matches[join_key + ["pts_h", "pts_a"]],
+        on=join_key,
+        how="inner",
+        validate="one_to_one",
+    )
+    if len(merged) != len(feats):
+        raise ValueError(
+            f"El join perdio filas: {len(feats)} features -> {len(merged)} tras "
+            "unir con los resultados reales."
+        )
+
+    out = pd.DataFrame(index=merged.index)
+    for key, rolling_col in _ROLLING_FEATURE_MAP.items():
+        out[key] = merged[rolling_col]
+
+    total = (merged["pts_h"] + merged["pts_a"]).replace(0, np.nan)
+    out["point_ratio_h"] = merged["pts_h"] / total
+    out["point_ratio_a"] = merged["pts_a"] / total
+    out["temporada_inicio"] = merged["temporada_inicio"]
+
+    out = out.dropna(subset=["point_ratio_h"])
+    if max_season is not None:
+        out = out[out["temporada_inicio"] < max_season]
+
+    return out.reset_index(drop=True)
 
 
 def build_features_from_strengths(home_strength: float, away_strength: float) -> dict:
@@ -107,14 +193,19 @@ class PointProbabilityModel:
 
         if feature_cols and "point_ratio_h" in df.columns:
             X = df[feature_cols].fillna(0)
-            # Target: la ratio real de puntos del local (continuous)
+            # Target: la ratio real de puntos del local (CONTINUO).
             y = df["point_ratio_h"].fillna(0.5)
 
             X_scaled = self.scaler.fit_transform(X)
-            self.model = LogisticRegression(max_iter=1000, random_state=42)
-            # Binarizamos para logistic regression: > 0.5 = 1
-            y_binary = (y > 0.5).astype(int)
-            self.model.fit(X_scaled, y_binary)
+            # B3: regresion continua en vez de LogisticRegression sobre un
+            # target binarizado (y > 0.5). La binarizacion tiraba toda la
+            # informacion de MAGNITUD --- un 0.51 y un 0.58 eran la misma
+            # clase --- y obligaba al mapping `0.45 + 0.10 * p_dominante`,
+            # que aplastaba la salida y la sesgaba. Ridge predice el ratio
+            # directamente; su L2 absorbe la colinealidad de las tres
+            # features que en runtime son identicas (ver _ROLLING_FEATURE_MAP).
+            self.model = Ridge(alpha=1.0, random_state=42)
+            self.model.fit(X_scaled, y)
             self.feature_cols = feature_cols
             self.is_fitted = True
 
@@ -155,10 +246,13 @@ class PointProbabilityModel:
             # Usar el modelo para ajustar según las features
             X = pd.DataFrame([match_features])[self.feature_cols].fillna(0)
             X_scaled = self.scaler.transform(X)
-            # Probabilidad predicha de que el local sea "dominante" en puntos
-            p_home_dominant = self.model.predict_proba(X_scaled)[0, 1]
-            # Convertir a probabilidad de punto
-            p_home_point = 0.45 + 0.10 * p_home_dominant  # Range: [0.45, 0.55]
+            # B3: el modelo predice DIRECTAMENTE el ratio de puntos del local.
+            # El clip es solo un salvavidas (ver POINT_RATIO_CLIP); ya no hay
+            # mapping `0.45 + 0.10 * p_dominante`.
+            pred = float(self.model.predict(X_scaled)[0])
+            p_home_point = float(
+                np.clip(pred, POINT_RATIO_CLIP[0], POINT_RATIO_CLIP[1])
+            )
         else:
             # Usar strength directamente
             total = home_strength + away_strength

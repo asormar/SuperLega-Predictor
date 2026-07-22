@@ -19,7 +19,7 @@ from src.data.feature_store import (
     enrich_with_team_stats, compute_roster_features,
 )
 from src.models.set_predictor import SetPredictor
-from src.models.point_probability import PointProbabilityModel
+from src.models.point_probability import PointProbabilityModel, build_point_training_data
 from src.models.player_stats_generator import PlayerStatsGenerator
 from src.models.match_predictor import MatchPredictor
 
@@ -74,8 +74,13 @@ def train_all():
     print("  [PASO 4] ENTRENANDO POINT PROBABILITY MODEL")
     print("=" * 70)
 
+    # B3: se entrena sobre features ROLLING pre-partido (sin leakage) con el
+    # ratio de puntos real como target continuo, NO sobre `match_features`
+    # (que incluye stats de temporada completa == leakage, ver B0b del plan).
     point_model = PointProbabilityModel()
-    point_model.fit(data["match_features"])
+    point_train = build_point_training_data()
+    print(f"  Dataset rolling para el punto: {len(point_train)} partidos")
+    point_model.fit(point_train)
 
     # Test rapido
     probs = point_model.get_point_probabilities(

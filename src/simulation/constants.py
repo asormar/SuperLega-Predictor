@@ -41,6 +41,17 @@ CLAMP_MARGIN_POINT = 0.10
 # memoria/simulator.md y mejora_precision_2026-07.md §7.1.
 SET_BLEND_WEIGHT_ELO = 1.0
 
+# Rango del ratio de puntos predicho por el PointProbabilityModel (B3).
+# El modelo viejo binarizaba el target y aplastaba la salida a
+# `p = 0.45 + 0.10 * p_dominante`, un rango fijo [0.45, 0.55] que ademas
+# quedaba sesgado: con features neutras predecia 0.5387, y la cadena de Markov
+# amplifica ~7x cualquier ventaja por punto (0.5387 -> P(partido) ~0.84 entre
+# iguales). B3 lo sustituye por regresion continua del ratio real y este clip
+# actua solo de salvavidas: los ratios reales de la SuperLega caen dentro de
+# [0.42, 0.58], asi que un margen de +-0.10 alrededor de 0.5 no muerde en
+# condiciones normales.
+POINT_RATIO_CLIP = (0.40, 0.60)
+
 # Probabilidad de sideout (PointProbabilityModel fallback)
 DEFAULT_SIDEOUT_RATE = 0.62
 
