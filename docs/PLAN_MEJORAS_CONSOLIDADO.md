@@ -654,7 +654,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 - **Esfuerzo**: 3–4 h. **Riesgo**: medio (afecta a toda la distribución punto a
   punto). **Dependencias**: B1 para validar; A2 aporta `p_set_from_p_point`.
 
-### B4 — Predictor de partido derivado del SetPredictor (best-of-5)  🚧 PENDIENTE
+### B4 — Predictor de partido derivado del SetPredictor (best-of-5)  🚧 PENDIENTE — resultado NEGATIVO documentado en §7.5
 
 - **Qué**: segundo estimador independiente de P(match) desde p_set (entrenado
   sobre ~5000 sets, no ~500 partidos). Se pospuso por retorno marginal; es el
