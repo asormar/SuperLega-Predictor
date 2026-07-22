@@ -446,35 +446,62 @@ calidad de probabilidad del simulador con la señal Elo pura.
 python -m src.models.backtest_simulator --season 2024 --n-sims 500
 ```
 
+> **⚠️ ACTUALIZADO (2026-07-22) tras B3.** Las cifras de abajo son las
+> **vigentes**, medidas con el `PointProbabilityModel` de regresión continua y
+> con el modelo reentrenado solo con historia < 2024 (sin leakage). Las cifras
+> anteriores, con el modelo binarizado, se conservan en la última columna
+> porque la §10.2 original se apoyaba en ellas — y su conclusión queda
+> **invertida**. Detalle completo en
+> [`mejora_precision_2026-07.md`](mejora_precision_2026-07.md) §7.3.
+
 **Métricas (simulator vs Elo puro):**
 
-| Métrica | Simulador (MC) | Elo (señal pura) | Δ |
-|---|---:|---:|---:|
-| Brier | 0.273 | 0.194 | +0.079 |
-| LogLoss | 0.824 | 0.569 | +0.255 |
-| ECE | 0.242 | 0.044 | +0.198 |
-| Accuracy | 0.649 | 0.694 | −0.045 |
-| L1 distancia (3-0/3-1/3-2) | 0.286 | — | — |
+| Métrica | Simulador (MC) | Elo (señal pura) | Δ | *(antes de B3)* |
+|---|---:|---:|---:|---:|
+| Brier | **0.1815** | 0.1941 | −0.013 | *0.273* |
+| LogLoss | **0.5365** | 0.5690 | −0.033 | *0.824* |
+| ECE | **0.0565** | 0.0454 | +0.011 | *0.242* |
+| Accuracy | **0.7207** | 0.6892 | +0.032 | *0.649* |
+| L1 distancia (3-0/3-1/3-2) | **0.0315** | — | — | *0.286* |
 
 **Distribución de márgenes:**
 
-| Marcador | Simulado | Real |
-|---|---:|---:|
-| 3-0 | 53.0% | 38.7% |
-| 3-1 | 30.4% | 35.1% |
-| 3-2 | 16.6% | 26.1% |
+| Marcador | Simulado | Real | *(antes de B3)* |
+|---|---:|---:|---:|
+| 3-0 | **37.6%** | 38.7% | *53.0%* |
+| 3-1 | **34.7%** | 35.1% | *30.4%* |
+| 3-2 | **27.7%** | 26.1% | *16.6%* |
 
 ### 10.2. Interpretación
 
-El simulador **destruye calidad de probabilidad** respecto a la señal Elo pura:
-Brier +0.079, logloss +0.255, y la calibración (ECE) empeora drásticamente de
-0.044 (bien calibrado) a 0.242 (mal calibrado, sobreconfiado). La accuracy baja
-de 0.694 a 0.649.
+**Lectura vigente (post-B3).** El simulador **no degrada** la calidad de
+probabilidad: la mejora. Supera a la señal Elo pura en Brier (0.182 vs 0.194),
+logloss (0.537 vs 0.569) y accuracy (0.721 vs 0.689), y además aporta el
+detalle de marcador, que el Elo no da. La distribución de márgenes queda a
+menos de 2 puntos porcentuales del real en los tres marcadores (L1 = 0.031).
 
-La causa principal es la **sobreconfianza en los favoritos**: el simulador
-produce 53% de 3-0 frente al 39% real, y solo 17% de 3-2 frente al 26% real.
-La distancia L1 de 0.286 en la distribución de márgenes cuantifica esta
+Queda una sobreconfianza **residual**: el ECE (0.057) sigue por encima del Elo
+puro (0.045), aunque muy lejos del 0.242 anterior.
+
+<details>
+<summary>Lectura histórica (pre-B3) — la conclusión opuesta, y por qué era cierta entonces</summary>
+
+Con el `PointProbabilityModel` binarizado, el simulador **destruía calidad de
+probabilidad** respecto a la señal Elo pura: Brier +0.079, logloss +0.255, y la
+calibración (ECE) empeoraba drásticamente de 0.044 (bien calibrado) a 0.242
+(mal calibrado, sobreconfiado). La accuracy bajaba de 0.694 a 0.649.
+
+La causa principal era la **sobreconfianza en los favoritos**: el simulador
+producía 53% de 3-0 frente al 39% real, y solo 17% de 3-2 frente al 26% real.
+La distancia L1 de 0.286 en la distribución de márgenes cuantificaba esta
 distorsión.
+
+El diagnóstico era correcto y fue lo que motivó B3. El origen concreto resultó
+ser el sesgo del mapping `0.45 + 0.10 · p_dominante`, que con features neutras
+daba p = 0.5387 y la cadena amplificaba ~7× hasta P(local) = 0.845 entre
+equipos iguales.
+
+</details>
 
 ### 10.3. Relación con el Grupo A (clamp adaptativo) — CERRADO (2026-07-21)
 
@@ -494,11 +521,11 @@ la configuración final el clamp ya no distorsiona la señal Elo —
 14× menos que el camino ON anterior, así que **ya no hace falta ejecutar con
 `use_set_calibration=False`**: ambas rutas son equivalentes en precisión.
 
-**Lo que el Grupo A NO arregla:** la sobreconfianza que mide §10.2 (ECE 0.242,
-exceso de 3-0). Su origen es el modelo de punto, no el clamp — el MC de 20
-temporadas post-A2/A4 sigue dando ligas casi deterministas (Spearman −1.0,
-cuatro equipos con std de posición 0.00). La palanca pendiente es **B3**
-(`PointProbabilityModel` con regresión continua).
+**Lo que el Grupo A NO arregló:** la sobreconfianza que medía §10.2 (ECE 0.242,
+exceso de 3-0). Su origen era el modelo de punto, no el clamp. Eso se abordó
+después en **B3** (`PointProbabilityModel` con regresión continua, 2026-07-22),
+que bajó el ECE a 0.057 y ajustó la distribución de márgenes al real — ver
+§10.2 y `mejora_precision_2026-07.md` §7.3.
 
 ### 10.4. Archivo de resultados
 

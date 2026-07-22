@@ -471,7 +471,57 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 - **Esfuerzo**: 2–3 h + CPU (36 combos × ~132 partidos × 500 sims — time-box;
   si excede, bajar a n=200). **Dependencias**: B1.
 
-### B3 — PointProbabilityModel: regresión continua (+ roadmap corto de point_probability.md)
+### B3 — PointProbabilityModel: regresión continua ✅ **HECHO (2026-07-22)**
+
+> **Resultado POSITIVO y grande.** `Ridge(alpha=1.0)` sobre target continuo
+> `point_ratio_h`, features rolling sin leakage, salida
+> `clip(pred, POINT_RATIO_CLIP=(0.40, 0.60))`. Se elimina la binarización y el
+> mapping `0.45 + 0.10·p_dominante`, cuyo sesgo (p = 0.5387 en neutro) la
+> cadena amplificaba ~7× hasta P(local) = 0.845 entre iguales.
+>
+> Backtest B1 sobre 2024, con el modelo reentrenado **solo con historia < 2024**
+> (medida sin leakage; 222 partidos, n=500, clamp OFF):
+>
+> | Métrica | Antes | **B3** | Elo (ref) |
+> |---|---:|---:|---:|
+> | Brier | 0.2731 | **0.1815** | 0.1941 |
+> | LogLoss | 0.8241 | **0.5365** | 0.5690 |
+> | Accuracy | 0.6486 | **0.7207** | 0.6892 |
+> | ECE | 0.2419 | **0.0565** | 0.0454 |
+> | 3-0 simulado | 53.0 % | **37.6 %** | real 38.7 % |
+> | L1 (márgenes) | 0.2858 | **0.0315** | — |
+>
+> El simulador pasa de degradar la señal Elo a **superarla** en Brier, logloss y
+> accuracy. Control de leakage: con el modelo de producción (2016-2025) sale
+> Brier 0.1822 / ECE 0.0824 — la mejora es estructural.
+>
+> **Desviación consciente de la spec:** el plan mapeaba
+> `diff_dominancia → diff_set_diff_exp`. Eso habría metido train/serve skew,
+> porque en runtime `diff_dominancia`, `diff_set_win_rate` y `diff_set_ratio`
+> son **algebraicamente idénticas** (`feature_builder.py:264-266`:
+> `dominancia = set_win_rate − 0.5`). Se mapean las tres a `diff_set_ratio`
+> para reproducir esa identidad; la L2 de Ridge absorbe la colinealidad.
+>
+> **Corrección al sanity del plan:** pedía pinear
+> `p_set_from_p_point(0.52, 25) ≈ 0.66` → banda P(match) [0.71, 0.77]. Ese 0.66
+> es incorrecto (mismo error que ya se corrigió en A2): el valor real es
+> **0.6131** → **P(match) = 0.6967**. El test pinea el valor derivado de
+> `set_math`. El MC da 0.6845 (Δ = 0.012): la cadena conserva.
+>
+> **Bonus — bug de instrumento encontrado:** `mc_season_validation.py` (A6)
+> construía el simulador con `point_model=None`, midiendo el fallback en vez
+> del modelo de producción. Corregido; la dispersión de temporada sube 2,7×
+> (std 0.457 → 1.247) y el Spearman −1.0 pasa a −0.972. Parte de la
+> "sub-dispersión" que A6 atribuyó al simulador era del instrumento.
+>
+> Artefactos: `models/point_probability.joblib` (regenerado),
+> `models/point_probability_lt2024.joblib` (para backtest sin leakage),
+> `models/backtest_simulator_2024.json`, `models/backtest_simulator_2024_pre_b3.json`,
+> `models/mc_season_validation.json`.
+> Docs: `memoria/mejora_precision_2026-07.md` §7.3 y §7.1,
+> `memoria/simulator.md` §10.1-10.2.
+
+### Spec original (histórico)
 
 - **Qué**: hoy el modelo binariza el target ([point_probability.py:114-117](../src/models/point_probability.py))
   y aplasta la salida a `p = 0.45 + 0.10*p_dominant` (:161). Sustituir por
