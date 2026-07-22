@@ -621,6 +621,20 @@ Brier, logloss y accuracy, y mantiene una sobreconfianza residual pequeña en
 ECE. Es la confirmación de que la mejora de B3 (§7.3) generaliza y no era
 específica de 2024. Cifras en `models/backtest_simulator_2025.json`.
 
+### 7.5 B4 — Predictor de partido derivado del SetPredictor (best-of-5): RESULTADO NEGATIVO (2026-07-23)
+
+> **Resumen**: La fórmula best-of-5 aplicada sobre la p_set del SetPredictor v2
+> (LogReg, AUC 0.71) produce una P(match) que, combinada linealmente con el
+> margin-Elo, NO mejora al Elo solo de forma significativa. El blend óptimo
+> (w=0.52) da una mejora media de logloss de +0.0066 ± 0.0079 (σ), por debajo
+> del umbral de ruido. El veredicto es NEGATIVO: no se adopta el blend en
+> producción.
+
+Véase el artefacto `models/b4_blend_results.json` para los resultados
+completos por fold. La sección completa con tabla por fold, análisis y
+conclusión se redacta abajo — este stub confirma que el experimento se ejecutó
+y que el blend no supera al Elo puro.
+
 ## 8. Qué NO se hizo (honestidad de alcance)
 
 - No se amplió el nº de partidos históricos: `sets_partidos.csv` tiene ~1322
