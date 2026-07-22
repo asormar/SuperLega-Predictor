@@ -504,7 +504,53 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 - **Esfuerzo**: 4–6 h + CPU. **Riesgo**: nulo. **Dependencias**: ninguna.
   Ejecutarlo con `use_set_calibration` OFF y ON si el grupo A no está cerrado.
 
-### B2 — Ajustar las constantes del simulador contra el backtest  🚧 PENDIENTE
+### B2 — Ajustar las constantes del simulador contra el backtest ✅ **HECHO (2026-07-22) — RESULTADO NEGATIVO**
+
+> **No se adoptan valores nuevos.** El grid no encuentra ninguna mejora
+> distinguible del ruido, así que `constants.py`, los pines de
+> `test_team_mapper.py` y `AGENTS.md` quedan **sin tocar**.
+>
+> **1. El eje `damping` es degenerado.** De los 36 combos solo **12 son
+> distintos**. `damping` solo mueve `_calibrate_strengths` → fuerzas, y
+> `PointProbabilityModel.get_point_probabilities` ignora
+> `home_strength`/`away_strength` cuando el modelo está fitted. Verificado:
+> salida del modelo bit-idéntica entre fuerzas 0.50/0.50 y 0.80/0.20, y
+> backtest 2024 (n=100) con damping 0.3 vs 0.7 → métricas idénticas
+> (Brier 0.1850, ECE 0.0594). Implicación de fondo: toda la calibración
+> Elo→fuerza es **código muerto** en producción. Anotado como trabajo aparte.
+>
+> **2. El grid entero cae bajo el ruido de Monte Carlo.** Pasada 2 (top-5,
+> 2023+2024, n=500): el ganador es el propio baseline (0.015 / 0.01) con
+> Brier ponderado 0.20889 y **delta +0.00000**. Rango completo del grid:
+> **0.00157**. Suelo de ruido medido (misma config, 6 semillas base, 2024,
+> n=500): Brier σ = **0.00127**, rango **0.00341** — o sea, el grid varía
+> menos que cambiar solo la semilla. Y el ranking se invierte entre pasadas:
+> el ganador de la pasada 2 era 9.º de 12 en la de n=100.
+>
+> Por eso el desenlace **no** es "los valores a priori estaban bien", sino
+> "ningún valor es distinguible de otro con este poder estadístico".
+> Adoptar el ganador sería sobreajustar ruido.
+>
+> **Lectura:** tras B3, el modelo de punto domina la calidad de probabilidad
+> a nivel de partido; el momentum (máx. ±0.06 sobre `p_home_wins`) no mueve
+> la aguja de forma medible. Resolver este grid exigiría más datos (B6) o una
+> métrica sensible al detalle intra-set, no al resultado del partido.
+>
+> **3. Validación única sobre 2025 (held-out).** Con la config vigente y el
+> modelo de punto entrenado solo con historia < 2025 (314 partidos, n=500):
+> Brier **0.1878** vs Elo 0.1924, LogLoss **0.5544** vs 0.5645, Acc **0.7134**
+> vs 0.6975, ECE 0.0626 vs 0.0494; márgenes 3-0 40.7 % (real 44.6 %), 3-1
+> 34.0 % (30.9 %), 3-2 25.3 % (24.5 %), L1 0.0771. El patrón de 2024 se
+> reproduce en held-out: **la mejora de B3 generaliza**.
+>
+> Artefactos: `models/tune_simulator_constants.json`,
+> `models/backtest_noise_floor.json`,
+> `models/point_probability_lt2025.joblib`. Scripts nuevos:
+> `src/models/tune_simulator_constants.py`,
+> `src/models/estimate_backtest_noise.py`.
+> Docs: `memoria/mejora_precision_2026-07.md` §7.4, `memoria/simulator.md` §10.4.
+
+### Spec original (histórico)
 
 - **Qué**: primer contraste con datos de `MOMENTUM_BONUS=0.015`,
   `GLOBAL_MOMENTUM_FACTOR=0.01`, `MATCH_PREDICTOR_DAMPING=0.5` y el clamp

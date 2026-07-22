@@ -527,7 +527,35 @@ después en **B3** (`PointProbabilityModel` con regresión continua, 2026-07-22)
 que bajó el ECE a 0.057 y ajustó la distribución de márgenes al real — ver
 §10.2 y `mejora_precision_2026-07.md` §7.3.
 
-### 10.4. Archivo de resultados
+### 10.4. B2 — Tuneo de constantes: resultado negativo (2026-07-22)
+
+Las constantes de momentum (`MOMENTUM_BONUS = 0.015`,
+`GLOBAL_MOMENTUM_FACTOR = 0.01`) y `MATCH_PREDICTOR_DAMPING = 0.5` se
+sometieron a un grid contra este backtest. **No se adoptó ningún valor nuevo.**
+
+Dos motivos, ambos medidos:
+
+1. **`damping` es un no-op.** Solo mueve `_calibrate_strengths` → fuerzas, y
+   `PointProbabilityModel.get_point_probabilities` ignora
+   `home_strength`/`away_strength` cuando el modelo está entrenado. El backtest
+   de 2024 con `damping` 0.3 y 0.7 da métricas idénticas. Los 36 combos de la
+   spec son en realidad 12 distintos.
+2. **El grid entero cae bajo el ruido de Monte Carlo.** Repitiendo la
+   configuración baseline sobre 2024 (n = 500) con 6 semillas base distintas,
+   el Brier tiene σ = 0.00127 y un rango de 0.00341. El rango completo del grid
+   es 0.00157 — menos de la mitad de lo que produce cambiar solo la semilla. El
+   ranking además se invierte entre la pasada de n = 100 y la de n = 500.
+
+Detalle completo, tablas de los 12 combos y suelo de ruido en
+[`mejora_precision_2026-07.md`](mejora_precision_2026-07.md) §7.4.
+
+**Consecuencia para el simulador:** tras B3, el modelo de punto domina la
+calidad de probabilidad a nivel de partido; el momentum (máximo ±0.06 sobre
+`p_home_wins`) no mueve la aguja de forma medible. Los mecanismos se mantienen
+intactos —AGENTS.md los pinea y no se eliminan— pero queda documentado que sus
+valores concretos no están respaldados por datos, solo por criterio a priori.
+
+### 10.5. Archivo de resultados
 
 El backtest genera `models/backtest_simulator_2024.json` con todas las métricas
 y `models/plots/backtest_simulator_2024.png` con la curva de fiabilidad.
