@@ -1,13 +1,14 @@
-"""set_math.py — Conversion entre probabilidad de PUNTO y probabilidad de SET.
+"""set_math.py — Conversion entre probabilidad de PUNTO, SET y PARTIDO.
 
 Motivacion (A2 del plan consolidado): el clamp adaptativo centraba el rango de
 P(ganar un PUNTO) en `p_set`, que vive en la escala de SET. Es un error de
 escala: un favorito con P(set)=0.75 solo necesita P(punto)~0.53, no 0.75.
 
-Estas dos funciones son la conversion que faltaba:
+Estas funciones son la conversion que faltaba:
 
     p_set_from_p_point : escala PUNTO -> escala SET  (forma cerrada)
     p_point_from_p_set : escala SET   -> escala PUNTO (inversa numerica)
+    p_match_from_p_set : escala SET  -> escala PARTIDO (best-of-5 forma cerrada)
 
 Modelo: puntos i.i.d. con probabilidad `p` para el local. Un set se gana a
 `target` puntos con ventaja de 2 (deuce indefinido). Es una simplificacion
@@ -24,6 +25,17 @@ Rangos utiles de referencia (target=25):
 Notese lo estrecha que es la banda util: toda la escala de set se recorre con
 variaciones de centesimas en la escala de punto. Por eso el centro del clamp
 debe construirse en escala de PUNTO.
+
+B4 anade la tercera conversion:
+
+    p_match_from_p_set : escala SET -> escala PARTIDO (best-of-5 forma cerrada)
+
+Formula: P(match) = q^3 + 3*q^3*(1-q) + 6*q^2*(1-q)^2*q5
+
+Donde q = P(set a 25 puntos) y q5 = P(set a 15 puntos, tiebreak).
+Si q5 no se especifica, se usa la composicion A2:
+    q5 = p_set_from_p_point(p_point_from_p_set(q, 25), 15)
+que convierte q a punto (target=25) y luego a set a 15 (target=15).
 """
 
 from functools import lru_cache
@@ -75,3 +87,35 @@ def p_point_from_p_set(p_set: float, target: int = 25) -> float:
         else:
             hi = mid
     return (lo + hi) / 2
+
+
+def p_match_from_p_set(q: float, q5: float | None = None) -> float:
+    """P(ganar el partido al mejor de 5 | q = P(ganar un set a 25)).
+
+    Formula cerrada para best-of-5 con sets a 25 puntos (q) y posible
+    tiebreak a 15 puntos (q5). Si q5 es None, se usa la composicion A2:
+    p_set_from_p_point(p_point_from_p_set(q, 25), 15).
+
+    La formula cuenta tres caminos:
+      - 3-0: gana los 3 primeros sets: q^3
+      - 3-1: gana 3 de los primeros 4 perdiendo exactamente 1: 3*q^3*(1-q)
+      - 3-2: gana 3 de 5 perdiendo 2 (el 5.o set se juega a 15): 6*q^2*(1-q)^2*q5
+
+    Args:
+        q: probabilidad de ganar un set a 25 puntos.
+        q5: probabilidad de ganar el tiebreak a 15 puntos (set 5).
+            Si es None, se usa la composicion A2:
+            p_set_from_p_point(p_point_from_p_set(q, 25), 15).
+
+    Returns:
+        Probabilidad de ganar el partido, en [0, 1].
+    """
+    if q5 is None:
+        q5 = p_set_from_p_point(p_point_from_p_set(q, 25), 15)
+    # 3-0
+    win_3_0 = q**3
+    # 3-1 (gana 3 de 4, pierde exactamente 1)
+    win_3_1 = 3.0 * q**3 * (1.0 - q)
+    # 3-2 (gana 3 de 5, los primeros 4 sets son 2-2, el 5o se gana con prob q5)
+    win_3_2 = 6.0 * q**2 * (1.0 - q) ** 2 * q5
+    return win_3_0 + win_3_1 + win_3_2

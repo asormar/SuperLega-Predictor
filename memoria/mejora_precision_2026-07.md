@@ -621,6 +621,85 @@ Brier, logloss y accuracy, y mantiene una sobreconfianza residual pequeña en
 ECE. Es la confirmación de que la mejora de B3 (§7.3) generaliza y no era
 específica de 2024. Cifras en `models/backtest_simulator_2025.json`.
 
+### 7.5 B4 — Predictor de partido derivado del SetPredictor (best-of-5): RESULTADO NEGATIVO (2026-07-23)
+
+El margin-Elo domina la señal de partido desde B1 (AUC 0.76 en test 2025). B4
+pregunta si una segunda señal independiente —derivada del SetPredictor v2 vía
+la fórmula best-of-5— puede complementar al Elo en un blend lineal:
+
+$$P_{\text{final}} = w \cdot P_{\text{Elo}} + (1-w) \cdot P_{\text{derivada}}$$
+
+donde $P_{\text{derivada}} = q^3 + 3q^3(1-q) + 6q^2(1-q)^2 q_5$, con $q =
+\text{SetPredictor.predict\_proba(contexto 0-0)}$ a 25 puntos y $q_5 =
+p_{\text{set\_from\_p\_point}}(p_{\text{point\_from\_p\_set}}(q, 25), 15)$ vía
+la composición A2 (la `set_math` derivada en §7.3, A2 cerrado el 2026-07-21).
+
+**Protocolo.** Leave-One-Fold-Out CV sobre 2021–2024 (4 folds): para cada fold
+$f$ se optimiza $w$ sobre los OTROS 3 folds por mean log-loss, y se evalúa
+ese $w_f$ sobre el fold held-out. Grid de 21 valores de $w \in [0, 1]$ con
+refinamiento por sección áurea. 2025 se reserva como test held-out (single
+shot). AND-of-4 adoption gate: per-fold wins $\geq 3/4$,
+$\text{improvement\_mean} > \max(\sigma_{\text{LOFO}}, 0.005)$,
+test-2025 logloss $< 0.5677$ (Elo baseline), $w_{\text{global}} > 0.05$.
+Reproducible con
+`python -c "from src.models.train_improved import run_b4_route; print(run_b4_route())"`.
+
+Resultados por fold (LOFO-CV honesto, no in-fold):
+
+| Fold | $w$ (LOFO) | LogLoss blend | LogLoss Elo puro | Mejora |
+|---:|---:|---:|---:|---:|
+| 2021 | 0.685 | 0.5738 | 0.5771 | +0.0033 |
+| 2022 | 0.559 | 0.6343 | 0.6313 | −0.0029 |
+| 2023 | 0.518 | 0.6665 | 0.6629 | −0.0036 |
+| 2024 | 0.914 | 0.5747 | 0.5765 | +0.0018 |
+
+| Métrica global | Valor |
+|---:|---:|
+| $w$ global (media) | 0.6688 |
+| Mejora media | −0.0004 |
+| $\sigma_{\text{LOFO}}$ (con noise floor) | 0.0050 |
+| Per-fold wins (blend &lt; Elo) | 2 / 4 |
+| LogLoss blend (media) | 0.6123 |
+| LogLoss Elo (media) | 0.6120 |
+| Test 2025 logloss blend | 0.5650 |
+| Test 2025 logloss Elo (baseline) | 0.5677 |
+
+**Análisis.** La $w$ global (0.669) está alejada de la saturación pura-Elo
+(1.0) y de la saturación pura-derivada (0.0), pero las $w$ por fold oscilan
+entre 0.52 y 0.91: el optimizador encuentra un blend distinto en cada fold, lo
+que indica que la señal derivada no aporta información consistente año a año.
+Solo 2 de 4 folds ganan con el blend (los otros 2 son marginalmente peores),
+la mejora media es **negativa** (−0.0004), y el test held-out 2025 da una
+mejora marginal (0.5650 vs 0.5677 = +0.0027). El AND-of-4 atrapa la
+inestabilidad por la condición de per-fold wins (2/4 &lt; 3/4) y por la mejora
+media bajo el noise floor (|−0.0004| &lt; 0.005). Las cuatro condiciones
+del gate fallan, no solo una: el resultado es robusto.
+
+**Decisión.** No se adopta el blend. La señal del SetPredictor v2, convertida a
+P(match) vía best-of-5, no es lo suficientemente independiente del Elo —o no
+tiene suficiente poder predictivo— para mejorar el log-loss de forma
+consistente entre temporadas. El Elo puro sigue siendo la mejor señal de
+partido disponible.
+
+**Artefacto.** `models/b4_blend_results.json` contiene los resultados
+completos (per-fold $w$, loglosses, $\sigma_{\text{LOFO}}$, test_metrics,
+`failing_conditions`). No se genera `match_elo_blend_v3.joblib` al no
+adoptarse el blend.
+
+**Próximos pasos.** Este resultado NEGATIVO cierra la línea de "predictor de
+partido derivado del set" para este TFG. Si en el futuro se dispone de más
+datos (B6) o de un predictor de set significativamente mejor (p. ej. con
+features de alineación o de momento del partido), re-evaluar esta vía podría
+tener sentido.
+
+**Nota metodológica.** La primera pasada de B4 (commits anteriores al verify
+NEEDS_REWORK #200) implementó incorrectamente la optimización como in-fold
+grid-search en lugar de LOFO-CV, y usó el fallback obsoleto `q5 = q` en lugar
+de la composición A2. Los fixes (`44e0634`, `b251837`, `929a571`) re-corrieron
+el experimento con la metodología correcta y `a0a74f7` añadió 8 tests de
+truth-table para el gate. El veredicto NEGATIVE es el mismo en ambas
+pasadas, lo que confirma que el resultado no es artefacto del bug.
+
 ## 8. Qué NO se hizo (honestidad de alcance)
 
 - No se amplió el nº de partidos históricos: `sets_partidos.csv` tiene ~1322

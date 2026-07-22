@@ -29,6 +29,7 @@ Config final:
 
 import sys
 import json
+import logging
 import joblib
 import warnings
 from pathlib import Path
@@ -52,6 +53,10 @@ from sklearn.metrics import (
 from src.data.data_pipeline import run_pipeline
 from src.data.feature_store import SET_FEATURE_COLS
 from src.data.rolling_features import build_rolling_match_features
+from src.data.set_feature_contract import SetContext, build_set_features
+from src.simulation.set_math import p_match_from_p_set
+
+b4_logger = logging.getLogger("b4_blend")
 
 MODELS_DIR = BASE_DIR / "models"
 
@@ -214,6 +219,313 @@ def train_set(data: dict) -> dict:
         },
         "n_features": len(cols),
     }
+
+
+def evaluate_adoption(
+    result: dict,
+    *,
+    elo_test_logloss_baseline: float,
+    n_folds_required: int = 4,
+    n_folds_win_required: int = 3,
+    noise_floor: float = 0.005,
+    w_sat_threshold: float = 0.05,
+) -> str:
+    """Evaluate the B4 adoption gate (REQ-016 / REQ-017).
+
+    Returns one of ``"adopted"``, ``"negative"``, or ``"shortcut_negative"``.
+    Populates ``result["failing_conditions"]`` with human-readable names of
+    conditions that FAILED (empty list on adoption).
+    """
+    failing_conditions = []
+
+    # ── REQ-017: Hard shortcut (both conditions required) ────────────────
+    if result["w_global"] >= 0.999 and result["improvement_mean"] < 0.001:
+        failing_conditions.append("hard_shortcut")
+        result["failing_conditions"] = failing_conditions
+        return "shortcut_negative"
+
+    # ── REQ-016: AND-of-4 adoption gate ──────────────────────────────────
+    # Condition 1: per-fold win count >= n_folds_win_required
+    n_wins = sum(
+        1
+        for i in range(result["n_folds"])
+        if result["logloss_per_fold"][i] < result["logloss_elo_only_per_fold"][i]
+    )
+    cond1_pass = n_wins >= n_folds_win_required
+    if not cond1_pass:
+        failing_conditions.append(
+            f"per_fold_wins={n_wins}/{result['n_folds']} < required={n_folds_win_required}"
+        )
+
+    # Condition 2: improvement_mean > max(sigma_lofo, noise_floor)
+    improvement = result["improvement_mean"]
+    sigma = result.get("sigma_lofo", 0.0)
+    imp_threshold = max(sigma, noise_floor)
+    cond2_pass = improvement > imp_threshold
+    if not cond2_pass:
+        failing_conditions.append(
+            f"improvement_mean={improvement:.6f} <= max(sigma={sigma:.4f}, "
+            f"noise_floor={noise_floor})"
+        )
+
+    # Condition 3: test-2025 logloss < Elo baseline
+    test_metrics = result.get("test_metrics_if_computed")
+    cond3_pass = False
+    if test_metrics is not None and "logloss" in test_metrics:
+        cond3_pass = test_metrics["logloss"] < elo_test_logloss_baseline
+    if not cond3_pass:
+        test_ll = test_metrics.get("logloss", float("nan")) if test_metrics else float("nan")
+        failing_conditions.append(
+            f"test_logloss={test_ll:.6f} >= baseline={elo_test_logloss_baseline:.6f}"
+        )
+
+    # Condition 4: w_global > w_sat_threshold (not saturated to derived)
+    cond4_pass = result["w_global"] > w_sat_threshold
+    if not cond4_pass:
+        failing_conditions.append(
+            f"w_global={result['w_global']:.4f} <= saturation_threshold={w_sat_threshold}"
+        )
+
+    result["failing_conditions"] = failing_conditions
+
+    if cond1_pass and cond2_pass and cond3_pass and cond4_pass:
+        return "adopted"
+    return "negative"
+
+
+def run_b4_route(
+    *,
+    test_year: int = 2025,
+    val_years: tuple = (2021, 2022, 2023, 2024),
+) -> str:
+    """B4 experiment route: LOFO-CV blend of Elo + SetPredictor-derived match prob.
+
+    Steps:
+      1. Load sets_partidos.csv and build rolling match features (includes p_elo).
+      2. Load set_predictor_v2.joblib (fallback to error).
+      3. For each match, construct a SetContext (pre-match, 0-0 set state),
+         compute build_set_features → predict_proba → p_set → p_match_from_p_set.
+      4. Call optimize_blend_w with the enriched DataFrame.
+      5. Apply REQ-017 hard-shortcut and REQ-016 AND-of-4 gate.
+      6. Write models/b4_blend_results.json.
+      7. Return one of 'adopted', 'negative', 'shortcut_negative'.
+
+    Args:
+        test_year: Held-out season (default 2025).
+        val_years: Validation folds for LOFO-CV.
+
+    Returns:
+        Verdict string.
+    """
+    import logging
+
+    logger = logging.getLogger("b4_blend")
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.INFO)
+        logger.addHandler(ch)
+
+    logger.info("=" * 60)
+    logger.info("  B4 — Match predictor from SetPredictor (best-of-5)")
+    logger.info("=" * 60)
+
+    # ── Step 1: Load data ──────────────────────────────────────────────
+    sp_path = BASE_DIR / "DB" / "sets_partidos.csv"
+    if not sp_path.exists():
+        raise FileNotFoundError(f"Missing source data: {sp_path}")
+    sp = pd.read_csv(sp_path, encoding="utf-8")
+    logger.info(f"Loaded {len(sp)} rows from sets_partidos.csv")
+
+    dfm = build_rolling_match_features(sp)
+    logger.info(f"Built {len(dfm)} rolling match features")
+
+    # ── Step 2: Load SetPredictor v2 ───────────────────────────────────
+    v2_path = MODELS_DIR / "set_predictor_v2.joblib"
+    if not v2_path.exists():
+        logger.warning("set_predictor_v2.joblib NOT FOUND — falling back to auto-NEGATIVE")
+        return _write_negative_fallback(
+            "SetPredictor v2 artifact missing from models/",
+            test_year,
+        )
+
+    v2_artifact = joblib.load(v2_path)
+    v2_model = v2_artifact.get("model")
+    v2_features = v2_artifact.get("features", SET_FEATURE_COLS)
+    if v2_model is None:
+        logger.warning("SetPredictor v2 artifact has no 'model' key — auto-NEGATIVE")
+        return _write_negative_fallback(
+            "SetPredictor v2 model key missing",
+            test_year,
+        )
+
+    logger.info(f"Loaded SetPredictor v2 ({len(v2_features)} features)")
+
+    # ── Step 3: Compute p_derived per match ────────────────────────────
+    rows = []
+    for _, row in dfm.iterrows():
+        ctx = SetContext(
+            temporada_inicio=int(row.get("temporada_inicio", 0)),
+            jornada_num=int(row.get("jornada_num", 0)),
+            match_id=str(row.get("partido_id", "")),
+            set_index=1,
+            equipo_local=str(row.get("home", "")),
+            equipo_visitante=str(row.get("away", "")),
+            elo_local=float(row.get("elo_h", 1500.0)),
+            elo_visitante=float(row.get("elo_a", 1500.0)),
+            strength_local=float(row.get("strength_h", 0.5)),
+            strength_visitante=float(row.get("strength_a", 0.5)),
+            h_win_rate_global=float(row.get("h_win_rate_global", 0.5)),
+            a_win_rate_global=float(row.get("a_win_rate_global", 0.5)),
+            h_set_win_rate=float(row.get("h_set_win_rate", 0.5)),
+            a_set_win_rate=float(row.get("a_set_win_rate", 0.5)),
+            h_form_ewma=float(row.get("h_form_ewma", 0.5)),
+            a_form_ewma=float(row.get("a_form_ewma", 0.5)),
+            h_set_diff_exp=float(row.get("h_set_diff_exp", 0.0)),
+            a_set_diff_exp=float(row.get("a_set_diff_exp", 0.0)),
+            h_point_ratio=float(row.get("h_point_ratio", 0.5)),
+            a_point_ratio=float(row.get("a_point_ratio", 0.5)),
+            h2h_win_rate=float(row.get("h2h_win_rate_h", 0.5)),
+            sets_h_antes=0,
+            sets_a_antes=0,
+            prev_home_won=-1,
+            target_score=25,
+        )
+        feats = build_set_features(ctx)
+        feat_df = pd.DataFrame([feats])[v2_features]
+        p_set = float(v2_model.predict_proba(feat_df.fillna(0))[0, 1])
+        p_derived = p_match_from_p_set(p_set)
+
+        rows.append(
+            {
+                "p_elo": float(row.get("elo_win_prob_h", 0.5)),
+                "p_derived": p_derived,
+                "y": int(row.get("gana_local", 0)),
+                "temporada_inicio": int(row.get("temporada_inicio", 0)),
+            }
+        )
+
+    blend_df = pd.DataFrame(rows)
+    logger.info(
+        f"Built blend DataFrame: {len(blend_df)} rows, "
+        f"{blend_df['temporada_inicio'].nunique()} seasons"
+    )
+
+    # ── Step 4: LOFO-CV optimisation ───────────────────────────────────
+    from src.models.blend_optimizer import optimize_blend_w
+
+    result = optimize_blend_w(
+        blend_df,
+        w_grid=list(np.linspace(0.0, 1.0, 21)),
+        val_years=list(val_years),
+        elo_col="p_elo",
+        derived_col="p_derived",
+        y_col="y",
+        refine="golden_section",
+        refine_tol=1e-3,
+    )
+
+    # ── Step 5: Compute test-2025 metrics (needed by gate condition 3) ──
+    te = blend_df[blend_df["temporada_inicio"] == test_year]
+    if len(te) > 10:
+        p_blend = (
+            result["w_global"] * te["p_elo"].values
+            + (1.0 - result["w_global"]) * te["p_derived"].values
+        )
+        p_blend = np.clip(p_blend, 1e-6, 1 - 1e-6)
+        test_metrics = {
+            "n": int(len(te)),
+            "logloss": float(log_loss(te["y"].values, p_blend)),
+            "auc": float(roc_auc_score(te["y"].values, p_blend)),
+            "brier": float(brier_score_loss(te["y"].values, p_blend)),
+            "acc": float(accuracy_score(te["y"].values, (p_blend >= 0.5).astype(int))),
+        }
+    else:
+        test_metrics = None
+
+    # ── Step 6: Apply gates (REQ-016 / REQ-017) ─────────────────────────
+    # Read Elo test-logloss baseline from precision_improved.json
+    baseline_path = MODELS_DIR / "precision_improved.json"
+    if baseline_path.exists():
+        with open(baseline_path) as f:
+            precision_data = json.load(f)
+        elo_baseline = precision_data.get("match", {}).get("test", {}).get("logloss", float("inf"))
+    else:
+        elo_baseline = float("inf")
+
+    # Merge test_metrics into result so evaluate_adoption can read them
+    result["test_metrics_if_computed"] = test_metrics
+    verdict = evaluate_adoption(
+        result,
+        elo_test_logloss_baseline=elo_baseline,
+    )
+    failing_conditions = result.get("failing_conditions", [])
+
+    # ── Write results ──────────────────────────────────────────────────
+    output = {
+        "shortcut": (result["w_global"] >= 0.999 and result["improvement_mean"] < 0.001),
+        "verdict": verdict,
+        "w_global": result["w_global"],
+        "w_per_fold_lofo": result["w_per_fold_lofo"],
+        "logloss_per_fold": result["logloss_per_fold"],
+        "logloss_elo_only_per_fold": result["logloss_elo_only_per_fold"],
+        "logloss_mean": result["logloss_mean"],
+        "logloss_elo_only_mean": result["logloss_elo_only_mean"],
+        "improvement_mean": result["improvement_mean"],
+        "sigma_lofo": result["sigma_lofo"],
+        "n_folds": result["n_folds"],
+        "test_year": test_year,
+        "val_years": list(val_years),
+        "test_metrics_if_computed": test_metrics,
+        "failing_conditions": failing_conditions,
+        "note": (
+            "B4 blend experiment: P_final = w * P_elo + (1-w) * P_derived "
+            "where P_derived = p_match_from_p_set(SetPredictor.predict_proba)"
+        ),
+    }
+
+    out_path = MODELS_DIR / "b4_blend_results.json"
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+    logger.info(f"Results written to {out_path}")
+
+    # Summary banner (NFR-005)
+    banner = f"  >>> B4 VERDICT: {verdict.upper()}  (w={result['w_global']:.4f}, Δ={result['improvement_mean']:+.4f})"
+    logger.info("─" * 60)
+    logger.info(banner)
+    logger.info("─" * 60)
+
+    return verdict
+
+
+def _write_negative_fallback(reason: str, test_year: int) -> str:
+    """Write a degenerate B4 result when SetPredictor v2 is unavailable."""
+    out_path = MODELS_DIR / "b4_blend_results.json"
+    output = {
+        "shortcut": True,
+        "verdict": "shortcut_negative",
+        "w_global": 1.0,
+        "w_per_fold_lofo": [],
+        "logloss_per_fold": [],
+        "logloss_elo_only_per_fold": [],
+        "logloss_mean": None,
+        "logloss_elo_only_mean": None,
+        "improvement_mean": None,
+        "sigma_lofo": 0.0,
+        "n_folds": 0,
+        "test_year": test_year,
+        "val_years": [],
+        "test_metrics_if_computed": None,
+        "failing_conditions": [f"SetPredictor unavailable: {reason}"],
+        "note": (
+            "B4 fallback — SetPredictor v2 not loaded; blend degenerates " "to w=1.0 (pure Elo)."
+        ),
+    }
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+    b4_logger.info(f"Fallback results written to {out_path}")
+    b4_logger.info("  >>> B4 VERDICT: SHORTCUT_NEGATIVE  (w=1.0, SetPredictor missing)")
+    return "shortcut_negative"
 
 
 def main():
