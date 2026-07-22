@@ -36,6 +36,99 @@ def blend_p_match(p_elo: float, p_derived: float, w: float) -> float:
     return w * p_elo + (1.0 - w) * p_derived
 
 
+# ── Low-level helpers (operate on pre-filtered DataFrames) ─────────────
+
+
+def _logloss_on_df(
+    df: pd.DataFrame,
+    w: float,
+    elo_col: str,
+    derived_col: str,
+    y_col: str,
+) -> float:
+    """Compute log-loss on a pre-filtered DataFrame for a given blend weight w.
+
+    Returns ``nan`` if *df* has fewer than 5 rows.
+    """
+    if len(df) < 5:
+        return float("nan")
+    p_blend = w * df[elo_col].values + (1.0 - w) * df[derived_col].values
+    p_blend = np.clip(p_blend, 1e-6, 1 - 1e-6)
+    return float(log_loss(df[y_col].values, p_blend))
+
+
+def _grid_search_w_on_df(
+    df: pd.DataFrame,
+    w_grid: List[float],
+    elo_col: str,
+    derived_col: str,
+    y_col: str,
+) -> float:
+    """Find the *w* in *w_grid* with lowest log-loss on *df*.
+
+    Returns ``nan`` if all candidates produce ``nan`` log-loss.
+    """
+    best_w = float("nan")
+    best_ll = float("inf")
+    for w in w_grid:
+        ll = _logloss_on_df(df, w, elo_col, derived_col, y_col)
+        if np.isnan(ll):
+            continue
+        if ll < best_ll:
+            best_ll = ll
+            best_w = w
+    return best_w
+
+
+def _golden_section_refine_on_df(
+    df: pd.DataFrame,
+    w_approx: float,
+    elo_col: str,
+    derived_col: str,
+    y_col: str,
+    tol: float = 1e-3,
+    bracket: float = 0.15,
+) -> float:
+    """Golden-section search around *w_approx* within [max(0, w_approx-bracket), min(1, w_approx+bracket)].
+
+    Falls back to *w_approx* if the bracket leaves [0, 1].
+    """
+    lo = max(0.0, w_approx - bracket)
+    hi = min(1.0, w_approx + bracket)
+    if hi - lo < 1e-6:
+        return w_approx
+
+    phi = (np.sqrt(5) - 1) / 2  # golden ratio ~0.618
+    a, b = lo, hi
+    c = b - phi * (b - a)
+    d = a + phi * (b - a)
+    fc = _logloss_on_df(df, c, elo_col, derived_col, y_col)
+    fd = _logloss_on_df(df, d, elo_col, derived_col, y_col)
+
+    for _ in range(40):  # enough for double-precision convergence
+        if abs(b - a) < tol:
+            break
+        if fc < fd:
+            b = d
+            d = c
+            fd = fc
+            c = b - phi * (b - a)
+            fc = _logloss_on_df(df, c, elo_col, derived_col, y_col)
+        else:
+            a = c
+            c = d
+            fc = fd
+            d = a + phi * (b - a)
+            fd = _logloss_on_df(df, d, elo_col, derived_col, y_col)
+
+    best_w = (a + b) / 2
+    logger.info(f"  golden-section [{lo:.3f}, {hi:.3f}] → w={best_w:.6f}")
+    return best_w
+
+
+# ── Fold-level helpers (filter by val_year then delegate) ──────────────
+
+
 def _logloss_per_fold(
     df: pd.DataFrame,
     w: float,
@@ -46,11 +139,7 @@ def _logloss_per_fold(
 ) -> float:
     """Compute log-loss on a single validation year for a given blend weight w."""
     va = df[df["temporada_inicio"] == val_year]
-    if len(va) < 5:
-        return float("nan")
-    p_blend = w * va[elo_col].values + (1.0 - w) * va[derived_col].values
-    p_blend = np.clip(p_blend, 1e-6, 1 - 1e-6)
-    return float(log_loss(va[y_col].values, p_blend))
+    return _logloss_on_df(va, w, elo_col, derived_col, y_col)
 
 
 def _grid_search_w(
@@ -65,16 +154,8 @@ def _grid_search_w(
 
     Returns NaN if the fold has no valid rows.
     """
-    best_w = float("nan")
-    best_ll = float("inf")
-    for w in w_grid:
-        ll = _logloss_per_fold(df, w, val_year, elo_col, derived_col, y_col)
-        if np.isnan(ll):
-            continue
-        if ll < best_ll:
-            best_ll = ll
-            best_w = w
-    return best_w
+    va = df[df["temporada_inicio"] == val_year]
+    return _grid_search_w_on_df(va, w_grid, elo_col, derived_col, y_col)
 
 
 def _golden_section_refine(
@@ -87,41 +168,12 @@ def _golden_section_refine(
     tol: float = 1e-3,
     bracket: float = 0.15,
 ) -> float:
-    """Golden-section search around *w_approx* within [w_approx-bracket, w_approx+bracket].
+    """Golden-section search around *w_approx* on *val_year* data.
 
     Falls back to *w_approx* if the bracket leaves [0, 1].
     """
-    lo = max(0.0, w_approx - bracket)
-    hi = min(1.0, w_approx + bracket)
-    if hi - lo < 1e-6:
-        return w_approx
-
-    phi = (np.sqrt(5) - 1) / 2  # golden ratio ~0.618
-    a, b = lo, hi
-    c = b - phi * (b - a)
-    d = a + phi * (b - a)
-    fc = _logloss_per_fold(df, c, val_year, elo_col, derived_col, y_col)
-    fd = _logloss_per_fold(df, d, val_year, elo_col, derived_col, y_col)
-
-    for _ in range(40):  # enough for double-precision convergence
-        if abs(b - a) < tol:
-            break
-        if fc < fd:
-            b = d
-            d = c
-            fd = fc
-            c = b - phi * (b - a)
-            fc = _logloss_per_fold(df, c, val_year, elo_col, derived_col, y_col)
-        else:
-            a = c
-            c = d
-            fc = fd
-            d = a + phi * (b - a)
-            fd = _logloss_per_fold(df, d, val_year, elo_col, derived_col, y_col)
-
-    best_w = (a + b) / 2
-    logger.info(f"  golden-section [{lo:.3f}, {hi:.3f}] → w={best_w:.6f}")
-    return best_w
+    va = df[df["temporada_inicio"] == val_year]
+    return _golden_section_refine_on_df(va, w_approx, elo_col, derived_col, y_col, tol, bracket)
 
 
 def optimize_blend_w(
@@ -135,14 +187,18 @@ def optimize_blend_w(
     refine: str = "golden_section",
     refine_tol: float = 1e-3,
 ) -> Dict:
-    """Leave-One-Year-Out cross-validation blend weight optimizer.
+    """Leave-One-Fold-Out (LOFO) cross-validation blend weight optimizer.
 
     For each year in *val_years*:
-      1. Grid-search over *w_grid* on that year alone to find the argmin w.
-      2. Optionally refine with golden-section search around the grid argmin.
+      1. Build a **training subset** = *df* excluding that year's rows.
+      2. Grid-search over *w_grid* on the training subset to find the argmin w.
+      3. Optionally refine with golden-section search around the grid argmin
+         (still on the training subset).
+      4. Evaluate the chosen w on the held-out fold.
 
-    After all folds produce their per-fold optimal *w*, the global
-    *w_global* is the mean across folds (REQ-006).
+    This protocol (decision #8) kills the self-test bias of training and
+    evaluating on the same fold.  After all folds produce their per-fold
+    optimal w, the global *w_global* is the mean across folds (REQ-006).
 
     Args:
         df: DataFrame with columns *elo_col*, *derived_col*, *y_col*, and
@@ -176,20 +232,25 @@ def optimize_blend_w(
     w_grid_argmin_per_fold: List[float] = []
 
     for vy in val_years:
-        # Grid search
-        gw = _grid_search_w(df, w_grid, vy, elo_col, derived_col, y_col)
+        # LOFO: training subset = all rows EXCEPT the held-out fold
+        tr = df[df["temporada_inicio"] != vy]
+        if len(tr) < 5:
+            logger.warning(f"  fold {vy}: training data has <5 rows, skipping")
+            continue
+
+        # Grid search on training subset (other N-1 folds)
+        gw = _grid_search_w_on_df(tr, w_grid, elo_col, derived_col, y_col)
         if np.isnan(gw):
-            logger.warning(f"  fold {vy}: no valid data, skipping")
+            logger.warning(f"  fold {vy}: grid search on training returned NaN, skipping")
             continue
 
         w_grid_argmin_per_fold.append(gw)
 
-        # Refine
+        # Refine on training subset (RISK-DESIGN-1 guard)
         if refine == "golden_section":
-            w_star = _golden_section_refine(
-                df,
+            w_star = _golden_section_refine_on_df(
+                tr,
                 gw,
-                vy,
                 elo_col,
                 derived_col,
                 y_col,
@@ -207,7 +268,7 @@ def optimize_blend_w(
 
         w_per_fold.append(w_star)
 
-        # Log-losses at the chosen w
+        # Evaluate on HELD-OUT fold (never seen during training)
         ll_w = _logloss_per_fold(df, w_star, vy, elo_col, derived_col, y_col)
         ll_elo = _logloss_per_fold(df, 1.0, vy, elo_col, derived_col, y_col)
         ll_derived = _logloss_per_fold(df, 0.0, vy, elo_col, derived_col, y_col)

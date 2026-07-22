@@ -33,7 +33,9 @@ B4 anade la tercera conversion:
 Formula: P(match) = q^3 + 3*q^3*(1-q) + 6*q^2*(1-q)^2*q5
 
 Donde q = P(set a 25 puntos) y q5 = P(set a 15 puntos, tiebreak).
-Si q5 no se especifica, se aproxima como q.
+Si q5 no se especifica, se usa la composicion A2:
+    q5 = p_set_from_p_point(p_point_from_p_set(q, 25), 15)
+que convierte q a punto (target=25) y luego a set a 15 (target=15).
 """
 
 from functools import lru_cache
@@ -91,7 +93,8 @@ def p_match_from_p_set(q: float, q5: float | None = None) -> float:
     """P(ganar el partido al mejor de 5 | q = P(ganar un set a 25)).
 
     Formula cerrada para best-of-5 con sets a 25 puntos (q) y posible
-    tiebreak a 15 puntos (q5). Si q5 es None, se usa q como aproximacion.
+    tiebreak a 15 puntos (q5). Si q5 es None, se usa la composicion A2:
+    p_set_from_p_point(p_point_from_p_set(q, 25), 15).
 
     La formula cuenta tres caminos:
       - 3-0: gana los 3 primeros sets: q^3
@@ -101,13 +104,14 @@ def p_match_from_p_set(q: float, q5: float | None = None) -> float:
     Args:
         q: probabilidad de ganar un set a 25 puntos.
         q5: probabilidad de ganar el tiebreak a 15 puntos (set 5).
-            Si es None, se usa q (asume misma fuerza en set largo).
+            Si es None, se usa la composicion A2:
+            p_set_from_p_point(p_point_from_p_set(q, 25), 15).
 
     Returns:
         Probabilidad de ganar el partido, en [0, 1].
     """
     if q5 is None:
-        q5 = q
+        q5 = p_set_from_p_point(p_point_from_p_set(q, 25), 15)
     # 3-0
     win_3_0 = q**3
     # 3-1 (gana 3 de 4, pierde exactamente 1)

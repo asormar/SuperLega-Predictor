@@ -221,6 +221,78 @@ def train_set(data: dict) -> dict:
     }
 
 
+def evaluate_adoption(
+    result: dict,
+    *,
+    elo_test_logloss_baseline: float,
+    n_folds_required: int = 4,
+    n_folds_win_required: int = 3,
+    noise_floor: float = 0.005,
+    w_sat_threshold: float = 0.05,
+) -> str:
+    """Evaluate the B4 adoption gate (REQ-016 / REQ-017).
+
+    Returns one of ``"adopted"``, ``"negative"``, or ``"shortcut_negative"``.
+    Populates ``result["failing_conditions"]`` with human-readable names of
+    conditions that FAILED (empty list on adoption).
+    """
+    failing_conditions = []
+
+    # ── REQ-017: Hard shortcut (both conditions required) ────────────────
+    if result["w_global"] >= 0.999 and result["improvement_mean"] < 0.001:
+        failing_conditions.append("hard_shortcut")
+        result["failing_conditions"] = failing_conditions
+        return "shortcut_negative"
+
+    # ── REQ-016: AND-of-4 adoption gate ──────────────────────────────────
+    # Condition 1: per-fold win count >= n_folds_win_required
+    n_wins = sum(
+        1
+        for i in range(result["n_folds"])
+        if result["logloss_per_fold"][i] < result["logloss_elo_only_per_fold"][i]
+    )
+    cond1_pass = n_wins >= n_folds_win_required
+    if not cond1_pass:
+        failing_conditions.append(
+            f"per_fold_wins={n_wins}/{result['n_folds']} < required={n_folds_win_required}"
+        )
+
+    # Condition 2: improvement_mean > max(sigma_lofo, noise_floor)
+    improvement = result["improvement_mean"]
+    sigma = result.get("sigma_lofo", 0.0)
+    imp_threshold = max(sigma, noise_floor)
+    cond2_pass = improvement > imp_threshold
+    if not cond2_pass:
+        failing_conditions.append(
+            f"improvement_mean={improvement:.6f} <= max(sigma={sigma:.4f}, "
+            f"noise_floor={noise_floor})"
+        )
+
+    # Condition 3: test-2025 logloss < Elo baseline
+    test_metrics = result.get("test_metrics_if_computed")
+    cond3_pass = False
+    if test_metrics is not None and "logloss" in test_metrics:
+        cond3_pass = test_metrics["logloss"] < elo_test_logloss_baseline
+    if not cond3_pass:
+        test_ll = test_metrics.get("logloss", float("nan")) if test_metrics else float("nan")
+        failing_conditions.append(
+            f"test_logloss={test_ll:.6f} >= baseline={elo_test_logloss_baseline:.6f}"
+        )
+
+    # Condition 4: w_global > w_sat_threshold (not saturated to derived)
+    cond4_pass = result["w_global"] > w_sat_threshold
+    if not cond4_pass:
+        failing_conditions.append(
+            f"w_global={result['w_global']:.4f} <= saturation_threshold={w_sat_threshold}"
+        )
+
+    result["failing_conditions"] = failing_conditions
+
+    if cond1_pass and cond2_pass and cond3_pass and cond4_pass:
+        return "adopted"
+    return "negative"
+
+
 def run_b4_route(
     *,
     test_year: int = 2025,
@@ -353,50 +425,45 @@ def run_b4_route(
         refine_tol=1e-3,
     )
 
-    # ── Step 5: Apply gates ────────────────────────────────────────────
-    failing_conditions = []
-
-    # REQ-017: Hard shortcut — if w_global >= 0.95, the blend is
-    # indistinguishable from pure Elo → shortcut_negative
-    if result["w_global"] >= 0.95:
-        verdict = "shortcut_negative"
-        failing_conditions.append(f"w_global={result['w_global']:.4f} >= 0.95 (hard shortcut)")
-    else:
-        # REQ-016: AND-of-4 adoption gate
-        conditions = {
-            "improvement_mean > 0": result["improvement_mean"] > 0,
-            "improvement_mean > sigma_lofo": result["improvement_mean"] > result["sigma_lofo"],
-            "n_folds >= 2": result["n_folds"] >= 2,
-            "w_global < 0.95": result["w_global"] < 0.95,
+    # ── Step 5: Compute test-2025 metrics (needed by gate condition 3) ──
+    te = blend_df[blend_df["temporada_inicio"] == test_year]
+    if len(te) > 10:
+        p_blend = (
+            result["w_global"] * te["p_elo"].values
+            + (1.0 - result["w_global"]) * te["p_derived"].values
+        )
+        p_blend = np.clip(p_blend, 1e-6, 1 - 1e-6)
+        test_metrics = {
+            "n": int(len(te)),
+            "logloss": float(log_loss(te["y"].values, p_blend)),
+            "auc": float(roc_auc_score(te["y"].values, p_blend)),
+            "brier": float(brier_score_loss(te["y"].values, p_blend)),
+            "acc": float(accuracy_score(te["y"].values, (p_blend >= 0.5).astype(int))),
         }
-        failed = [k for k, v in conditions.items() if not v]
-        if failed:
-            verdict = "negative"
-            failing_conditions = failed
-        else:
-            verdict = "adopted"
+    else:
+        test_metrics = None
 
-    # ── Step 6: Test metrics IF adopted ────────────────────────────────
-    test_metrics = None
-    if verdict == "adopted":
-        te = blend_df[blend_df["temporada_inicio"] == test_year]
-        if len(te) > 10:
-            p_blend = (
-                result["w_global"] * te["p_elo"].values
-                + (1.0 - result["w_global"]) * te["p_derived"].values
-            )
-            p_blend = np.clip(p_blend, 1e-6, 1 - 1e-6)
-            test_metrics = {
-                "n": int(len(te)),
-                "logloss": float(log_loss(te["y"].values, p_blend)),
-                "auc": float(roc_auc_score(te["y"].values, p_blend)),
-                "brier": float(brier_score_loss(te["y"].values, p_blend)),
-                "acc": float(accuracy_score(te["y"].values, (p_blend >= 0.5).astype(int))),
-            }
+    # ── Step 6: Apply gates (REQ-016 / REQ-017) ─────────────────────────
+    # Read Elo test-logloss baseline from precision_improved.json
+    baseline_path = MODELS_DIR / "precision_improved.json"
+    if baseline_path.exists():
+        with open(baseline_path) as f:
+            precision_data = json.load(f)
+        elo_baseline = precision_data.get("match", {}).get("test", {}).get("logloss", float("inf"))
+    else:
+        elo_baseline = float("inf")
+
+    # Merge test_metrics into result so evaluate_adoption can read them
+    result["test_metrics_if_computed"] = test_metrics
+    verdict = evaluate_adoption(
+        result,
+        elo_test_logloss_baseline=elo_baseline,
+    )
+    failing_conditions = result.get("failing_conditions", [])
 
     # ── Write results ──────────────────────────────────────────────────
     output = {
-        "shortcut": result["w_global"] >= 0.95,
+        "shortcut": (result["w_global"] >= 0.999 and result["improvement_mean"] < 0.001),
         "verdict": verdict,
         "w_global": result["w_global"],
         "w_per_fold_lofo": result["w_per_fold_lofo"],
