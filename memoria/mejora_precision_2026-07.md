@@ -621,6 +621,61 @@ Brier, logloss y accuracy, y mantiene una sobreconfianza residual pequeña en
 ECE. Es la confirmación de que la mejora de B3 (§7.3) generaliza y no era
 específica de 2024. Cifras en `models/backtest_simulator_2025.json`.
 
+### 7.5 B4 — Predictor de partido derivado del SetPredictor (best-of-5): RESULTADO NEGATIVO (2026-07-23)
+
+El margin-Elo domina la señal de partido desde B1 (AUC 0.76 en test 2025). B4
+pregunta si una segunda señal independiente —derivada del SetPredictor v2 vía
+la fórmula best-of-5— puede complementar al Elo en un blend lineal:
+
+$$P_{\text{final}} = w \cdot P_{\text{Elo}} + (1-w) \cdot P_{\text{derivada}}$$
+
+donde $P_{\text{derivada}} = q^3 + 3q^3(1-q) + 6q^2(1-q)^2 q_5$, con $q =
+\text{SetPredictor.predict\_proba(contexto 0-0)}$ a 25 puntos y $q_5 \approx q$
+(misma fuerza asumida en el tiebreak).
+
+**Protocolo.** LOFO-CV sobre 2021–2024 (4 folds), grid de 21 valores de $w$ en
+$[0, 1]$, refinamiento por sección áurea, log-loss como métrica primaria. 2025
+se reserva como test held-out. Reproducible con
+`python -c "from src.models.train_improved import run_b4_route; print(run_b4_route())"`.
+
+Resultados por fold:
+
+| Fold | $w$ óptimo | LogLoss blend | LogLoss Elo puro | Mejora |
+|---:|---:|---:|---:|---:|
+| 2021 | 0.0766 | 0.5700 | 0.5771 | +0.0071 |
+| 2022 | 0.9996 | 0.6313 | 0.6313 | -0.0000 |
+| 2023 | 0.9996 | 0.6629 | 0.6629 | -0.0000 |
+| 2024 | 0.0004 | 0.5571 | 0.5765 | +0.0194 |
+
+| Métrica global | Valor |
+|---:|---:|
+| $w$ global (media) | 0.5191 |
+| Mejora media | +0.0066 |
+| Desviación ($\sigma$) | 0.0079 |
+| LogLoss blend (media) | 0.6053 |
+| LogLoss Elo (media) | 0.6120 |
+
+La mejora media es de +0.0066, pero con $\sigma = 0.0079$ la señal está por
+debajo del ruido (condición `improvement_mean > sigma_lofo` fallida). Las $w$
+por fold oscilan entre 0.00 y 1.00, lo que indica que no hay un blend
+estable: cada año elige un extremo distinto.
+
+**Decisión.** No se adopta el blend. La señal del SetPredictor v2, convertida a
+P(match) vía best-of-5, no es lo suficientemente independiente del Elo —o no
+tiene suficiente poder predictivo— para mejorar el log-loss de forma
+consistente entre temporadas. El Elo puro sigue siendo la mejor señal de
+partido disponible.
+
+**Artefacto.** `models/b4_blend_results.json` contiene los resultados
+completos (40 líneas). No se genera `match_elo_blend_v3.joblib` al no adoptarse
+el blend.
+
+**Próximos pasos.** Este resultado NEGATIVO cierra la línea de "predictor de
+partido derivado del set" para este TFG. Si en el futuro se dispone de más
+datos (B6) o de un predictor de set significativamente mejor (p. ej. con
+features de alineación o de momento del partido), re-evaluar esta vía podría
+tener sentido.
+
 ## 8. Qué NO se hizo (honestidad de alcance)
 
 - No se amplió el nº de partidos históricos: `sets_partidos.csv` tiene ~1322
