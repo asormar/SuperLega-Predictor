@@ -1,6 +1,5 @@
 ﻿"""Tests for SeasonSimulator — round-robin scheduling, standings, and half flow."""
 
-import numpy as np
 import pytest
 
 from src.simulation.constants import (
@@ -13,9 +12,6 @@ from src.simulation.constants import (
 from src.simulation.season_simulator import (
     SeasonSimulator,
     TeamStanding,
-    match_points,
-    generate_round_robin,
-    generate_jornadas,
 )
 from src.simulation.simulator import (
     MatchSimulator,
@@ -24,7 +20,9 @@ from src.simulation.simulator import (
 )
 
 
-def _make_match(home_team, away_team, sets_home=3, sets_away=0, winner="home", resultado="3-0", set_specs=None):
+def _make_match(
+    home_team, away_team, sets_home=3, sets_away=0, winner="home", resultado="3-0", set_specs=None
+):
     """Build a MatchResult from set_specs: list of (score_home, score_away, winner, home_stats, away_stats)."""
     if set_specs is None:
         set_specs = [(25, 20, "home")]
@@ -33,11 +31,18 @@ def _make_match(home_team, away_team, sets_home=3, sets_away=0, winner="home", r
         sh, sa, sw = spec[0], spec[1], spec[2]
         home_stats = spec[3] if len(spec) > 3 else []
         away_stats = spec[4] if len(spec) > 4 else []
-        sets.append(SetResult(i, sh, sa, sw, home_player_stats=home_stats, away_player_stats=away_stats))
-    return MatchResult(home_team=home_team, away_team=away_team,
-                       sets_home=sets_home, sets_away=sets_away,
-                       winner=winner, resultado=resultado, sets=sets)
-
+        sets.append(
+            SetResult(i, sh, sa, sw, home_player_stats=home_stats, away_player_stats=away_stats)
+        )
+    return MatchResult(
+        home_team=home_team,
+        away_team=away_team,
+        sets_home=sets_home,
+        sets_away=sets_away,
+        winner=winner,
+        resultado=resultado,
+        sets=sets,
+    )
 
 
 class TestGenerateReturnLeg:
@@ -67,7 +72,6 @@ class TestGenerateReturnLeg:
             assert (away, home) not in return_leg
 
 
-
 class TestAccumulatePlayerStats:
     """_accumulate_player_stats correctly accumulates stats across sets."""
 
@@ -75,7 +79,13 @@ class TestAccumulatePlayerStats:
         """A player appearing in multiple sets has summed stats (not overwritten)."""
         season_sim = SeasonSimulator()
         stats = {}
-        match = _make_match("Trento", "Perugia", sets_home=3, sets_away=1, winner="home", resultado="3-1",
+        match = _make_match(
+            "Trento",
+            "Perugia",
+            sets_home=3,
+            sets_away=1,
+            winner="home",
+            resultado="3-1",
             set_specs=[
                 (25, 20, "home", [{"jugador": "PlayerA", "puntos": 5, "aces": 1}]),
                 (25, 22, "home", [{"jugador": "PlayerA", "puntos": 3, "aces": 0}]),
@@ -95,14 +105,30 @@ class TestAccumulatePlayerStats:
         """Two different players in the same match have separate stats."""
         season_sim = SeasonSimulator()
         stats = {}
-        match = _make_match("Trento", "Perugia", set_specs=[
-            (25, 18, "home", [{"jugador": "PlayerA", "puntos": 5},
-                              {"jugador": "PlayerB", "puntos": 3}]),
-            (25, 20, "home", [{"jugador": "PlayerA", "puntos": 4},
-                              {"jugador": "PlayerB", "puntos": 6}]),
-            (25, 22, "home", [{"jugador": "PlayerA", "puntos": 3},
-                              {"jugador": "PlayerB", "puntos": 2}]),
-        ])
+        match = _make_match(
+            "Trento",
+            "Perugia",
+            set_specs=[
+                (
+                    25,
+                    18,
+                    "home",
+                    [{"jugador": "PlayerA", "puntos": 5}, {"jugador": "PlayerB", "puntos": 3}],
+                ),
+                (
+                    25,
+                    20,
+                    "home",
+                    [{"jugador": "PlayerA", "puntos": 4}, {"jugador": "PlayerB", "puntos": 6}],
+                ),
+                (
+                    25,
+                    22,
+                    "home",
+                    [{"jugador": "PlayerA", "puntos": 3}, {"jugador": "PlayerB", "puntos": 2}],
+                ),
+            ],
+        )
         season_sim._accumulate_player_stats(stats, match, "Trento", "home")
         assert stats["Trento|PlayerA"]["puntos"] == 12  # 5+4+3
         assert stats["Trento|PlayerB"]["puntos"] == 11  # 3+6+2
@@ -111,9 +137,13 @@ class TestAccumulatePlayerStats:
         """Away players are stored under the away team key."""
         season_sim = SeasonSimulator()
         stats = {}
-        match = _make_match("Trento", "Perugia", set_specs=[
-            (25, 20, "home", [], [{"jugador": "OppPlayer", "puntos": 4}]),
-        ])
+        match = _make_match(
+            "Trento",
+            "Perugia",
+            set_specs=[
+                (25, 20, "home", [], [{"jugador": "OppPlayer", "puntos": 4}]),
+            ],
+        )
         season_sim._accumulate_player_stats(stats, match, "Perugia", "away")
         assert "Perugia|OppPlayer" in stats
         assert stats["Perugia|OppPlayer"]["puntos"] == 4
@@ -122,12 +152,17 @@ class TestAccumulatePlayerStats:
         """Sets with empty player stats produce no entries."""
         season_sim = SeasonSimulator()
         stats = {}
-        match = _make_match("Trento", "Perugia", set_specs=[
-            (25, 20, "home"), (25, 22, "home"), (25, 18, "home"),
-        ])
+        match = _make_match(
+            "Trento",
+            "Perugia",
+            set_specs=[
+                (25, 20, "home"),
+                (25, 22, "home"),
+                (25, 18, "home"),
+            ],
+        )
         season_sim._accumulate_player_stats(stats, match, "Trento", "home")
         assert len(stats) == 0
-
 
 
 class TestStandingsRoundTrip:
@@ -135,14 +170,40 @@ class TestStandingsRoundTrip:
 
     def _sample_standings_list(self):
         entries = [
-            TeamStanding(team="Trento", points=15, matches_played=5, wins=5, losses=0,
-                         sets_won=15, sets_lost=2, points_scored=400, points_conceded=300,
-                         wins_3_0=3, wins_3_1=1, wins_3_2=1,
-                         losses_2_3=0, losses_1_3=0, losses_0_3=0),
-            TeamStanding(team="Perugia", points=12, matches_played=5, wins=4, losses=1,
-                         sets_won=13, sets_lost=5, points_scored=380, points_conceded=320,
-                         wins_3_0=2, wins_3_1=1, wins_3_2=1,
-                         losses_2_3=0, losses_1_3=1, losses_0_3=0),
+            TeamStanding(
+                team="Trento",
+                points=15,
+                matches_played=5,
+                wins=5,
+                losses=0,
+                sets_won=15,
+                sets_lost=2,
+                points_scored=400,
+                points_conceded=300,
+                wins_3_0=3,
+                wins_3_1=1,
+                wins_3_2=1,
+                losses_2_3=0,
+                losses_1_3=0,
+                losses_0_3=0,
+            ),
+            TeamStanding(
+                team="Perugia",
+                points=12,
+                matches_played=5,
+                wins=4,
+                losses=1,
+                sets_won=13,
+                sets_lost=5,
+                points_scored=380,
+                points_conceded=320,
+                wins_3_0=2,
+                wins_3_1=1,
+                wins_3_2=1,
+                losses_2_3=0,
+                losses_1_3=1,
+                losses_0_3=0,
+            ),
         ]
         return entries
 
@@ -189,7 +250,6 @@ class TestStandingsRoundTrip:
         assert SeasonSimulator.parse_standings(None) == {}
 
 
-
 class TestTwoPassHalfFlow:
     """Two-pass season: half='first' then half='second' + first_half_state."""
 
@@ -198,7 +258,11 @@ class TestTwoPassHalfFlow:
         teams = ["Trento", "Perugia", "Monza", "Lube", "Milano", "Verona"]
         sim = SeasonSimulator(simulator=MatchSimulator(), team_strengths={t: 0.5 for t in teams})
         first = sim.simulate_season(teams=teams, double_round_robin=True, seed=42, half="first")
-        second = sim.simulate_season(teams=teams, double_round_robin=True, seed=42, half="second",
+        second = sim.simulate_season(
+            teams=teams,
+            double_round_robin=True,
+            seed=42,
+            half="second",
             first_half_state={
                 "standings": SeasonSimulator.serialize_standings(first["standings"]),
                 "player_season_stats": first.get("player_season_stats", {}),
@@ -212,7 +276,6 @@ class TestTwoPassHalfFlow:
             assert second_st[t].matches_played == (n - 1) * 2
 
 
-
 class TestPlayerStatsCollision:
     """Regression pin for player-stats collision bug (N4/N2)."""
 
@@ -224,14 +287,42 @@ class TestPlayerStatsCollision:
         """
         season_sim = SeasonSimulator()
         stats = {}
-        match1 = _make_match("Trento", "Perugia", set_specs=[
-            (25, 20, "home", [{"jugador": "PlayerA", "puntos": 5}], [{"jugador": "OppA", "puntos": 4}]),
-            (25, 22, "home", [{"jugador": "PlayerA", "puntos": 3}], [{"jugador": "OppA", "puntos": 4}]),
-            (25, 18, "home", [{"jugador": "PlayerA", "puntos": 2}], [{"jugador": "OppA", "puntos": 5}]),
-        ])
+        match1 = _make_match(
+            "Trento",
+            "Perugia",
+            set_specs=[
+                (
+                    25,
+                    20,
+                    "home",
+                    [{"jugador": "PlayerA", "puntos": 5}],
+                    [{"jugador": "OppA", "puntos": 4}],
+                ),
+                (
+                    25,
+                    22,
+                    "home",
+                    [{"jugador": "PlayerA", "puntos": 3}],
+                    [{"jugador": "OppA", "puntos": 4}],
+                ),
+                (
+                    25,
+                    18,
+                    "home",
+                    [{"jugador": "PlayerA", "puntos": 2}],
+                    [{"jugador": "OppA", "puntos": 5}],
+                ),
+            ],
+        )
         season_sim._accumulate_player_stats(stats, match1, "Trento", "home")
         season_sim._accumulate_player_stats(stats, match1, "Perugia", "away")
-        match2 = _make_match("Monza", "Verona", sets_home=3, sets_away=1, winner="home", resultado="3-1",
+        match2 = _make_match(
+            "Monza",
+            "Verona",
+            sets_home=3,
+            sets_away=1,
+            winner="home",
+            resultado="3-1",
             set_specs=[
                 (25, 21, "home", [{"jugador": "PlayerA", "puntos": 4}]),
                 (23, 25, "away", [{"jugador": "PlayerA", "puntos": 3}]),
@@ -259,14 +350,24 @@ class TestPlayerStatsCollision:
         """REGRESSION N4: partidos counter is not inflated by cross-match collision."""
         season_sim = SeasonSimulator()
         stats = {}
-        match1 = _make_match("Trento", "Perugia", set_specs=[
-            (25, 20, "home", [{"jugador": "PlayerA", "puntos": 5}]),
-            (25, 22, "home", [{"jugador": "PlayerA", "puntos": 3}]),
-            (25, 18, "home", [{"jugador": "PlayerA", "puntos": 2}]),
-        ])
+        match1 = _make_match(
+            "Trento",
+            "Perugia",
+            set_specs=[
+                (25, 20, "home", [{"jugador": "PlayerA", "puntos": 5}]),
+                (25, 22, "home", [{"jugador": "PlayerA", "puntos": 3}]),
+                (25, 18, "home", [{"jugador": "PlayerA", "puntos": 2}]),
+            ],
+        )
         season_sim._accumulate_player_stats(stats, match1, "Trento", "home")
         assert stats["Trento|PlayerA"]["partidos"] == 1
-        match2 = _make_match("Trento", "Monza", sets_home=3, sets_away=1, winner="home", resultado="3-1",
+        match2 = _make_match(
+            "Trento",
+            "Monza",
+            sets_home=3,
+            sets_away=1,
+            winner="home",
+            resultado="3-1",
             set_specs=[
                 (25, 20, "home", [{"jugador": "PlayerA", "puntos": 4}]),
                 (25, 22, "home", [{"jugador": "PlayerA", "puntos": 3}]),

@@ -46,18 +46,23 @@ def _worker(args: tuple) -> tuple:
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         res = run_backtest(
-            season=season, n_sims=n_sims, use_set_calibration=False,
-            damping=DAMPING_DEFAULT, force=True, make_plot=False,
-            save_json=False, point_model_path=POINT_MODEL_LT2024,
-            momentum_bonus=MB_DEFAULT, global_momentum_factor=GMF_DEFAULT,
+            season=season,
+            n_sims=n_sims,
+            use_set_calibration=False,
+            damping=DAMPING_DEFAULT,
+            force=True,
+            make_plot=False,
+            save_json=False,
+            point_model_path=POINT_MODEL_LT2024,
+            momentum_bonus=MB_DEFAULT,
+            global_momentum_factor=GMF_DEFAULT,
             seed_base=seed_base,
         )
     sim = res["simulator"]
     return seed_base, sim["brier"], sim["ece"], sim["acc"]
 
 
-def run(season: int = 2024, n_sims: int = 500, n_seeds: int = 6,
-        workers: int = 6) -> dict:
+def run(season: int = 2024, n_sims: int = 500, n_seeds: int = 6, workers: int = 6) -> dict:
     seed_bases = [1000 + 7919 * k for k in range(n_seeds)]
     print("=" * 70)
     print("  SUELO DE RUIDO DEL BACKTEST (apoyo a B2)")
@@ -74,8 +79,10 @@ def run(season: int = 2024, n_sims: int = 500, n_seeds: int = 6,
             briers.append(brier)
             eces.append(ece)
             accs.append(acc)
-            print(f"    seed_base={sb:<8} Brier={brier:.5f} ECE={ece:.5f} "
-                  f"Acc={acc:.4f}", flush=True)
+            print(
+                f"    seed_base={sb:<8} Brier={brier:.5f} ECE={ece:.5f} " f"Acc={acc:.4f}",
+                flush=True,
+            )
 
     elapsed = time.perf_counter() - t0
     out = {
@@ -100,8 +107,10 @@ def run(season: int = 2024, n_sims: int = 500, n_seeds: int = 6,
     }
 
     print()
-    print(f"  Brier: media {out['brier']['mean']:.5f}  "
-          f"std {out['brier']['std']:.5f}  rango {out['brier']['range']:.5f}")
+    print(
+        f"  Brier: media {out['brier']['mean']:.5f}  "
+        f"std {out['brier']['std']:.5f}  rango {out['brier']['range']:.5f}"
+    )
     print(f"  ECE:   media {out['ece']['mean']:.5f}  std {out['ece']['std']:.5f}")
     print(f"  Tiempo: {elapsed / 60:.1f} min")
 

@@ -5,9 +5,7 @@ Divide los datos en train/validation/test por temporada (split temporal)
 y prepara las matrices de features listas para entrenar los modelos ML.
 """
 
-import os
 import pandas as pd
-import numpy as np
 from pathlib import Path
 from typing import Tuple, Optional
 
@@ -36,37 +34,73 @@ TEMPORAL_SPLITS = {
 # Columnas de features a usar para el modelo de partido
 MATCH_FEATURE_COLS = [
     # Win rates
-    "h_win_rate_global", "h_win_rate_last5", "h_win_rate_home",
-    "a_win_rate_global", "a_win_rate_last5", "a_win_rate_away",
+    "h_win_rate_global",
+    "h_win_rate_last5",
+    "h_win_rate_home",
+    "a_win_rate_global",
+    "a_win_rate_last5",
+    "a_win_rate_away",
     # Diferencias de win rate
-    "diff_win_rate_global", "diff_win_rate_last5",
+    "diff_win_rate_global",
+    "diff_win_rate_last5",
     # Set metrics
-    "h_set_win_rate", "a_set_win_rate", "diff_set_win_rate",
-    "h_set_diff_exp", "a_set_diff_exp", "diff_set_diff_exp",
+    "h_set_win_rate",
+    "a_set_win_rate",
+    "diff_set_win_rate",
+    "h_set_diff_exp",
+    "a_set_diff_exp",
+    "diff_set_diff_exp",
     # Points
-    "h_pts_fav_exp", "a_pts_fav_exp", "diff_pts_fav_exp",
-    "h_pts_con_exp", "a_pts_con_exp", "diff_pts_con_exp",
+    "h_pts_fav_exp",
+    "a_pts_fav_exp",
+    "diff_pts_fav_exp",
+    "h_pts_con_exp",
+    "a_pts_con_exp",
+    "diff_pts_con_exp",
     # Form
-    "h_forma_home", "h_forma_away", "a_forma_home", "a_forma_away",
+    "h_forma_home",
+    "h_forma_away",
+    "a_forma_home",
+    "a_forma_away",
     "diff_forma_efectiva",
     # H2H
-    "h_h2h_win_rate", "h_h2h_set_diff_exp",
+    "h_h2h_win_rate",
+    "h_h2h_set_diff_exp",
     # Momentum
-    "h_racha", "a_racha", "diff_racha",
-    "h_ultimo_set_diff", "a_ultimo_set_diff", "diff_ultimo_set_diff",
+    "h_racha",
+    "a_racha",
+    "diff_racha",
+    "h_ultimo_set_diff",
+    "a_ultimo_set_diff",
+    "diff_ultimo_set_diff",
     # Rest days
-    "h_descanso", "a_descanso", "diff_descanso",
+    "h_descanso",
+    "a_descanso",
+    "diff_descanso",
     # Rankings
-    "h_rank_season", "a_rank_season", "diff_rank_season",
+    "h_rank_season",
+    "a_rank_season",
+    "diff_rank_season",
     # Elo
-    "elo_h", "elo_a", "elo_diff", "elo_win_prob_h",
-    "elo_h_home", "elo_a_away",
+    "elo_h",
+    "elo_a",
+    "elo_diff",
+    "elo_win_prob_h",
+    "elo_h_home",
+    "elo_a_away",
     # Ratios
-    "set_ratio_h", "set_ratio_a", "diff_set_ratio",
-    "point_ratio_h", "point_ratio_a",
-    "dominancia_h", "dominancia_a", "diff_dominancia",
+    "set_ratio_h",
+    "set_ratio_a",
+    "diff_set_ratio",
+    "point_ratio_h",
+    "point_ratio_a",
+    "dominancia_h",
+    "dominancia_a",
+    "diff_dominancia",
     # SOS (strength of schedule)
-    "sos_h", "sos_a", "diff_sos",
+    "sos_h",
+    "sos_a",
+    "diff_sos",
     # Jornada
     "jornada_num",
 ]
@@ -80,21 +114,31 @@ MATCH_TARGET = "gana_local"
 
 SET_FEATURE_COLS = [
     # Pre-match strength
-    "strength_h", "strength_a", "strength_diff",
+    "strength_h",
+    "strength_a",
+    "strength_diff",
     "elo_diff",
     # Set-level metrics
-    "set_wr_h", "set_wr_a", "diff_set_wr",
+    "set_wr_h",
+    "set_wr_a",
+    "diff_set_wr",
     # Form
-    "forma_h", "forma_a", "diff_forma",
+    "forma_h",
+    "forma_a",
+    "diff_forma",
     # Points
-    "pts_fav_h", "pts_fav_a",
+    "pts_fav_h",
+    "pts_fav_a",
     # H2H
     "h2h_diff",
     # Derived
-    "diff_set_ratio", "diff_dominancia",
+    "diff_set_ratio",
+    "diff_dominancia",
     # In-match state
     "set_num_norm",
-    "sets_h_antes", "sets_a_antes", "diff_sets_antes",
+    "sets_h_antes",
+    "sets_a_antes",
+    "diff_sets_antes",
     "momentum_h",
     "es_desempate",
 ]
@@ -105,6 +149,7 @@ SET_TARGET = "ganador_set_local"
 # ─────────────────────────────────────────────────────────────
 # Enriquecimiento con stats de equipo por temporada
 # ─────────────────────────────────────────────────────────────
+
 
 def enrich_with_team_stats(
     match_df: pd.DataFrame,
@@ -170,27 +215,44 @@ def enrich_with_team_stats(
     new_cols = [c for c in df.columns if c not in match_df.columns]
     df[new_cols] = df[new_cols].fillna(0)
 
-    print(f"  [enrich] {len(new_cols)} features nuevas añadidas: "
-          f"{[c for c in new_cols if c.startswith('diff_')]}")
+    print(
+        f"  [enrich] {len(new_cols)} features nuevas añadidas: "
+        f"{[c for c in new_cols if c.startswith('diff_')]}"
+    )
 
     return df
 
 
 # Features de enriquecimiento (se añaden dinámicamente)
 ENRICHED_MATCH_COLS = [
-    "h_pts_set", "a_pts_set", "diff_pts_set",
-    "h_aces_set", "a_aces_set", "diff_aces_set",
-    "h_atq_pct", "a_atq_pct", "diff_atq_pct",
-    "h_atq_eff", "a_atq_eff", "diff_atq_eff",
-    "h_rec_eff", "a_rec_eff", "diff_rec_eff",
-    "h_bloq_set", "a_bloq_set", "diff_bloq_set",
-    "h_ace_ratio", "a_ace_ratio", "diff_ace_ratio",
+    "h_pts_set",
+    "a_pts_set",
+    "diff_pts_set",
+    "h_aces_set",
+    "a_aces_set",
+    "diff_aces_set",
+    "h_atq_pct",
+    "a_atq_pct",
+    "diff_atq_pct",
+    "h_atq_eff",
+    "a_atq_eff",
+    "diff_atq_eff",
+    "h_rec_eff",
+    "a_rec_eff",
+    "diff_rec_eff",
+    "h_bloq_set",
+    "a_bloq_set",
+    "diff_bloq_set",
+    "h_ace_ratio",
+    "a_ace_ratio",
+    "diff_ace_ratio",
 ]
 
 
 # ─────────────────────────────────────────────────────────────
 # Enriquecimiento con stats de jugadores (roster features)
 # ─────────────────────────────────────────────────────────────
+
 
 def compute_roster_features(
     match_df: pd.DataFrame,
@@ -263,13 +325,12 @@ def compute_roster_features(
 
     # Añadir al match_df
     for prefix, team_col in [("h", "local"), ("a", "visitante")]:
-        for feat in ["top_scorer_avg", "roster_depth", "ace_threat",
-                     "block_power", "rec_quality"]:
+        for feat in ["top_scorer_avg", "roster_depth", "ace_threat", "block_power", "rec_quality"]:
             col_name = f"{prefix}_{feat}"
             df[col_name] = df.apply(
-                lambda row: roster_agg.get(
-                    (row[team_col], row.get("temporada", "")), {}
-                ).get(feat, 0.0),
+                lambda row: roster_agg.get((row[team_col], row.get("temporada", "")), {}).get(
+                    feat, 0.0
+                ),
                 axis=1,
             )
 
@@ -288,21 +349,32 @@ def compute_roster_features(
 
 # Roster features básicas (puntos/aces)
 ROSTER_BASIC_COLS = [
-    "h_top_scorer_avg", "a_top_scorer_avg", "diff_top_scorer",
-    "h_roster_depth", "a_roster_depth", "diff_roster_depth",
-    "h_ace_threat", "a_ace_threat", "diff_ace_threat",
+    "h_top_scorer_avg",
+    "a_top_scorer_avg",
+    "diff_top_scorer",
+    "h_roster_depth",
+    "a_roster_depth",
+    "diff_roster_depth",
+    "h_ace_threat",
+    "a_ace_threat",
+    "diff_ace_threat",
 ]
 
 # Roster features completas (+ bloqueos/recepción)
 ROSTER_FULL_COLS = ROSTER_BASIC_COLS + [
-    "h_block_power", "a_block_power", "diff_block_power",
-    "h_rec_quality", "a_rec_quality", "diff_rec_quality",
+    "h_block_power",
+    "a_block_power",
+    "diff_block_power",
+    "h_rec_quality",
+    "a_rec_quality",
+    "diff_rec_quality",
 ]
 
 
 # ─────────────────────────────────────────────────────────────
 # Funciones de preparación de datos
 # ─────────────────────────────────────────────────────────────
+
 
 def prepare_match_data(
     df: pd.DataFrame,
@@ -340,8 +412,7 @@ def prepare_match_data(
         X_splits[split_name] = X
         y_splits[split_name] = y
 
-        print(f"  [{split_name:5s}] {len(X):>4} partidos, "
-              f"gana_local={y.mean():.3f}")
+        print(f"  [{split_name:5s}] {len(X):>4} partidos, " f"gana_local={y.mean():.3f}")
 
     return X_splits, y_splits
 
@@ -385,8 +456,7 @@ def prepare_set_data(
         X_splits[split_name] = X
         y_splits[split_name] = y
 
-        print(f"  [{split_name:5s}] {len(X):>5} sets, "
-              f"gana_local={y.mean():.3f}")
+        print(f"  [{split_name:5s}] {len(X):>5} sets, " f"gana_local={y.mean():.3f}")
 
     return X_splits, y_splits
 
@@ -394,6 +464,7 @@ def prepare_set_data(
 # ─────────────────────────────────────────────────────────────
 # Cache / persistencia
 # ─────────────────────────────────────────────────────────────
+
 
 def save_splits(X_splits, y_splits, prefix: str):
     """Guarda los splits como CSV para reutilización rápida."""

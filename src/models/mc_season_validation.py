@@ -50,16 +50,17 @@ MODELS_DIR = BASE_DIR / "models"
 RESULTS_PATH = MODELS_DIR / "mc_season_validation.json"
 
 
-def run(n_seeds: int = 20, use_set_calibration: bool = True,
-        max_seconds: float = 1800.0) -> dict:
+def run(n_seeds: int = 20, use_set_calibration: bool = True, max_seconds: float = 1800.0) -> dict:
     """Corre `n_seeds` temporadas completas y agrega posicion media por equipo."""
     print("=" * 70)
     print(f"  A6 — VALIDACION MONTE CARLO: {n_seeds} TEMPORADAS COMPLETAS")
     print("=" * 70)
     print(f"  Equipos: {len(TEAMS_12)}  |  ida y vuelta  |  seeds 0..{n_seeds - 1}")
-    print(f"  Config clamp: SET_BLEND_WEIGHT_ELO={SET_BLEND_WEIGHT_ELO} "
-          f"CLAMP_MARGIN_POINT={CLAMP_MARGIN_POINT} "
-          f"set_calibration={'ON' if use_set_calibration else 'OFF'}")
+    print(
+        f"  Config clamp: SET_BLEND_WEIGHT_ELO={SET_BLEND_WEIGHT_ELO} "
+        f"CLAMP_MARGIN_POINT={CLAMP_MARGIN_POINT} "
+        f"set_calibration={'ON' if use_set_calibration else 'OFF'}"
+    )
     print()
 
     set_predictor, sp_source = _load_set_predictor_v2()
@@ -109,8 +110,10 @@ def run(n_seeds: int = 20, use_set_calibration: bool = True,
         if s == 0:
             dt = time.perf_counter() - t_start
             projected = dt * n_seeds
-            print(f"  [time-box] 1 temporada: {dt:.1f}s -> proyeccion "
-                  f"~{projected:.0f}s ({projected / 60:.1f} min)")
+            print(
+                f"  [time-box] 1 temporada: {dt:.1f}s -> proyeccion "
+                f"~{projected:.0f}s ({projected / 60:.1f} min)"
+            )
             if projected > max_seconds:
                 print(f"  ABORTADO: proyeccion supera {max_seconds:.0f}s.")
                 return {"aborted": True, "projected_seconds": round(projected, 1)}
@@ -119,13 +122,15 @@ def run(n_seeds: int = 20, use_set_calibration: bool = True,
 
     rows = []
     for t in TEAMS_12:
-        rows.append({
-            "equipo": t,
-            "posicion_media": round(float(np.mean(positions[t])), 2),
-            "posicion_std": round(float(np.std(positions[t])), 2),
-            "puntos_medios": round(float(np.mean(points[t])), 1),
-            "fuerza_margin_elo": round(strengths[t], 3),
-        })
+        rows.append(
+            {
+                "equipo": t,
+                "posicion_media": round(float(np.mean(positions[t])), 2),
+                "posicion_std": round(float(np.std(positions[t])), 2),
+                "puntos_medios": round(float(np.mean(points[t])), 1),
+                "fuerza_margin_elo": round(strengths[t], 3),
+            }
+        )
     rows.sort(key=lambda r: r["posicion_media"])
 
     rho, pval = spearmanr(
@@ -139,8 +144,10 @@ def run(n_seeds: int = 20, use_set_calibration: bool = True,
     print(f"  {'#':<4}{'Equipo':<16}{'Pos media':>10}{'Pos std':>10}{'Fuerza':>10}")
     print("  " + "-" * 62)
     for i, r in enumerate(rows, 1):
-        print(f"  {i:<4}{r['equipo']:<16}{r['posicion_media']:>10.1f}"
-              f"{r['posicion_std']:>10.2f}{r['fuerza_margin_elo']:>10.3f}")
+        print(
+            f"  {i:<4}{r['equipo']:<16}{r['posicion_media']:>10.1f}"
+            f"{r['posicion_std']:>10.2f}{r['fuerza_margin_elo']:>10.3f}"
+        )
     print("  " + "=" * 62)
     print(f"  Spearman fuerza->posicion: {rho:.4f} (p={pval:.2e})")
     print(f"  Std de posicion media:     {mean_std_pos:.3f}")

@@ -17,12 +17,10 @@ y target `gana_local`, coherente con lo que un modelo vería ANTES del partido.
 """
 
 import sys
-import math
 from pathlib import Path
 from typing import Optional
-from collections import defaultdict, deque
+from collections import defaultdict
 
-import numpy as np
 import pandas as pd
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -38,8 +36,8 @@ from src.data.team_mapper import normalize_team_name
 ELO_BASE = 1500.0
 ELO_K = 28.0
 ELO_HOME_ADV = 60.0
-ELO_SEASON_REGRESS = 0.25   # al empezar temporada: elo = (1-r)*elo + r*BASE
-FORM_HALFLIFE = 5.0         # partidos
+ELO_SEASON_REGRESS = 0.25  # al empezar temporada: elo = (1-r)*elo + r*BASE
+FORM_HALFLIFE = 5.0  # partidos
 H2H_HALFLIFE_SEASONS = 2.0
 
 # Orden cronológico de las dos vueltas. El `partido_id` de sets_partidos.csv
@@ -88,19 +86,21 @@ def _aggregate_matches(sp: pd.DataFrame) -> pd.DataFrame:
     for (pid, _loc), grp in g:
         sets_h = int((grp["ganador_set_local"] == 1).sum())
         sets_a = int((grp["ganador_set_local"] == 0).sum())
-        rows.append({
-            "partido_id": pid,
-            "temporada_inicio": int(grp["t"].iloc[0]),
-            "jornada_num": int(grp["jnum"].iloc[0]),
-            "fnum": int(grp["fnum"].iloc[0]),
-            "local": grp["local"].iloc[0],
-            "visitante": grp["visitante"].iloc[0],
-            "sets_h": sets_h,
-            "sets_a": sets_a,
-            "pts_h": int(grp["puntos_local"].sum()),
-            "pts_a": int(grp["puntos_visitante"].sum()),
-            "gana_local": 1 if sets_h > sets_a else 0,
-        })
+        rows.append(
+            {
+                "partido_id": pid,
+                "temporada_inicio": int(grp["t"].iloc[0]),
+                "jornada_num": int(grp["jnum"].iloc[0]),
+                "fnum": int(grp["fnum"].iloc[0]),
+                "local": grp["local"].iloc[0],
+                "visitante": grp["visitante"].iloc[0],
+                "sets_h": sets_h,
+                "sets_a": sets_a,
+                "pts_h": int(grp["puntos_local"].sum()),
+                "pts_a": int(grp["puntos_visitante"].sum()),
+                "gana_local": 1 if sets_h > sets_a else 0,
+            }
+        )
     m = pd.DataFrame(rows)
     m = m.sort_values(
         ["temporada_inicio", "fnum", "jornada_num", "partido_id", "local"]
@@ -149,12 +149,12 @@ def build_rolling_match_features(
     m = _aggregate_matches(sp)
 
     elo = defaultdict(lambda: ELO_BASE)
-    last_season = {}                      # team -> última temporada vista
+    last_season = {}  # team -> última temporada vista
     # historial dentro de temporada: team -> list de dicts
-    season_hist = defaultdict(list)       # (team, season) -> [(win, is_home, sf, sa, pf, pa)]
-    ewma_form = {}                        # team -> forma EWMA (win)
+    season_hist = defaultdict(list)  # (team, season) -> [(win, is_home, sf, sa, pf, pa)]
+    ewma_form = {}  # team -> forma EWMA (win)
     streak = defaultdict(int)
-    h2h = defaultdict(list)               # (a,b) -> [(season, home_won)]
+    h2h = defaultdict(list)  # (a,b) -> [(season, home_won)]
 
     alpha = 1 - 0.5 ** (1.0 / form_halflife)  # peso EWMA
 
@@ -177,9 +177,11 @@ def build_rolling_match_features(
             "partido_id": r["partido_id"],
             "temporada_inicio": season,
             "jornada_num": r["jornada_num"],
-            "local": h, "visitante": a,
+            "local": h,
+            "visitante": a,
             "gana_local": r["gana_local"],
-            "elo_h": elo_h, "elo_a": elo_a,
+            "elo_h": elo_h,
+            "elo_a": elo_a,
             "elo_diff": elo_h - elo_a,
             "elo_win_prob_h": p_home_elo,
         }
@@ -190,15 +192,19 @@ def build_rolling_match_features(
             n = len(hist)
             if n > 0:
                 wins = sum(1 for x in hist if x[0])
-                sf = sum(x[2] for x in hist); sa = sum(x[3] for x in hist)
-                pf = sum(x[4] for x in hist); pa = sum(x[5] for x in hist)
+                sf = sum(x[2] for x in hist)
+                sa = sum(x[3] for x in hist)
+                pf = sum(x[4] for x in hist)
+                pa = sum(x[5] for x in hist)
                 home_res = [x for x in hist if x[1]]
                 away_res = [x for x in hist if not x[1]]
                 feat[f"{prefix}_win_rate"] = wins / n
                 feat[f"{prefix}_win_rate_home"] = (
-                    sum(1 for x in home_res if x[0]) / len(home_res) if home_res else wins / n)
+                    sum(1 for x in home_res if x[0]) / len(home_res) if home_res else wins / n
+                )
                 feat[f"{prefix}_win_rate_away"] = (
-                    sum(1 for x in away_res if x[0]) / len(away_res) if away_res else wins / n)
+                    sum(1 for x in away_res if x[0]) / len(away_res) if away_res else wins / n
+                )
                 feat[f"{prefix}_set_ratio"] = sf / max(sf + sa, 1)
                 feat[f"{prefix}_point_ratio"] = pf / max(pf + pa, 1)
                 feat[f"{prefix}_set_diff_exp"] = (sf - sa) / n
@@ -218,7 +224,7 @@ def build_rolling_match_features(
         pair_hist = h2h[(h, a)] + [(s, 1 - hw) for (s, hw) in h2h[(a, h)]]
         if pair_hist:
             num = den = 0.0
-            for (s, home_won) in pair_hist:
+            for s, home_won in pair_hist:
                 w = 0.5 ** ((season - s) / h2h_halflife)
                 num += w * home_won
                 den += w
@@ -239,23 +245,33 @@ def build_rolling_match_features(
 
         # ══ ACTUALIZAR ESTADO (post-partido) ══
         home_won = r["gana_local"] == 1
-        mov = abs(r["sets_h"] - r["sets_a"])            # 3,2,1
-        margin_mult = margin_multiplier(mov)            # 3-0→1.30, 3-1→1.15, 3-2→1.0
+        mov = abs(r["sets_h"] - r["sets_a"])  # 3,2,1
+        margin_mult = margin_multiplier(mov)  # 3-0→1.30, 3-1→1.15, 3-2→1.0
         exp_h = _elo_expected(elo_h + elo_home_adv, elo_a)
         delta = elo_k * margin_mult * ((1.0 if home_won else 0.0) - exp_h)
         elo[h] = elo_h + delta
         elo[a] = elo_a - delta
 
         season_hist[(h, season)].append(
-            (home_won, True, r["sets_h"], r["sets_a"], r["pts_h"], r["pts_a"]))
+            (home_won, True, r["sets_h"], r["sets_a"], r["pts_h"], r["pts_a"])
+        )
         season_hist[(a, season)].append(
-            (not home_won, False, r["sets_a"], r["sets_h"], r["pts_a"], r["pts_h"]))
+            (not home_won, False, r["sets_a"], r["sets_h"], r["pts_a"], r["pts_h"])
+        )
 
         ewma_form[h] = (1 - alpha) * ewma_form.get(h, 0.5) + alpha * (1.0 if home_won else 0.0)
         ewma_form[a] = (1 - alpha) * ewma_form.get(a, 0.5) + alpha * (0.0 if home_won else 1.0)
 
-        streak[h] = streak[h] + 1 if home_won and streak[h] >= 0 else (1 if home_won else (streak[h] - 1 if streak[h] <= 0 else -1))
-        streak[a] = streak[a] + 1 if (not home_won) and streak[a] >= 0 else (1 if not home_won else (streak[a] - 1 if streak[a] <= 0 else -1))
+        streak[h] = (
+            streak[h] + 1
+            if home_won and streak[h] >= 0
+            else (1 if home_won else (streak[h] - 1 if streak[h] <= 0 else -1))
+        )
+        streak[a] = (
+            streak[a] + 1
+            if (not home_won) and streak[a] >= 0
+            else (1 if not home_won else (streak[a] - 1 if streak[a] <= 0 else -1))
+        )
 
         h2h[(h, a)].append((season, 1 if home_won else 0))
 
@@ -314,14 +330,31 @@ def get_historical_team_strengths(sp: Optional[pd.DataFrame] = None) -> dict:
 
 
 ROLLING_MATCH_COLS = [
-    "elo_h", "elo_a", "elo_diff", "elo_win_prob_h",
-    "h_win_rate", "a_win_rate", "diff_win_rate",
-    "h_win_rate_home", "a_win_rate_away", "diff_win_rate_home_away",
-    "h_set_ratio", "a_set_ratio", "diff_set_ratio",
-    "h_point_ratio", "a_point_ratio", "diff_point_ratio",
-    "h_set_diff_exp", "a_set_diff_exp", "diff_set_diff_exp",
-    "h_form_ewma", "a_form_ewma", "diff_form_ewma",
-    "h_streak", "a_streak", "diff_streak",
+    "elo_h",
+    "elo_a",
+    "elo_diff",
+    "elo_win_prob_h",
+    "h_win_rate",
+    "a_win_rate",
+    "diff_win_rate",
+    "h_win_rate_home",
+    "a_win_rate_away",
+    "diff_win_rate_home_away",
+    "h_set_ratio",
+    "a_set_ratio",
+    "diff_set_ratio",
+    "h_point_ratio",
+    "a_point_ratio",
+    "diff_point_ratio",
+    "h_set_diff_exp",
+    "a_set_diff_exp",
+    "diff_set_diff_exp",
+    "h_form_ewma",
+    "a_form_ewma",
+    "diff_form_ewma",
+    "h_streak",
+    "a_streak",
+    "diff_streak",
     "h2h_win_rate_h",
     "jornada_num",
 ]
@@ -335,6 +368,7 @@ if __name__ == "__main__":
     print(f"Features: {len(ROLLING_MATCH_COLS)}")
     # sanity: correlación de elo_win_prob_h con resultado
     from sklearn.metrics import roc_auc_score, log_loss
+
     mask = feats["temporada_inicio"] >= 2020
     y = feats.loc[mask, "gana_local"]
     p = feats.loc[mask, "elo_win_prob_h"].clip(1e-6, 1 - 1e-6)

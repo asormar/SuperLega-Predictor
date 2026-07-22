@@ -132,8 +132,11 @@ def build_set_features_v2(sp: pd.DataFrame) -> pd.DataFrame:
     if missing:
         print(f"  [WARN] {missing} matches without set sequences (skipped).")
 
-    ordered = (["partido_id", "set_num", "temporada_inicio"]
-               + list(SET_FEATURE_COLS) + ["ganador_set_local"])
+    ordered = (
+        ["partido_id", "set_num", "temporada_inicio"]
+        + list(SET_FEATURE_COLS)
+        + ["ganador_set_local"]
+    )
     df = pd.DataFrame(rows)
     return df[[c for c in ordered if c in df.columns]]
 
@@ -150,8 +153,10 @@ def main():
     df_t = df.copy()
     print("  Sets per season:")
     print(df_t.groupby("temporada_inicio")["set_num"].count().to_string())
-    print(f"  sets_h_antes range: [{df['sets_h_antes'].min()}, {df['sets_h_antes'].max()}] "
-          f"(expected max 2)")
+    print(
+        f"  sets_h_antes range: [{df['sets_h_antes'].min()}, {df['sets_h_antes'].max()}] "
+        f"(expected max 2)"
+    )
     print(f"  Target balance (ganador_set_local): {df['ganador_set_local'].mean():.3f}")
     print(f"  Schema columns ({len(df.columns)}): {list(df.columns)}")
 

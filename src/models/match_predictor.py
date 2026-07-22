@@ -13,11 +13,16 @@ from pathlib import Path
 from typing import Optional
 
 from sklearn.ensemble import (
-    RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier,
+    RandomForestClassifier,
+    GradientBoostingClassifier,
+    ExtraTreesClassifier,
 )
 from sklearn.metrics import (
-    accuracy_score, roc_auc_score, brier_score_loss,
-    classification_report, confusion_matrix,
+    accuracy_score,
+    roc_auc_score,
+    brier_score_loss,
+    classification_report,
+    confusion_matrix,
 )
 from sklearn.calibration import CalibratedClassifierCV
 
@@ -127,8 +132,10 @@ class MatchPredictor:
                 "confusion_matrix": confusion_matrix(y_val, y_pred),
             }
 
-            print(f"  {name:<22} {acc:>6.3f} {auc:>6.3f} {brier:>7.4f} "
-                  f"{precision:>6.3f} {recall:>6.3f}")
+            print(
+                f"  {name:<22} {acc:>6.3f} {auc:>6.3f} {brier:>7.4f} "
+                f"{precision:>6.3f} {recall:>6.3f}"
+            )
 
             if auc > best_auc:
                 best_auc = auc
@@ -140,9 +147,7 @@ class MatchPredictor:
         self.best_model = self.models[self.best_model_name]
 
         print(f"\n  Calibrando {self.best_model_name}...")
-        self.calibrated_model = CalibratedClassifierCV(
-            self.best_model, cv=3, method="isotonic"
-        )
+        self.calibrated_model = CalibratedClassifierCV(self.best_model, cv=3, method="isotonic")
         self.calibrated_model.fit(X_train, y_train)
 
         print("  Calibracion completada.")
@@ -169,7 +174,9 @@ class MatchPredictor:
             "auc_roc": roc_auc_score(y_test, y_prob),
             "brier_score": brier_score_loss(y_test, y_prob),
             "classification_report": classification_report(
-                y_test, y_pred, target_names=["Visitante", "Local"],
+                y_test,
+                y_pred,
+                target_names=["Visitante", "Local"],
             ),
             "confusion_matrix": confusion_matrix(y_test, y_pred),
         }
@@ -190,10 +197,12 @@ class MatchPredictor:
         else:
             return pd.DataFrame()
 
-        df = pd.DataFrame({
-            "feature": self.feature_names,
-            "importance": importances,
-        }).sort_values("importance", ascending=False)
+        df = pd.DataFrame(
+            {
+                "feature": self.feature_names,
+                "importance": importances,
+            }
+        ).sort_values("importance", ascending=False)
 
         return df
 

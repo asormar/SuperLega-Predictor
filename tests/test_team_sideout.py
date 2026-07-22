@@ -3,7 +3,6 @@
 import pytest
 
 from src.data.team_sideout import (
-    DEFAULT_SIDEOUT_RATE,
     get_sideout_rates,
     get_team_sideout,
     reset_cache,
@@ -52,9 +51,9 @@ class TestGetTeamSideout:
         perugia = get_team_sideout("Perugia")
         # Pick the current weak team with the most data (Grottazzolina)
         weak = get_team_sideout("Grottazzolina")
-        assert perugia > weak, (
-            f"Perugia {perugia:.3f} should sideout more than Grottazzolina {weak:.3f}"
-        )
+        assert (
+            perugia > weak
+        ), f"Perugia {perugia:.3f} should sideout more than Grottazzolina {weak:.3f}"
 
 
 class TestGetSideoutRates:
@@ -82,6 +81,7 @@ class TestCacheBehavior:
 
     def test_cache_is_built_lazily(self):
         import src.data.team_sideout as mod
+
         assert mod._SIDEOUT_CACHE is None
         get_team_sideout("Perugia")
         assert mod._SIDEOUT_CACHE is not None
@@ -92,9 +92,11 @@ class TestCacheBehavior:
         assert mod_has_cache()
         reset_cache()
         import src.data.team_sideout as mod
+
         assert mod._SIDEOUT_CACHE is None
 
 
 def mod_has_cache() -> bool:
     import src.data.team_sideout as mod
+
     return mod._SIDEOUT_CACHE is not None

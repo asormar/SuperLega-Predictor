@@ -4,19 +4,16 @@ Covers CSV loader invariants, normalize_team_name round-trip behaviour,
 and the UTF-8 encoding regression pin (fix #2 from Batch 1).
 """
 
-import pandas as pd
-import pytest
-
 from src.data.data_pipeline import (
     load_sets_partidos,
     load_match_features,
 )
 from src.data.team_mapper import normalize_team_name
 
-
 # ─────────────────────────────────────────────────────────────
 # CSV loader invariants
 # ─────────────────────────────────────────────────────────────
+
 
 class TestDataPipelineInvariants:
     """Smoke checks that the standard CSV loaders return non-empty data."""
@@ -50,6 +47,7 @@ class TestDataPipelineInvariants:
 # normalize_team_name round-trip
 # ─────────────────────────────────────────────────────────────
 
+
 class TestNormalizeRoundTrip:
     """normalize_team_name applied to canonical names is idempotent."""
 
@@ -63,14 +61,15 @@ class TestNormalizeRoundTrip:
         df = load_match_features()
         all_teams = set(df["local"].unique()) | set(df["visitante"].unique())
         for team in all_teams:
-            assert team == normalize_team_name(team), (
-                f"Pipeline left unnormalized team alias: {team!r}"
-            )
+            assert team == normalize_team_name(
+                team
+            ), f"Pipeline left unnormalized team alias: {team!r}"
 
 
 # ─────────────────────────────────────────────────────────────
 # UTF-8 encoding regression pin (fix #2)
 # ─────────────────────────────────────────────────────────────
+
 
 class TestEncodingPin:
     """Regression pin for Batch 1 encoding fix (fix #2)."""
@@ -79,6 +78,7 @@ class TestEncodingPin:
         """sets_partidos.csv is readable as UTF-8 without decode errors."""
         import codecs
         from pathlib import Path
+
         base = Path(__file__).resolve().parent.parent
         path = base / "DB" / "sets_partidos.csv"
         with codecs.open(str(path), "r", encoding="utf-8") as f:
@@ -88,6 +88,7 @@ class TestEncodingPin:
         """match_features.csv is readable as UTF-8 without decode errors."""
         import codecs
         from pathlib import Path
+
         base = Path(__file__).resolve().parent.parent
         path = base / "DB" / "features" / "match_features.csv"
         with codecs.open(str(path), "r", encoding="utf-8") as f:

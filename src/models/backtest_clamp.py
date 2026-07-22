@@ -32,7 +32,6 @@ import json
 import time
 import argparse
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from scipy.stats import spearmanr
@@ -60,15 +59,33 @@ RESULTS_PATH = MODELS_DIR / "backtest_clamp_results.json"
 
 # Primeros 12 equipos de _STRENGTH_DEFAULTS (main.py:156-159)
 TEAMS_12 = [
-    "Trento", "Perugia", "Verona", "Piacenza",
-    "Lube", "Milano", "Modena", "Monza",
-    "Padova", "Cisterna", "Taranto", "Grottazzolina",
+    "Trento",
+    "Perugia",
+    "Verona",
+    "Piacenza",
+    "Lube",
+    "Milano",
+    "Modena",
+    "Monza",
+    "Padova",
+    "Cisterna",
+    "Taranto",
+    "Grottazzolina",
 ]
 # Fuerza nominal asociada (fallback si el Elo no tiene datos)
 STRENGTH_DEFAULTS_12 = {
-    "Trento": 0.68, "Perugia": 0.65, "Verona": 0.60, "Piacenza": 0.58,
-    "Lube": 0.56, "Milano": 0.53, "Modena": 0.52, "Monza": 0.48,
-    "Padova": 0.47, "Cisterna": 0.45, "Taranto": 0.40, "Grottazzolina": 0.35,
+    "Trento": 0.68,
+    "Perugia": 0.65,
+    "Verona": 0.60,
+    "Piacenza": 0.58,
+    "Lube": 0.56,
+    "Milano": 0.53,
+    "Modena": 0.52,
+    "Monza": 0.48,
+    "Padova": 0.47,
+    "Cisterna": 0.45,
+    "Taranto": 0.40,
+    "Grottazzolina": 0.35,
 }
 
 # Config labels
@@ -118,6 +135,7 @@ def _get_points(std_entry):
 
 # ─── Nivel partido ──────────────────────────────────────────
 
+
 def _run_pair_level(
     teams: list[str],
     elo_dict: dict,
@@ -138,12 +156,11 @@ def _run_pair_level(
 
         # Para la config ON, construir team_features desde el feature builder
         team_feats = None
-        if (label in ("ON", "NEW") and set_predictor is not None
-                and feature_builder is not None):
+        if label in ("ON", "NEW") and set_predictor is not None and feature_builder is not None:
             try:
                 feat_df = feature_builder.build_features(home, away, jornada=11)
                 team_feats = SeasonSimulator._extract_set_team_features(feat_df)
-            except Exception as e:
+            except Exception:
                 pass  # si falla, corre sin team_features
 
         mc = simulator.monte_carlo_simulate(
@@ -169,6 +186,7 @@ def _run_pair_level(
 
 
 # ─── Nivel temporada ────────────────────────────────────────
+
 
 def _run_season_level(
     teams: list[str],
@@ -231,6 +249,7 @@ def _run_season_level(
 
 # ─── Time-box ──────────────────────────────────────────────
 
+
 def _project_time(
     n_sims: int,
     n_seeds: int,
@@ -247,9 +266,12 @@ def _project_time(
     # Coste de 1 partido MC
     t0 = time.perf_counter()
     sim.monte_carlo_simulate(
-        home_team=teams_short[0], away_team=teams_short[1],
-        home_strength=0.6, away_strength=0.5,
-        n_simulations=n_sims, seed=0,
+        home_team=teams_short[0],
+        away_team=teams_short[1],
+        home_strength=0.6,
+        away_strength=0.5,
+        n_simulations=n_sims,
+        seed=0,
     )
     t_pair = time.perf_counter() - t0
 
@@ -261,7 +283,9 @@ def _project_time(
     )
     t0 = time.perf_counter()
     ss_dummy.simulate_season(
-        teams=teams_short, half="first", seed=0,
+        teams=teams_short,
+        half="first",
+        seed=0,
         use_match_predictor=False,
     )
     t_season = time.perf_counter() - t0
@@ -279,15 +303,15 @@ def _project_time(
 
 def _print_projection(t_pair, t_season, projected, budget, n_sims_val, n_seeds_val):
     """Imprime la proyeccion de tiempo."""
-    print(f"\n  === TIME-BOX ===")
+    print("\n  === TIME-BOX ===")
     print(f"  Coste 1 partido MC (n_sims={n_sims_val}): {t_pair:.3f}s")
     print(f"  Coste 1 temporada ida:                {t_season:.3f}s")
-    print(f"  Proyeccion total (OFF+ON):             {projected:.0f}s "
-          f"({projected/60:.1f} min)")
+    print(f"  Proyeccion total (OFF+ON):             {projected:.0f}s " f"({projected/60:.1f} min)")
     print(f"  Presupuesto:                           {budget:.0f}s ({budget/60:.1f} min)")
 
 
 # ─── Tabla de resultados ───────────────────────────────────
+
 
 def _print_summary_table(results: dict, params: dict):
     """Imprime la tabla resumen en espanol."""
@@ -295,9 +319,11 @@ def _print_summary_table(results: dict, params: dict):
     print("  " + "=" * 80)
     print("  RESULTADOS BACKTEST DEL CLAMP")
     print("  " + "=" * 80)
-    header = (f"  {'Config':<8} {'|P_MC-p_elo|':<16} {'p95':<10} "
-              f"{'Spearman':<11} {'Std pos':<10} {'Std pts':<10} "
-              f"{'n_pairs':<9} {'n_seeds':<9} {'T(s)':<8}")
+    header = (
+        f"  {'Config':<8} {'|P_MC-p_elo|':<16} {'p95':<10} "
+        f"{'Spearman':<11} {'Std pos':<10} {'Std pts':<10} "
+        f"{'n_pairs':<9} {'n_seeds':<9} {'T(s)':<8}"
+    )
     print(header)
     print("  " + "-" * 90)
     for cfg in CONFIGS:
@@ -308,19 +334,24 @@ def _print_summary_table(results: dict, params: dict):
         pl = r["pair_level"]
         sl = r["season_level"]
         t = r["time_seconds"]
-        print(f"  {cfg:<8} {pl['mean_abs_diff']:<16.5f} {pl['p95_abs_diff']:<10.5f} "
-              f"{sl['spearman']:<11.4f} {sl['mean_std_position']:<10.4f} "
-              f"{sl['mean_std_total_points']:<10.4f} "
-              f"{pl['n_pairs']:<9} {sl['n_seeds']:<9} {t:<8.1f}")
+        print(
+            f"  {cfg:<8} {pl['mean_abs_diff']:<16.5f} {pl['p95_abs_diff']:<10.5f} "
+            f"{sl['spearman']:<11.4f} {sl['mean_std_position']:<10.4f} "
+            f"{sl['mean_std_total_points']:<10.4f} "
+            f"{pl['n_pairs']:<9} {sl['n_seeds']:<9} {t:<8.1f}"
+        )
     print("  " + "=" * 90)
-    print(f"  Parametros: n_sims={params['n_sims']}, "
-          f"n_seeds={params['n_seeds']}, "
-          f"budget={params['time_budget_s']}s")
+    print(
+        f"  Parametros: n_sims={params['n_sims']}, "
+        f"n_seeds={params['n_seeds']}, "
+        f"budget={params['time_budget_s']}s"
+    )
     print(f"  Decision: {results['decision']}")
     print()
 
 
 # ─── Main ──────────────────────────────────────────────────
+
 
 def main(
     n_sims: int = 200,
@@ -331,8 +362,7 @@ def main(
     print("=" * 70)
     print("  A5 — BACKTEST REPRODUCIBLE DEL CLAMP [0.20, 0.80]")
     print("=" * 70)
-    print(f"  n_sims={n_sims}  n_seeds={n_seeds}  "
-          f"time_budget={time_budget_s:.0f}s")
+    print(f"  n_sims={n_sims}  n_seeds={n_seeds}  " f"time_budget={time_budget_s:.0f}s")
     print(f"  Clamp estatico por defecto: {DEFAULT_CLAMP_RANGE}")
     print()
 
@@ -369,20 +399,22 @@ def main(
     actual_n_seeds = n_seeds
 
     if projected > time_budget_s:
-        print(f"\n  *** PROYECCION EXCEDE PRESUPUESTO ({projected:.0f}s > "
-              f"{time_budget_s:.0f}s) ***")
+        print(
+            f"\n  *** PROYECCION EXCEDE PRESUPUESTO ({projected:.0f}s > "
+            f"{time_budget_s:.0f}s) ***"
+        )
         # Primer intento: reducir parametros
         ns_new = max(50, n_sims // 4)
         nd_new = max(3, n_seeds // 3)
-        print(f"  Reduciendo: n_sims {n_sims}->{ns_new}, "
-              f"n_seeds {n_seeds}->{nd_new}")
+        print(f"  Reduciendo: n_sims {n_sims}->{ns_new}, " f"n_seeds {n_seeds}->{nd_new}")
 
         # Reproyectar con parametros reducidos
         t_pair2, t_season2, projected2 = _project_time(ns_new, nd_new)
         if projected2 > time_budget_s:
             print(f"  *** AUN EXCEDE ({projected2:.0f}s > {time_budget_s:.0f}s) ***")
-            print("  ABORTADO: la proyeccion supera el presupuesto incluso con "
-                  "parametros minimos.")
+            print(
+                "  ABORTADO: la proyeccion supera el presupuesto incluso con " "parametros minimos."
+            )
             print("  Usa --time-budget-s mayor o reduce manualmente n_sims/n_seeds.")
             abort_result = {
                 "aborted": True,
@@ -440,20 +472,31 @@ def main(
     print("  --- CONFIG: OFF (clamp estatico) ---")
     t0 = time.perf_counter()
     pair_off = _run_pair_level(
-        TEAMS_12, elo_dict, strengths,
-        n_sims, set_predictor=None, feature_builder=None, label="OFF",
+        TEAMS_12,
+        elo_dict,
+        strengths,
+        n_sims,
+        set_predictor=None,
+        feature_builder=None,
+        label="OFF",
     )
     season_off = _run_season_level(
-        TEAMS_12, strengths, elo_dict,
-        n_seeds, _fresh_season_sim(with_predictor=False), use_set_calibration=False,
+        TEAMS_12,
+        strengths,
+        elo_dict,
+        n_seeds,
+        _fresh_season_sim(with_predictor=False),
+        use_set_calibration=False,
     )
     t_off = time.perf_counter() - t0
-    print(f"  OFF: |P_MC-p_elo| media={pair_off['mean_abs_diff']:.5f} "
-          f"p95={pair_off['p95_abs_diff']:.5f} | "
-          f"spearman={season_off['spearman']:.4f} "
-          f"std_pos={season_off['mean_std_position']:.4f} "
-          f"std_pts={season_off['mean_std_total_points']:.4f} | "
-          f"tiempo={t_off:.1f}s")
+    print(
+        f"  OFF: |P_MC-p_elo| media={pair_off['mean_abs_diff']:.5f} "
+        f"p95={pair_off['p95_abs_diff']:.5f} | "
+        f"spearman={season_off['spearman']:.4f} "
+        f"std_pos={season_off['mean_std_position']:.4f} "
+        f"std_pts={season_off['mean_std_total_points']:.4f} | "
+        f"tiempo={t_off:.1f}s"
+    )
     results["config"]["OFF"] = {
         "pair_level": pair_off,
         "season_level": season_off,
@@ -464,21 +507,31 @@ def main(
     print("  --- CONFIG: ON (clamp adaptativo v2) ---")
     t0 = time.perf_counter()
     pair_on = _run_pair_level(
-        TEAMS_12, elo_dict, strengths,
-        n_sims, set_predictor=set_predictor_v2,
-        feature_builder=_fresh_builder(), label="ON",
+        TEAMS_12,
+        elo_dict,
+        strengths,
+        n_sims,
+        set_predictor=set_predictor_v2,
+        feature_builder=_fresh_builder(),
+        label="ON",
     )
     season_on = _run_season_level(
-        TEAMS_12, strengths, elo_dict,
-        n_seeds, _fresh_season_sim(with_predictor=True), use_set_calibration=True,
+        TEAMS_12,
+        strengths,
+        elo_dict,
+        n_seeds,
+        _fresh_season_sim(with_predictor=True),
+        use_set_calibration=True,
     )
     t_on = time.perf_counter() - t0
-    print(f"  ON:  |P_MC-p_elo| media={pair_on['mean_abs_diff']:.5f} "
-          f"p95={pair_on['p95_abs_diff']:.5f} | "
-          f"spearman={season_on['spearman']:.4f} "
-          f"std_pos={season_on['mean_std_position']:.4f} "
-          f"std_pts={season_on['mean_std_total_points']:.4f} | "
-          f"tiempo={t_on:.1f}s")
+    print(
+        f"  ON:  |P_MC-p_elo| media={pair_on['mean_abs_diff']:.5f} "
+        f"p95={pair_on['p95_abs_diff']:.5f} | "
+        f"spearman={season_on['spearman']:.4f} "
+        f"std_pos={season_on['mean_std_position']:.4f} "
+        f"std_pts={season_on['mean_std_total_points']:.4f} | "
+        f"tiempo={t_on:.1f}s"
+    )
     results["config"]["ON"] = {
         "pair_level": pair_on,
         "season_level": season_on,
@@ -493,21 +546,31 @@ def main(
     print("  --- CONFIG: NEW (contract path, A3) ---")
     t0 = time.perf_counter()
     pair_new = _run_pair_level(
-        TEAMS_12, elo_dict, strengths,
-        n_sims, set_predictor=set_predictor_v2,
-        feature_builder=_fresh_builder(), label="NEW",
+        TEAMS_12,
+        elo_dict,
+        strengths,
+        n_sims,
+        set_predictor=set_predictor_v2,
+        feature_builder=_fresh_builder(),
+        label="NEW",
     )
     season_new = _run_season_level(
-        TEAMS_12, strengths, elo_dict,
-        n_seeds, _fresh_season_sim(with_predictor=True), use_set_calibration=True,
+        TEAMS_12,
+        strengths,
+        elo_dict,
+        n_seeds,
+        _fresh_season_sim(with_predictor=True),
+        use_set_calibration=True,
     )
     t_new = time.perf_counter() - t0
-    print(f"  NEW: |P_MC-p_elo| media={pair_new['mean_abs_diff']:.5f} "
-          f"p95={pair_new['p95_abs_diff']:.5f} | "
-          f"spearman={season_new['spearman']:.4f} "
-          f"std_pos={season_new['mean_std_position']:.4f} "
-          f"std_pts={season_new['mean_std_total_points']:.4f} | "
-          f"tiempo={t_new:.1f}s")
+    print(
+        f"  NEW: |P_MC-p_elo| media={pair_new['mean_abs_diff']:.5f} "
+        f"p95={pair_new['p95_abs_diff']:.5f} | "
+        f"spearman={season_new['spearman']:.4f} "
+        f"std_pos={season_new['mean_std_position']:.4f} "
+        f"std_pts={season_new['mean_std_total_points']:.4f} | "
+        f"tiempo={t_new:.1f}s"
+    )
     results["config"]["NEW"] = {
         "pair_level": pair_new,
         "season_level": season_new,
@@ -530,12 +593,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="A5 — Backtest reproducible del clamp del simulador",
     )
-    parser.add_argument("--n-sims", type=int, default=200,
-                        help="Simulaciones Monte Carlo por partido (default: 200)")
-    parser.add_argument("--n-seeds", type=int, default=10,
-                        help="Semillas para nivel temporada (default: 10)")
-    parser.add_argument("--time-budget-s", type=float, default=900.0,
-                        help="Presupuesto de tiempo en segundos (default: 900)")
+    parser.add_argument(
+        "--n-sims",
+        type=int,
+        default=200,
+        help="Simulaciones Monte Carlo por partido (default: 200)",
+    )
+    parser.add_argument(
+        "--n-seeds", type=int, default=10, help="Semillas para nivel temporada (default: 10)"
+    )
+    parser.add_argument(
+        "--time-budget-s",
+        type=float,
+        default=900.0,
+        help="Presupuesto de tiempo en segundos (default: 900)",
+    )
     args = parser.parse_args()
 
     result = main(

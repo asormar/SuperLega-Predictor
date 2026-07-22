@@ -13,84 +13,128 @@ from typing import Optional
 
 TEAM_ALIASES = {
     "Modena": [
-        "Modena", "Azimut Modena", "Azimut Leo Shoes Modena",
-        "Leo Shoes Modena", "ModenaModena", "Valsa Group Modena",
+        "Modena",
+        "Azimut Modena",
+        "Azimut Leo Shoes Modena",
+        "Leo Shoes Modena",
+        "ModenaModena",
+        "Valsa Group Modena",
         "Modena Volley",
     ],
     "Trento": [
-        "Trento", "Trentino", "Diatec Trentino", "Itas Trentino",
-        "TrentinoTrentino", "Trentino Volley",
+        "Trento",
+        "Trentino",
+        "Diatec Trentino",
+        "Itas Trentino",
+        "TrentinoTrentino",
+        "Trentino Volley",
     ],
     "Perugia": [
-        "Perugia", "Sir Safety Conad Perugia", "Sir Safety Perugia",
-        "Sir Sicoma Monini Perugia", "PerugiaPerugia",
-        "Sir Safety Susa Perugia", "Sir Susa Vim Perugia",
+        "Perugia",
+        "Sir Safety Conad Perugia",
+        "Sir Safety Perugia",
+        "Sir Sicoma Monini Perugia",
+        "PerugiaPerugia",
+        "Sir Safety Susa Perugia",
+        "Sir Susa Vim Perugia",
     ],
     "Lube": [
-        "Lube", "Lube Civitanova", "Cucine Lube Civitanova",
-        "Lube CivitanovaLube Civitanova", "Lube Banca Marche Civitanova",
+        "Lube",
+        "Lube Civitanova",
+        "Cucine Lube Civitanova",
+        "Lube CivitanovaLube Civitanova",
+        "Lube Banca Marche Civitanova",
     ],
     "Milano": [
-        "Milano", "Allianz Milano", "Powervolley Milano",
-        "MilanoMilano", "Revivre Milano",
+        "Milano",
+        "Allianz Milano",
+        "Powervolley Milano",
+        "MilanoMilano",
+        "Revivre Milano",
     ],
     "Monza": [
-        "Monza", "Gi Group Monza", "Vero Volley Monza",
+        "Monza",
+        "Gi Group Monza",
+        "Vero Volley Monza",
         "MonzaMonza",
     ],
     "Verona": [
-        "Verona", "VeronaVerona", "Calzedonia Verona",
-        "Rana Verona", "WithU Verona",
+        "Verona",
+        "VeronaVerona",
+        "Calzedonia Verona",
+        "Rana Verona",
+        "WithU Verona",
     ],
     "Padova": [
-        "Padova", "Kioene Padova", "PadovaPadova",
+        "Padova",
+        "Kioene Padova",
+        "PadovaPadova",
         "Pallavolo Padova",
     ],
     "Piacenza": [
-        "Piacenza", "Gas Sales Piacenza", "PiacenzaPiacenza",
+        "Piacenza",
+        "Gas Sales Piacenza",
+        "PiacenzaPiacenza",
     ],
     "Piacenza Copra": [
-        "Piacenza Copra", "Copra Elior Piacenza",
+        "Piacenza Copra",
+        "Copra Elior Piacenza",
     ],
     "Cisterna": [
-        "Cisterna", "CisternaCisterna", "Top Volley Cisterna",
+        "Cisterna",
+        "CisternaCisterna",
+        "Top Volley Cisterna",
         "Cisterna Volley",
     ],
     "Cisterna Top Volley": [
-        "Cisterna Top Volley", "Top Volley Latina",
+        "Cisterna Top Volley",
+        "Top Volley Latina",
     ],
     "Ravenna": [
-        "Ravenna", "RavennaRavenna", "Consar Ravenna",
+        "Ravenna",
+        "RavennaRavenna",
+        "Consar Ravenna",
     ],
     "Vibo Valentia": [
-        "Vibo Valentia", "Vibo ValentiaVibo Valentia",
+        "Vibo Valentia",
+        "Vibo ValentiaVibo Valentia",
         "Tonno Callipo Vibo Valentia",
     ],
     "Taranto": [
-        "Taranto", "TarantoTaranto", "Gioiella Prisma Taranto",
+        "Taranto",
+        "TarantoTaranto",
+        "Gioiella Prisma Taranto",
     ],
     "Grottazzolina": [
-        "Grottazzolina", "GrottazzolinaGrottazzolina",
-        "Videx Grottazzolina", "Yuasa Battery Grottazzolina",
+        "Grottazzolina",
+        "GrottazzolinaGrottazzolina",
+        "Videx Grottazzolina",
+        "Yuasa Battery Grottazzolina",
     ],
     "Sora": [
-        "Sora", "Globo Banca Popolare Sora",
+        "Sora",
+        "Globo Banca Popolare Sora",
     ],
     "Siena": [
-        "Siena", "Emma Villas Siena",
+        "Siena",
+        "Emma Villas Siena",
     ],
     "Cuneo": [
-        "Cuneo", "BAM Acqua San Bernardo Cuneo",
+        "Cuneo",
+        "BAM Acqua San Bernardo Cuneo",
     ],
     "Castellana Grotte": [
-        "Castellana Grotte", "Castellana Grotte New Mater",
+        "Castellana Grotte",
+        "Castellana Grotte New Mater",
         "BCC Castellana Grotte",
     ],
     "Molfetta": [
-        "Molfetta", "Exprivia Molfetta",
+        "Molfetta",
+        "Exprivia Molfetta",
     ],
     "Acicastello": [
-        "Acicastello", "Papiro Catania",
+        "Acicastello",
+        "Papiro Catania",
     ],
 }
 
@@ -116,6 +160,7 @@ _build_lookup()
 # ─────────────────────────────────────────────────────────────
 # Funciones públicas
 # ─────────────────────────────────────────────────────────────
+
 
 def normalize_team_name(raw_name: str) -> str:
     """
@@ -193,34 +238,89 @@ def get_superliga_teams(season: str = "2024/2025") -> list[str]:
     # Equipos por temporada (solo SuperLega, no Serie A2)
     SUPERLIGA_SEASONS = {
         "2024/2025": [
-            "Trento", "Perugia", "Piacenza", "Verona", "Lube",
-            "Milano", "Modena", "Monza", "Cisterna", "Padova",
-            "Taranto", "Grottazzolina",
+            "Trento",
+            "Perugia",
+            "Piacenza",
+            "Verona",
+            "Lube",
+            "Milano",
+            "Modena",
+            "Monza",
+            "Cisterna",
+            "Padova",
+            "Taranto",
+            "Grottazzolina",
         ],
         "2023/2024": [
-            "Trento", "Perugia", "Piacenza", "Verona", "Lube",
-            "Milano", "Modena", "Monza", "Cisterna", "Padova",
-            "Taranto", "Grottazzolina",
+            "Trento",
+            "Perugia",
+            "Piacenza",
+            "Verona",
+            "Lube",
+            "Milano",
+            "Modena",
+            "Monza",
+            "Cisterna",
+            "Padova",
+            "Taranto",
+            "Grottazzolina",
         ],
         "2022/2023": [
-            "Trento", "Perugia", "Piacenza", "Verona", "Lube",
-            "Milano", "Modena", "Monza", "Cisterna", "Padova",
-            "Taranto", "Acicastello",
+            "Trento",
+            "Perugia",
+            "Piacenza",
+            "Verona",
+            "Lube",
+            "Milano",
+            "Modena",
+            "Monza",
+            "Cisterna",
+            "Padova",
+            "Taranto",
+            "Acicastello",
         ],
         "2021/2022": [
-            "Trento", "Perugia", "Piacenza", "Verona", "Lube",
-            "Milano", "Modena", "Monza", "Cisterna Top Volley",
-            "Padova", "Siena",
+            "Trento",
+            "Perugia",
+            "Piacenza",
+            "Verona",
+            "Lube",
+            "Milano",
+            "Modena",
+            "Monza",
+            "Cisterna Top Volley",
+            "Padova",
+            "Siena",
         ],
         "2020/2021": [
-            "Trento", "Perugia", "Piacenza", "Verona", "Lube",
-            "Milano", "Modena", "Monza", "Cisterna Top Volley",
-            "Padova", "Ravenna", "Vibo Valentia", "Taranto",
+            "Trento",
+            "Perugia",
+            "Piacenza",
+            "Verona",
+            "Lube",
+            "Milano",
+            "Modena",
+            "Monza",
+            "Cisterna Top Volley",
+            "Padova",
+            "Ravenna",
+            "Vibo Valentia",
+            "Taranto",
         ],
         "2019/2020": [
-            "Trento", "Perugia", "Piacenza", "Verona", "Lube",
-            "Milano", "Modena", "Monza", "Cisterna Top Volley",
-            "Padova", "Ravenna", "Vibo Valentia", "Sora",
+            "Trento",
+            "Perugia",
+            "Piacenza",
+            "Verona",
+            "Lube",
+            "Milano",
+            "Modena",
+            "Monza",
+            "Cisterna Top Volley",
+            "Padova",
+            "Ravenna",
+            "Vibo Valentia",
+            "Sora",
         ],
     }
     return SUPERLIGA_SEASONS.get(season, SUPERLIGA_SEASONS["2024/2025"])
@@ -228,20 +328,41 @@ def get_superliga_teams(season: str = "2024/2025") -> list[str]:
 
 # Equipos de la temporada actual (2024/2025)
 _CURRENT_SEASON_TEAMS = {
-    "Trento", "Perugia", "Piacenza", "Verona", "Lube",
-    "Milano", "Modena", "Monza", "Cisterna", "Padova",
-    "Taranto", "Grottazzolina",
+    "Trento",
+    "Perugia",
+    "Piacenza",
+    "Verona",
+    "Lube",
+    "Milano",
+    "Modena",
+    "Monza",
+    "Cisterna",
+    "Padova",
+    "Taranto",
+    "Grottazzolina",
 }
 
 # Todos los equipos viables: tienen ≥20 partidos en match_features
 # + stats de equipo + datos de jugadores
 _ALL_VIABLE_TEAMS = [
     # Actuales (temporada 2024/2025)
-    "Trento", "Perugia", "Piacenza", "Verona", "Lube",
-    "Milano", "Modena", "Monza", "Cisterna", "Padova",
-    "Taranto", "Grottazzolina",
+    "Trento",
+    "Perugia",
+    "Piacenza",
+    "Verona",
+    "Lube",
+    "Milano",
+    "Modena",
+    "Monza",
+    "Cisterna",
+    "Padova",
+    "Taranto",
+    "Grottazzolina",
     # Históricos (con datos completos)
-    "Siena", "Ravenna", "Acicastello", "Cuneo",
+    "Siena",
+    "Ravenna",
+    "Acicastello",
+    "Cuneo",
 ]
 
 
@@ -259,10 +380,12 @@ def get_all_viable_teams() -> list[dict]:
     """
     teams = []
     for name in _ALL_VIABLE_TEAMS:
-        teams.append({
-            "nombre": name,
-            "categoria": "actual" if name in _CURRENT_SEASON_TEAMS else "historico",
-        })
+        teams.append(
+            {
+                "nombre": name,
+                "categoria": "actual" if name in _CURRENT_SEASON_TEAMS else "historico",
+            }
+        )
     return teams
 
 

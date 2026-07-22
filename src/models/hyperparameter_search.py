@@ -19,9 +19,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
 import optuna
-import pandas as pd
 import xgboost as xgb
 from sklearn.ensemble import ExtraTreesClassifier
 from sklearn.metrics import roc_auc_score
@@ -32,9 +30,13 @@ sys.path.insert(0, str(BASE_DIR))
 
 from src.data.data_pipeline import run_pipeline
 from src.data.feature_store import (
-    prepare_set_data, prepare_match_data,
-    enrich_with_team_stats, compute_roster_features,
-    MATCH_FEATURE_COLS, ENRICHED_MATCH_COLS, ROSTER_BASIC_COLS,
+    prepare_set_data,
+    prepare_match_data,
+    enrich_with_team_stats,
+    compute_roster_features,
+    MATCH_FEATURE_COLS,
+    ENRICHED_MATCH_COLS,
+    ROSTER_BASIC_COLS,
 )
 
 MODELS_DIR = BASE_DIR / "models"
@@ -71,6 +73,7 @@ DEFAULT_MATCH_XGBOOST = {
 # Default-baseline evaluation
 # ─────────────────────────────────────────────────────────────
 
+
 def _evaluate_default_set(X_train, y_train, X_val, y_val):
     model = ExtraTreesClassifier(**DEFAULT_SET_EXTRATREES)
     model.fit(X_train, y_train)
@@ -89,15 +92,14 @@ def _evaluate_default_match(X_train, y_train, X_val, y_val):
 # Optuna objectives
 # ─────────────────────────────────────────────────────────────
 
+
 def _objective_set_extratrees(trial, X_train, y_train, X_val, y_val):
     params = {
         "n_estimators": trial.suggest_int("n_estimators", 100, 500),
         "max_depth": trial.suggest_int("max_depth", 4, 20),
         "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 20),
         "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
-        "max_features": trial.suggest_categorical(
-            "max_features", ["sqrt", "log2", None]
-        ),
+        "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", None]),
         "random_state": 42,
         "n_jobs": -1,
     }
@@ -130,6 +132,7 @@ def _objective_match_xgboost(trial, X_train, y_train, X_val, y_val):
 # Main entry point
 # ─────────────────────────────────────────────────────────────
 
+
 def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
     """
     Run Optuna search for SET (ExtraTrees) and MATCH (XGBoost) champion models.
@@ -156,7 +159,8 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
     match_df = enrich_with_team_stats(match_df, data["team_stats"])
     match_df = compute_roster_features(match_df, data["player_stats"])
     match_cols = [
-        c for c in MATCH_FEATURE_COLS + ENRICHED_MATCH_COLS + ROSTER_BASIC_COLS
+        c
+        for c in MATCH_FEATURE_COLS + ENRICHED_MATCH_COLS + ROSTER_BASIC_COLS
         if c in match_df.columns
     ]
     print(f"  [match] {len(match_cols)} features (enriched = base + team stats + roster)")
@@ -171,7 +175,10 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
     print("\n[3/4] Searching ExtraTrees for SET...")
     t0 = time.time()
     default_auc_set = _evaluate_default_set(
-        X_set["train"], y_set["train"], X_set["val"], y_set["val"],
+        X_set["train"],
+        y_set["train"],
+        X_set["val"],
+        y_set["val"],
     )
     print(f"  Default AUC (val 2023): {default_auc_set:.4f}")
 
@@ -181,7 +188,11 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
     )
     study_set.optimize(
         lambda trial: _objective_set_extratrees(
-            trial, X_set["train"], y_set["train"], X_set["val"], y_set["val"],
+            trial,
+            X_set["train"],
+            y_set["train"],
+            X_set["val"],
+            y_set["val"],
         ),
         n_trials=n_trials,
         timeout=timeout_sec,
@@ -189,8 +200,10 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
     )
     elapsed_set = time.time() - t0
     print(f"  Optuna AUC  (val 2023): {study_set.best_value:.4f}")
-    print(f"  Delta: {study_set.best_value - default_auc_set:+.4f}  "
-          f"({len(study_set.trials)} trials, {elapsed_set:.1f}s)")
+    print(
+        f"  Delta: {study_set.best_value - default_auc_set:+.4f}  "
+        f"({len(study_set.trials)} trials, {elapsed_set:.1f}s)"
+    )
     results["set_extratrees"] = {
         "default_auc": default_auc_set,
         "optuna_auc": float(study_set.best_value),
@@ -202,7 +215,10 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
     print("\n[4/4] Searching XGBoost for MATCH...")
     t0 = time.time()
     default_auc_match = _evaluate_default_match(
-        X_match["train"], y_match["train"], X_match["val"], y_match["val"],
+        X_match["train"],
+        y_match["train"],
+        X_match["val"],
+        y_match["val"],
     )
     print(f"  Default AUC (val 2023): {default_auc_match:.4f}")
 
@@ -212,7 +228,11 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
     )
     study_match.optimize(
         lambda trial: _objective_match_xgboost(
-            trial, X_match["train"], y_match["train"], X_match["val"], y_match["val"],
+            trial,
+            X_match["train"],
+            y_match["train"],
+            X_match["val"],
+            y_match["val"],
         ),
         n_trials=n_trials,
         timeout=timeout_sec,
@@ -220,8 +240,10 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
     )
     elapsed_match = time.time() - t0
     print(f"  Optuna AUC  (val 2023): {study_match.best_value:.4f}")
-    print(f"  Delta: {study_match.best_value - default_auc_match:+.4f}  "
-          f"({len(study_match.trials)} trials, {elapsed_match:.1f}s)")
+    print(
+        f"  Delta: {study_match.best_value - default_auc_match:+.4f}  "
+        f"({len(study_match.trials)} trials, {elapsed_match:.1f}s)"
+    )
     results["match_xgboost"] = {
         "default_auc": default_auc_match,
         "optuna_auc": float(study_match.best_value),
@@ -247,8 +269,10 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
             verdict = "marginal (|delta| <= 0.01)"
         else:
             verdict = "DEGRADED (<-0.01 AUC)"
-        print(f"  {name:<22} {r['default_auc']:.4f} -> {r['optuna_auc']:.4f}  "
-              f"({d:+.4f})  {verdict}")
+        print(
+            f"  {name:<22} {r['default_auc']:.4f} -> {r['optuna_auc']:.4f}  "
+            f"({d:+.4f})  {verdict}"
+        )
 
     return results
 
@@ -256,6 +280,7 @@ def run_search(n_trials: int = 30, timeout_sec: int = 600) -> dict:
 # ─────────────────────────────────────────────────────────────
 # Public loader (used by set_predictor / match_predictor at train time)
 # ─────────────────────────────────────────────────────────────
+
 
 def load_best_params(model_key: Optional[str] = None):
     """

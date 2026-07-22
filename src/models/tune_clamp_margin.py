@@ -54,6 +54,7 @@ BLEND_GRID = [0.5, 0.7, 0.9, 1.0]
 def _elo_to_strength(elo: float) -> float:
     """Misma conversion que usa backtest_clamp."""
     from src.data.rolling_features import elo_to_strength
+
     return elo_to_strength(elo)
 
 
@@ -71,8 +72,9 @@ def _setup():
     return elo_dict, strengths, set_predictor_v2, match_predictor
 
 
-def _measure(elo_dict, strengths, set_predictor, match_predictor,
-             n_sims: int, n_seeds: int) -> dict:
+def _measure(
+    elo_dict, strengths, set_predictor, match_predictor, n_sims: int, n_seeds: int
+) -> dict:
     """Mide nivel-par y nivel-temporada con la config actual de constantes.
 
     IMPORTANTE (gotcha documentado en el plan, E1): `RuntimeFeatureBuilder`
@@ -96,22 +98,32 @@ def _measure(elo_dict, strengths, set_predictor, match_predictor,
     )
 
     pair = _run_pair_level(
-        TEAMS_12, elo_dict, strengths, n_sims,
-        set_predictor=set_predictor, feature_builder=feature_builder, label="NEW",
+        TEAMS_12,
+        elo_dict,
+        strengths,
+        n_sims,
+        set_predictor=set_predictor,
+        feature_builder=feature_builder,
+        label="NEW",
     )
     # El nivel-temporada se mide con un builder limpio aparte, para que las
     # temporadas simuladas no contaminen tampoco al nivel-par de arriba.
     fb_season = RuntimeFeatureBuilder(initial_elo=elo_dict)
     season_sim.feature_builder = fb_season
     season = _run_season_level(
-        TEAMS_12, strengths, elo_dict, n_seeds, season_sim,
+        TEAMS_12,
+        strengths,
+        elo_dict,
+        n_seeds,
+        season_sim,
         use_set_calibration=True,
     )
     return {"pair_level": pair, "season_level": season}
 
 
-def run(what: str = "margin", n_sims: int = 100, n_seeds: int = 5,
-        time_budget_s: float = 1800.0) -> dict:
+def run(
+    what: str = "margin", n_sims: int = 100, n_seeds: int = 5, time_budget_s: float = 1800.0
+) -> dict:
     """Barre el grid pedido y devuelve las metricas por valor."""
     grid = MARGIN_GRID if what == "margin" else BLEND_GRID
     label = "CLAMP_MARGIN_POINT" if what == "margin" else "SET_BLEND_WEIGHT_ELO"
@@ -128,12 +140,13 @@ def run(what: str = "margin", n_sims: int = 100, n_seeds: int = 5,
     # Time-box (Guardrail 8): medir UNA config antes de lanzar el grid.
     t0 = time.perf_counter()
     original = getattr(C, label)
-    first = _measure(elo_dict, strengths, set_predictor, match_predictor,
-                     n_sims, n_seeds)
+    first = _measure(elo_dict, strengths, set_predictor, match_predictor, n_sims, n_seeds)
     t_one = time.perf_counter() - t0
     projected = t_one * len(grid)
-    print(f"  [time-box] 1 config: {t_one:.0f}s -> proyeccion grid "
-          f"~{projected:.0f}s ({projected/60:.1f} min)")
+    print(
+        f"  [time-box] 1 config: {t_one:.0f}s -> proyeccion grid "
+        f"~{projected:.0f}s ({projected/60:.1f} min)"
+    )
     if projected > time_budget_s:
         print(f"  ABORTADO: proyeccion supera el presupuesto {time_budget_s:.0f}s.")
         return {"aborted": True, "projected_seconds": round(projected, 1)}
@@ -147,13 +160,14 @@ def run(what: str = "margin", n_sims: int = 100, n_seeds: int = 5,
         setattr(sim_mod, label, val)
         print(f"  --- {label} = {val} ---")
         t = time.perf_counter()
-        m = _measure(elo_dict, strengths, set_predictor, match_predictor,
-                     n_sims, n_seeds)
+        m = _measure(elo_dict, strengths, set_predictor, match_predictor, n_sims, n_seeds)
         dt = time.perf_counter() - t
         sl, pl = m["season_level"], m["pair_level"]
-        print(f"      spearman={sl['spearman']:.4f}  "
-              f"std_pts={sl['mean_std_total_points']:.4f}  "
-              f"|P_MC-p_elo|={pl['mean_abs_diff']:.4f}  ({dt:.0f}s)")
+        print(
+            f"      spearman={sl['spearman']:.4f}  "
+            f"std_pts={sl['mean_std_total_points']:.4f}  "
+            f"|P_MC-p_elo|={pl['mean_abs_diff']:.4f}  ({dt:.0f}s)"
+        )
         results[str(val)] = {**m, "time_seconds": round(dt, 1)}
 
     # Restaurar
@@ -164,12 +178,12 @@ def run(what: str = "margin", n_sims: int = 100, n_seeds: int = 5,
     # por menor |P_MC - p_elo|.
     best = min(
         results.items(),
-        key=lambda kv: (kv[1]["season_level"]["spearman"],
-                        kv[1]["pair_level"]["mean_abs_diff"]),
+        key=lambda kv: (kv[1]["season_level"]["spearman"], kv[1]["pair_level"]["mean_abs_diff"]),
     )
     print()
-    print(f"  GANADOR: {label} = {best[0]}  "
-          f"(spearman={best[1]['season_level']['spearman']:.4f})")
+    print(
+        f"  GANADOR: {label} = {best[0]}  " f"(spearman={best[1]['season_level']['spearman']:.4f})"
+    )
 
     out = {
         "parameter": label,

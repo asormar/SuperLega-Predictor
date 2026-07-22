@@ -14,12 +14,17 @@ from typing import Optional
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import (
-    RandomForestClassifier, GradientBoostingClassifier, ExtraTreesClassifier,
+    RandomForestClassifier,
+    GradientBoostingClassifier,
+    ExtraTreesClassifier,
 )
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
-    accuracy_score, roc_auc_score, brier_score_loss,
-    classification_report, confusion_matrix,
+    accuracy_score,
+    roc_auc_score,
+    brier_score_loss,
+    classification_report,
+    confusion_matrix,
 )
 from sklearn.calibration import CalibratedClassifierCV
 
@@ -33,6 +38,7 @@ MODELS_DIR = BASE_DIR / "models"
 # ─────────────────────────────────────────────────────────────
 # Definición de modelos candidatos
 # ─────────────────────────────────────────────────────────────
+
 
 def get_candidate_models() -> dict:
     """Devuelve un diccionario de modelos candidatos para comparar."""
@@ -93,6 +99,7 @@ def get_candidate_models() -> dict:
 # ─────────────────────────────────────────────────────────────
 # Clase principal del predictor
 # ─────────────────────────────────────────────────────────────
+
 
 class SetPredictor:
     """
@@ -165,8 +172,10 @@ class SetPredictor:
                 "confusion_matrix": confusion_matrix(y_val, y_pred),
             }
 
-            print(f"  {name:<22} {acc:>6.3f} {auc:>6.3f} {brier:>7.4f} "
-                  f"{precision:>6.3f} {recall:>6.3f}")
+            print(
+                f"  {name:<22} {acc:>6.3f} {auc:>6.3f} {brier:>7.4f} "
+                f"{precision:>6.3f} {recall:>6.3f}"
+            )
 
             if auc > best_auc:
                 best_auc = auc
@@ -180,14 +189,10 @@ class SetPredictor:
         # Calibrar el mejor modelo para probabilidades bien calibradas
         print(f"\n  Calibrando {self.best_model_name}...")
         if self.best_model_name == "LogisticRegression":
-            self.calibrated_model = CalibratedClassifierCV(
-                self.best_model, cv=3, method="isotonic"
-            )
+            self.calibrated_model = CalibratedClassifierCV(self.best_model, cv=3, method="isotonic")
             self.calibrated_model.fit(X_train_scaled, y_train)
         else:
-            self.calibrated_model = CalibratedClassifierCV(
-                self.best_model, cv=3, method="isotonic"
-            )
+            self.calibrated_model = CalibratedClassifierCV(self.best_model, cv=3, method="isotonic")
             self.calibrated_model.fit(X_train, y_train)
 
         print("  Calibracion completada.")
@@ -218,7 +223,9 @@ class SetPredictor:
             "auc_roc": roc_auc_score(y_test, y_prob),
             "brier_score": brier_score_loss(y_test, y_prob),
             "classification_report": classification_report(
-                y_test, y_pred, target_names=["Visitante", "Local"],
+                y_test,
+                y_pred,
+                target_names=["Visitante", "Local"],
             ),
             "confusion_matrix": confusion_matrix(y_test, y_pred),
         }
@@ -233,8 +240,7 @@ class SetPredictor:
 
     def get_feature_importance(self) -> pd.DataFrame:
         """Devuelve la importancia de las features del mejor modelo."""
-        tree_models = ["XGBoost", "LightGBM", "RandomForest",
-                       "ExtraTrees", "GradientBoosting"]
+        tree_models = ["XGBoost", "LightGBM", "RandomForest", "ExtraTrees", "GradientBoosting"]
         if self.best_model_name in tree_models:
             importances = self.best_model.feature_importances_
         elif self.best_model_name == "LogisticRegression":
@@ -242,10 +248,12 @@ class SetPredictor:
         else:
             return pd.DataFrame()
 
-        df = pd.DataFrame({
-            "feature": self.feature_names,
-            "importance": importances,
-        }).sort_values("importance", ascending=False)
+        df = pd.DataFrame(
+            {
+                "feature": self.feature_names,
+                "importance": importances,
+            }
+        ).sort_values("importance", ascending=False)
 
         return df
 

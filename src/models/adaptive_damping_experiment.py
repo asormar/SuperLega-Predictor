@@ -31,8 +31,6 @@ import time
 from collections import Counter
 from pathlib import Path
 
-import pandas as pd
-
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
@@ -90,8 +88,10 @@ def run_experiment(n_mc: int = 100) -> dict:
         n_mc: number of Monte Carlo runs per strategy.
     """
     print("=" * 70)
-    print(f"  ADAPTIVE DAMPING EXPERIMENT — fixed 0.5 vs adaptive "
-          f"({ADAPTIVE_DAMPING_START}->{ADAPTIVE_DAMPING_END})")
+    print(
+        f"  ADAPTIVE DAMPING EXPERIMENT — fixed 0.5 vs adaptive "
+        f"({ADAPTIVE_DAMPING_START}->{ADAPTIVE_DAMPING_END})"
+    )
     print("=" * 70)
     print(f"  Teams: {len(CURRENT_SUPERLEGA)} ({', '.join(CURRENT_SUPERLEGA[:4])}...)")
     print(f"  Total jornadas: {SUPERLEGA_TOTAL_JORNADAS}")
@@ -111,7 +111,9 @@ def run_experiment(n_mc: int = 100) -> dict:
     fixed_dist = _distribution(fixed_counts)
     print(f"  Fixed:  {fixed_dist}  ({fixed_elapsed:.1f}s)")
 
-    print(f"[2/3] Running adaptive damping ({ADAPTIVE_DAMPING_START} -> {ADAPTIVE_DAMPING_END} linear)...")
+    print(
+        f"[2/3] Running adaptive damping ({ADAPTIVE_DAMPING_START} -> {ADAPTIVE_DAMPING_END} linear)..."
+    )
     adaptive_counts, adaptive_elapsed = aggregate(damping=adaptive_damping)
     adaptive_dist = _distribution(adaptive_counts)
     print(f"  Adapt:  {adaptive_dist}  ({adaptive_elapsed:.1f}s)")
@@ -130,10 +132,12 @@ def run_experiment(n_mc: int = 100) -> dict:
     reference = {"3-0%": 40.0, "3-1%": 30.0, "3-2%": 30.0}
     fixed_l1 = sum(abs(fixed_dist[k] - reference[k]) for k in reference)
     adaptive_l1 = sum(abs(adaptive_dist[k] - reference[k]) for k in reference)
-    print(f"\n  Distance to ~40/30/30 reference (L1 sum):")
+    print("\n  Distance to ~40/30/30 reference (L1 sum):")
     print(f"    Fixed:   {fixed_l1:.2f}")
     print(f"    Adaptive: {adaptive_l1:.2f}")
-    closer = "adaptive" if adaptive_l1 < fixed_l1 else ("fixed" if fixed_l1 < adaptive_l1 else "tie")
+    closer = (
+        "adaptive" if adaptive_l1 < fixed_l1 else ("fixed" if fixed_l1 < adaptive_l1 else "tie")
+    )
     print(f"    Closer to reference: {closer}")
 
     if closer == "adaptive" and abs(adaptive_l1 - fixed_l1) > 1.0:
@@ -174,6 +178,7 @@ def run_experiment(n_mc: int = 100) -> dict:
 
 if __name__ == "__main__":
     import argparse
+
     p = argparse.ArgumentParser()
     p.add_argument("--n-mc", type=int, default=100, help="MC runs per strategy (default 100)")
     args = p.parse_args()

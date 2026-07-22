@@ -8,19 +8,18 @@ de una temporada de la SuperLega.
 import itertools
 import random
 from typing import Optional
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from src.simulation.simulator import MatchSimulator, MatchResult
 from src.simulation.constants import (
     HOME_ADVANTAGE_STRENGTH_BONUS,
     STRENGTH_CLAMP_RANGE,
     MATCH_PREDICTOR_DAMPING,
-    adaptive_damping,
 )
-
 
 # ─────────────────────────────────────────────────────────────
 # Sistema de puntos SuperLega
 # ─────────────────────────────────────────────────────────────
+
 
 def match_points(sets_winner: int, sets_loser: int) -> tuple[int, int]:
     """
@@ -40,6 +39,7 @@ def match_points(sets_winner: int, sets_loser: int) -> tuple[int, int]:
 # ─────────────────────────────────────────────────────────────
 # Generador de calendario
 # ─────────────────────────────────────────────────────────────
+
 
 def generate_round_robin(teams: list[str], double: bool = True) -> list[tuple[str, str]]:
     """
@@ -176,9 +176,11 @@ def _invert_localia(jornadas: list[list[tuple[str, str]]]) -> list[list[tuple[st
 # Clase de clasificacion
 # ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class TeamStanding:
     """Posicion de un equipo en la clasificacion."""
+
     team: str
     points: int = 0
     matches_played: int = 0
@@ -186,7 +188,7 @@ class TeamStanding:
     losses: int = 0
     sets_won: int = 0
     sets_lost: int = 0
-    points_scored: int = 0   # Puntos de volleyball (no de clasificacion)
+    points_scored: int = 0  # Puntos de volleyball (no de clasificacion)
     points_conceded: int = 0
     wins_3_0: int = 0
     wins_3_1: int = 0
@@ -207,6 +209,7 @@ class TeamStanding:
 # ─────────────────────────────────────────────────────────────
 # Simulador de temporada
 # ─────────────────────────────────────────────────────────────
+
 
 class SeasonSimulator:
     """
@@ -240,31 +243,33 @@ class SeasonSimulator:
         """Convierte una lista de TeamStanding a dicts JSON-serializables."""
         out = []
         for s in standings_list:
-            out.append({
-                "equipo": s.team,
-                "puntos": s.points,
-                "pj": s.matches_played,
-                "pg": s.wins,
-                "pp": s.losses,
-                "sg": s.sets_won,
-                "sp": s.sets_lost,
-                "sr": round(s.set_ratio, 2),
-                "pts_favor": s.points_scored,
-                "pts_contra": s.points_conceded,
-                "v3_0": s.wins_3_0,
-                "v3_1": s.wins_3_1,
-                "v3_2": s.wins_3_2,
-                "d2_3": s.losses_2_3,
-                "d1_3": s.losses_1_3,
-                "d0_3": s.losses_0_3,
-            })
+            out.append(
+                {
+                    "equipo": s.team,
+                    "puntos": s.points,
+                    "pj": s.matches_played,
+                    "pg": s.wins,
+                    "pp": s.losses,
+                    "sg": s.sets_won,
+                    "sp": s.sets_lost,
+                    "sr": round(s.set_ratio, 2),
+                    "pts_favor": s.points_scored,
+                    "pts_contra": s.points_conceded,
+                    "v3_0": s.wins_3_0,
+                    "v3_1": s.wins_3_1,
+                    "v3_2": s.wins_3_2,
+                    "d2_3": s.losses_2_3,
+                    "d1_3": s.losses_1_3,
+                    "d0_3": s.losses_0_3,
+                }
+            )
         return out
 
     @staticmethod
     def parse_standings(serialized: list[dict]) -> dict:
         """Inverso de serialize_standings; devuelve dict {team: TeamStanding}."""
         standings = {}
-        for s_data in (serialized or []):
+        for s_data in serialized or []:
             ts = TeamStanding(team=s_data["equipo"])
             ts.points = s_data.get("puntos", 0)
             ts.matches_played = s_data.get("pj", 0)
@@ -342,9 +347,11 @@ class SeasonSimulator:
                 "jornada_index": jornada_index,
                 "jornada_matches": [],
                 "updated_standings": current_standings or [],
-                "updated_player_stats": current_player_stats
-                if isinstance(current_player_stats, list)
-                else list((current_player_stats or {}).values()),
+                "updated_player_stats": (
+                    current_player_stats
+                    if isinstance(current_player_stats, list)
+                    else list((current_player_stats or {}).values())
+                ),
                 "is_complete": True,
                 "error": f"jornada_index fuera de rango: {jornada_index}",
             }
@@ -374,8 +381,12 @@ class SeasonSimulator:
             set_pred = None
             team_feats = None
 
-            if (use_match_predictor and self.match_predictor
-                    and self.feature_builder and hasattr(self.feature_builder, 'build_features')):
+            if (
+                use_match_predictor
+                and self.match_predictor
+                and self.feature_builder
+                and hasattr(self.feature_builder, "build_features")
+            ):
                 try:
                     match_features_df = self.feature_builder.build_features(home, away, jornada_num)
                     # Señal de partido: probabilidad de Elo con margen (limpia,
@@ -383,7 +394,8 @@ class SeasonSimulator:
                     _elo_p = match_features_df.iloc[0].get("elo_win_prob_h", None)
                     if self.match_predictor.feature_names:
                         match_features_df = match_features_df.reindex(
-                            columns=self.match_predictor.feature_names, fill_value=0.0,
+                            columns=self.match_predictor.feature_names,
+                            fill_value=0.0,
                         )
                     if _elo_p is not None:
                         p_match_home = float(_elo_p)
@@ -397,14 +409,18 @@ class SeasonSimulator:
                     else:
                         current_damping = float(damping)
                     h_str_adj, a_str = self._calibrate_strengths(
-                        h_str_adj, a_str, float(p_match_home),
+                        h_str_adj,
+                        a_str,
+                        float(p_match_home),
                         damping=current_damping,
                     )
                     team_feats = self._extract_set_team_features(match_features_df)
                 except Exception as e:
                     import sys
-                    print(f"  [WARN] MatchPredictor fallo para {home} vs {away}: {e}",
-                          file=sys.stderr)
+
+                    print(
+                        f"  [WARN] MatchPredictor fallo para {home} vs {away}: {e}", file=sys.stderr
+                    )
                     h_str_adj = min(h_str + HOME_ADVANTAGE_STRENGTH_BONUS, 1.0)
                     match_features_df = None
 
@@ -417,8 +433,14 @@ class SeasonSimulator:
                 _row = match_features_df.iloc[0]
                 point_match_features = {
                     f: float(_row[f]) if f in match_features_df.columns else 0.0
-                    for f in ["elo_diff", "diff_win_rate_global", "diff_set_win_rate",
-                              "diff_dominancia", "diff_set_ratio", "diff_forma_efectiva"]
+                    for f in [
+                        "elo_diff",
+                        "diff_win_rate_global",
+                        "diff_set_win_rate",
+                        "diff_dominancia",
+                        "diff_set_ratio",
+                        "diff_forma_efectiva",
+                    ]
                 }
 
             match = self.simulator.simulate_match(
@@ -438,12 +460,18 @@ class SeasonSimulator:
             self._accumulate_player_stats(player_season_stats, match, home, "home")
             self._accumulate_player_stats(player_season_stats, match, away, "away")
 
-            if self.feature_builder and hasattr(self.feature_builder, 'update'):
+            if self.feature_builder and hasattr(self.feature_builder, "update"):
                 pts_home = sum(s.score_home for s in match.sets)
                 pts_away = sum(s.score_away for s in match.sets)
-                self.feature_builder.update(home, away, match.sets_home, match.sets_away,
-                                            match.winner, points_local=pts_home,
-                                            points_visitante=pts_away)
+                self.feature_builder.update(
+                    home,
+                    away,
+                    match.sets_home,
+                    match.sets_away,
+                    match.winner,
+                    points_local=pts_home,
+                    points_visitante=pts_away,
+                )
 
         sorted_standings = sorted(
             standings.values(),
@@ -539,11 +567,17 @@ class SeasonSimulator:
             set_pred = None
             team_feats = None
 
-            if (use_match_predictor and self.match_predictor
-                    and self.feature_builder and hasattr(self.feature_builder, 'build_features')):
+            if (
+                use_match_predictor
+                and self.match_predictor
+                and self.feature_builder
+                and hasattr(self.feature_builder, "build_features")
+            ):
                 try:
                     match_features_df = self.feature_builder.build_features(
-                        home, away, jornada_num,
+                        home,
+                        away,
+                        jornada_num,
                     )
                     # Señal de partido: probabilidad de Elo con margen (limpia,
                     # sin leakage). Reemplaza al MatchPredictor de 87 features,
@@ -553,14 +587,13 @@ class SeasonSimulator:
                     # Alinear columnas con lo que espera el modelo (fallback)
                     if self.match_predictor.feature_names:
                         match_features_df = match_features_df.reindex(
-                            columns=self.match_predictor.feature_names, fill_value=0.0,
+                            columns=self.match_predictor.feature_names,
+                            fill_value=0.0,
                         )
                     if _elo_p is not None:
                         p_match_home = float(_elo_p)
                     else:
-                        p_match_home = self.match_predictor.predict_proba(
-                            match_features_df
-                        )[0, 1]
+                        p_match_home = self.match_predictor.predict_proba(match_features_df)[0, 1]
                     # Resolve damping: None -> fixed, callable -> per-jornada
                     if damping is None:
                         current_damping = MATCH_PREDICTOR_DAMPING
@@ -569,7 +602,9 @@ class SeasonSimulator:
                     else:
                         current_damping = float(damping)
                     h_str_adj, a_str = self._calibrate_strengths(
-                        h_str_adj, a_str, float(p_match_home),
+                        h_str_adj,
+                        a_str,
+                        float(p_match_home),
                         damping=current_damping,
                     )
                     # Preparar team features para SetPredictor
@@ -578,8 +613,10 @@ class SeasonSimulator:
                     )
                 except Exception as e:
                     import sys
-                    print(f"  [WARN] MatchPredictor fallo para {home} vs {away}: {e}",
-                          file=sys.stderr)
+
+                    print(
+                        f"  [WARN] MatchPredictor fallo para {home} vs {away}: {e}", file=sys.stderr
+                    )
                     h_str_adj = min(h_str + HOME_ADVANTAGE_STRENGTH_BONUS, 1.0)
                     match_features_df = None
 
@@ -592,8 +629,14 @@ class SeasonSimulator:
                 _row = match_features_df.iloc[0]
                 point_match_features = {
                     f: float(_row[f]) if f in match_features_df.columns else 0.0
-                    for f in ["elo_diff", "diff_win_rate_global", "diff_set_win_rate",
-                              "diff_dominancia", "diff_set_ratio", "diff_forma_efectiva"]
+                    for f in [
+                        "elo_diff",
+                        "diff_win_rate_global",
+                        "diff_set_win_rate",
+                        "diff_dominancia",
+                        "diff_set_ratio",
+                        "diff_forma_efectiva",
+                    ]
                 }
 
             match = self.simulator.simulate_match(
@@ -616,12 +659,14 @@ class SeasonSimulator:
             self._accumulate_player_stats(player_season_stats, match, away, "away")
 
             # Actualizar feature builder
-            if self.feature_builder and hasattr(self.feature_builder, 'update'):
+            if self.feature_builder and hasattr(self.feature_builder, "update"):
                 pts_home = sum(s.score_home for s in match.sets)
                 pts_away = sum(s.score_away for s in match.sets)
                 self.feature_builder.update(
-                    home, away,
-                    match.sets_home, match.sets_away,
+                    home,
+                    away,
+                    match.sets_home,
+                    match.sets_away,
                     match.winner,
                     points_local=pts_home,
                     points_visitante=pts_away,
@@ -668,7 +713,7 @@ class SeasonSimulator:
         """Acumula stats de jugadores de un partido en el acumulado de temporada."""
         for s in match.sets:
             stats_list = s.home_player_stats if side == "home" else s.away_player_stats
-            for p in (stats_list or []):
+            for p in stats_list or []:
                 name = p.get("jugador", "Desconocido")
                 key = f"{team}|{name}"
                 if key not in season_stats:
@@ -696,7 +741,7 @@ class SeasonSimulator:
         # Incrementar partidos (una vez por match, no por set)
         for s in match.sets[:1]:
             stats_list = s.home_player_stats if side == "home" else s.away_player_stats
-            for p in (stats_list or []):
+            for p in stats_list or []:
                 name = p.get("jugador", "Desconocido")
                 key = f"{team}|{name}"
                 if key in season_stats:
@@ -789,7 +834,7 @@ class SeasonSimulator:
         odds_target = p_target / (1 - p_target)
         odds_base = p_base / (1 - p_base)
         k = odds_target / odds_base
-        k_damped = k ** damping
+        k_damped = k**damping
 
         h_new = h_str * k_damped
         h_new = max(STRENGTH_CLAMP_RANGE[0], min(STRENGTH_CLAMP_RANGE[1], h_new))
@@ -830,24 +875,32 @@ class SeasonSimulator:
 
         # Fallback chain for column names: prefer EWMA (decision #4), fall back
         # to home/away-only names, then to default 0.5.
-        h_form = float(row.get(
-            "h_form_ewma",
-            row.get("h_forma_home", 0.5),
-        ))
-        a_form = float(row.get(
-            "a_form_ewma",
-            row.get("a_forma_away", 0.5),
-        ))
+        h_form = float(
+            row.get(
+                "h_form_ewma",
+                row.get("h_forma_home", 0.5),
+            )
+        )
+        a_form = float(
+            row.get(
+                "a_form_ewma",
+                row.get("a_forma_away", 0.5),
+            )
+        )
 
         # Point ratio: prefer new "h_point_ratio" name, fall back to legacy
-        h_pr = float(row.get(
-            "h_point_ratio",
-            row.get("h_pts_fav_exp", 0.5),
-        ))
-        a_pr = float(row.get(
-            "a_point_ratio",
-            row.get("a_pts_fav_exp", 0.5),
-        ))
+        h_pr = float(
+            row.get(
+                "h_point_ratio",
+                row.get("h_pts_fav_exp", 0.5),
+            )
+        )
+        a_pr = float(
+            row.get(
+                "a_point_ratio",
+                row.get("a_pts_fav_exp", 0.5),
+            )
+        )
 
         ctx = SetContext(
             temporada_inicio=int(row.get("temporada_inicio", 0)),
@@ -880,14 +933,18 @@ class SeasonSimulator:
 
     def print_standings(self, standings: list):
         """Imprime la tabla de clasificacion."""
-        print(f"\n  {'Pos':>3} {'Equipo':<20} {'Pts':>4} {'PJ':>3} {'PG':>3} "
-              f"{'PP':>3} {'SG':>3} {'SP':>3} {'SR':>5}")
+        print(
+            f"\n  {'Pos':>3} {'Equipo':<20} {'Pts':>4} {'PJ':>3} {'PG':>3} "
+            f"{'PP':>3} {'SG':>3} {'SP':>3} {'SR':>5}"
+        )
         print("  " + "-" * 70)
 
         for i, s in enumerate(standings, 1):
-            print(f"  {i:>3} {s.team:<20} {s.points:>4} {s.matches_played:>3} "
-                  f"{s.wins:>3} {s.losses:>3} {s.sets_won:>3} "
-                  f"{s.sets_lost:>3} {s.set_ratio:>5.2f}")
+            print(
+                f"  {i:>3} {s.team:<20} {s.points:>4} {s.matches_played:>3} "
+                f"{s.wins:>3} {s.losses:>3} {s.sets_won:>3} "
+                f"{s.sets_lost:>3} {s.set_ratio:>5.2f}"
+            )
 
 
 # ─────────────────────────────────────────────────────────────

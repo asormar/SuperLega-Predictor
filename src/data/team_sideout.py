@@ -53,17 +53,16 @@ def _compute_team_sideout() -> dict[str, float]:
 
     # Sum points won and conceded across BOTH home and away appearances
     pts_fav = (
-        df.groupby("local")["puntos_local"].sum()
+        df.groupby("local")["puntos_local"]
+        .sum()
         .add(df.groupby("visit")["puntos_visitante"].sum(), fill_value=0)
     )
     pts_con = (
-        df.groupby("local")["puntos_visitante"].sum()
+        df.groupby("local")["puntos_visitante"]
+        .sum()
         .add(df.groupby("visit")["puntos_local"].sum(), fill_value=0)
     )
-    n_sets = (
-        df.groupby("local").size()
-        .add(df.groupby("visit").size(), fill_value=0)
-    )
+    n_sets = df.groupby("local").size().add(df.groupby("visit").size(), fill_value=0)
 
     rates = {}
     for team in pts_fav.index:
