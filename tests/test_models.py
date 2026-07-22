@@ -281,7 +281,15 @@ class TestOptunaSearchArtifacts:
             )
 
     def test_search_module_imports(self):
-        """The hyperparameter_search module is importable and exposes run_search."""
+        """The hyperparameter_search module is importable and exposes run_search.
+
+        `optuna` is NOT a project dependency: hyperparameter_search is an
+        experiment module (Batch 3, closed as a negative result), not part of
+        the production path. It is installed in the dev environment but not in
+        a clean install, so this test skips instead of failing there — same
+        pattern as the sibling tests that skip on a missing JSON artifact.
+        """
+        pytest.importorskip("optuna", reason="optuna is a dev-only extra")
         from src.models import hyperparameter_search
 
         assert hasattr(hyperparameter_search, "run_search")
