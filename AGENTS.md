@@ -74,7 +74,7 @@ Install into a venv manually: `fastapi`, `uvicorn`, `pydantic`, `scikit-learn`, 
 Defined in `src/data/feature_store.py:25-29`:
 - **train**: 2016–2022
 - **val**: 2023
-- **test**: 2024
+- **test**: 2025
 
 This is a strict temporal split — never shuffle or use future data in training.
 

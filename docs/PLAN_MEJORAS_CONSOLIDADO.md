@@ -29,7 +29,7 @@ Leyenda: ✅ HECHO · 🚧 PENDIENTE · ⏸️ BLOQUEADO (por calendario / datos
 | B1 — Backtest del simulador | ✅ HECHO (2026-07-15) | Cuantificó la sobreconfianza pre-B3 (ECE 0.242, 53% de 3-0) |
 | B2 — Tuning de constantes del simulador | ✅ HECHO (2026-07-22) — RESULTADO NEGATIVO | Grid de constantes parametrizado y evaluado (36 combos, 12 distintos); resultado negativo, no se adoptan constantes nuevas. Detalle en §B2 más abajo. |
 | **B3** — PointProbabilityModel: regresión continua | ✅ **HECHO (2026-07-22)** | Ridge(α=1.0) sobre target continuo + clip (0.40, 0.60). Brier 0.273→0.182, ECE 0.242→0.057, 3-0 53%→37.6% (real 38.7%). El simulador pasa de degradar al Elo a superarlo. |
-| B4 — Predictor de partido best-of-5 | 🚧 PENDIENTE | Retorno marginal no compensaba; re-evaluar post-B2/B3 |
+| **B4** — Predictor de partido best-of-5 | ✅ **HECHO (2026-07-23) — RESULTADO NEGATIVO** | LOFO-CV w_global=0.669, improvement=−0.0004, per-fold wins 2/4. AND-of-4 gate rechazó. §7.5 de `memoria/mejora_precision_2026-07.md` documenta el experimento completo; artefacto en `models/b4_blend_results.json`. La señal del SetPredictor v2 vía best-of-5 no complementa al margin-Elo. |
 | B5 — Roster churn | 🚧 PENDIENTE | Única señal pre-temporada de fichajes |
 | B6 — Ampliar dataset | 🚧 PENDIENTE | Palanca grande y cara; mejor tras A+B hechos |
 | B7 — Re-validación 2026/27 | ⏸️ BLOQUEADO | Depende de calendario; dejar script listo |
@@ -55,8 +55,8 @@ Todos 🚧 PENDIENTES (E1 MC en UI, E2 explicabilidad, E3 `precision_report.py`,
 
 ### Resumen ejecutivo
 
-- **Items cerrados**: B0 (colisión partido_id), B0b (regen set_features), B1, A1–A6, B2 (resultado negativo), B3, C1, C2. Total: **11 items**.
-- **Items pendientes no bloqueados**: B4, B5, B6, C3, C4, C5, C6, D1–D4, E1–E5. Total: **15 items**.
+- **Items cerrados**: B0 (colisión partido_id), B0b (regen set_features), B1, A1–A6, B2 (resultado negativo), B3, B4 (resultado negativo), C1, C2. Total: **12 items**.
+- **Items pendientes no bloqueados**: B5, B6, C3, C4, C5, C6, D1–D4, E1–E5. Total: **14 items**.
 - **Items bloqueados externamente**: B7. Total: **1 item**.
 
 ---
@@ -443,7 +443,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 
 ## GRUPO B — Fase 4 (parcialmente completada): precisión end-to-end del simulador
 
-> **Estado al 2026-07-22**: B1 ✅, B2 ✅ (resultado negativo) y B3 ✅ cerrados. Pendientes: B4, B5, B6. B7 bloqueado por calendario.
+> **Estado al 2026-07-23**: B1 ✅, B2 ✅ (negativo), B3 ✅ y B4 ✅ (negativo) cerrados. Pendientes: B5, B6. B7 bloqueado por calendario.
 
 ### B1 — Backtest del simulador contra la temporada real (`src/models/backtest_simulator.py`)  ✅ IMPLEMENTADO (2026-07-15)
 
@@ -654,7 +654,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 - **Esfuerzo**: 3–4 h. **Riesgo**: medio (afecta a toda la distribución punto a
   punto). **Dependencias**: B1 para validar; A2 aporta `p_set_from_p_point`.
 
-### B4 — Predictor de partido derivado del SetPredictor (best-of-5)  🚧 PENDIENTE — resultado NEGATIVO documentado en §7.5
+### B4 — Predictor de partido derivado del SetPredictor (best-of-5)  ✅ HECHO (2026-07-23) — resultado NEGATIVO documentado en §7.5
 
 - **Qué**: segundo estimador independiente de P(match) desde p_set (entrenado
   sobre ~5000 sets, no ~500 partidos). Se pospuso por retorno marginal; es el
@@ -970,7 +970,7 @@ workflows sobre el remote.
 | 5 | ~~**C2** remote de GitHub~~ | ✅ HECHO | `asormar/SuperLega-Predictor` activo, PRs mergeados. |
 | 6 | **C1** Ruff + Black + CI | ✅ HECHO | Ruff+Black+CI matrix Ubuntu+Windows en verde. PR #2. |
 | 7 | **E1** MC de temporada en UI + **E3** reporte reproducible | 🚧 PENDIENTE | Máximo valor de defensa por hora. |
-| 8 | **B4, B5, D1, D3, E5** | 🚧 PENDIENTE | Backlog medio; cada uno se cierra en una tarde. |
+| 8 | **B5, D1, D3, E5** | 🚧 PENDIENTE | Backlog medio; cada uno se cierra en una tarde. |
 | 9 | **B6** ampliar dataset | 🚧 PENDIENTE | La palanca de modelo más grande, pero la más cara; tras B2. |
 | — | **B7** re-validación 2026/27 | ⏸️ BLOQUEADO | Bloqueado por calendario; dejar el script listo. |
 | baja | C3–C6, D2, D4, E2, E4 | 🚧 PENDIENTE | Valor real, no crítico; según tiempo hasta la entrega. |
