@@ -7,24 +7,26 @@ Genera tabla comparativa con todas las métricas.
 
 import sys
 import time
-import numpy as np
 import pandas as pd
 from pathlib import Path
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import (
-    RandomForestClassifier, GradientBoostingClassifier,
-    ExtraTreesClassifier, StackingClassifier,
+    RandomForestClassifier,
+    GradientBoostingClassifier,
+    ExtraTreesClassifier,
+    StackingClassifier,
 )
 from sklearn.svm import SVC
 from sklearn.neural_network import MLPClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
-    accuracy_score, roc_auc_score, brier_score_loss,
-    f1_score, precision_score, recall_score,
+    accuracy_score,
+    roc_auc_score,
+    brier_score_loss,
+    f1_score,
 )
 from sklearn.model_selection import cross_val_score
-from sklearn.calibration import CalibratedClassifierCV
 
 import xgboost as xgb
 import lightgbm as lgb
@@ -37,40 +39,70 @@ def get_all_models() -> dict:
     """Devuelve todos los modelos candidatos para benchmarking."""
     return {
         "LogisticRegression": LogisticRegression(
-            max_iter=2000, C=1.0, solver="lbfgs", random_state=42,
+            max_iter=2000,
+            C=1.0,
+            solver="lbfgs",
+            random_state=42,
         ),
         "RandomForest": RandomForestClassifier(
-            n_estimators=300, max_depth=10, min_samples_leaf=4,
-            random_state=42, n_jobs=-1,
+            n_estimators=300,
+            max_depth=10,
+            min_samples_leaf=4,
+            random_state=42,
+            n_jobs=-1,
         ),
         "ExtraTrees": ExtraTreesClassifier(
-            n_estimators=300, max_depth=10, min_samples_leaf=4,
-            random_state=42, n_jobs=-1,
+            n_estimators=300,
+            max_depth=10,
+            min_samples_leaf=4,
+            random_state=42,
+            n_jobs=-1,
         ),
         "GradientBoosting": GradientBoostingClassifier(
-            n_estimators=200, max_depth=4, learning_rate=0.05,
-            subsample=0.8, random_state=42,
+            n_estimators=200,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            random_state=42,
         ),
         "XGBoost": xgb.XGBClassifier(
-            n_estimators=300, max_depth=5, learning_rate=0.05,
-            subsample=0.8, colsample_bytree=0.8,
-            reg_alpha=0.1, reg_lambda=1.0,
-            random_state=42, eval_metric="logloss", verbosity=0,
+            n_estimators=300,
+            max_depth=5,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            reg_alpha=0.1,
+            reg_lambda=1.0,
+            random_state=42,
+            eval_metric="logloss",
+            verbosity=0,
         ),
         "LightGBM": lgb.LGBMClassifier(
-            n_estimators=300, max_depth=5, learning_rate=0.05,
-            subsample=0.8, colsample_bytree=0.8,
-            reg_alpha=0.1, reg_lambda=1.0,
-            random_state=42, verbose=-1,
+            n_estimators=300,
+            max_depth=5,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            reg_alpha=0.1,
+            reg_lambda=1.0,
+            random_state=42,
+            verbose=-1,
         ),
         "SVM_RBF": SVC(
-            kernel="rbf", C=1.0, gamma="scale",
-            probability=True, random_state=42,
+            kernel="rbf",
+            C=1.0,
+            gamma="scale",
+            probability=True,
+            random_state=42,
         ),
         "MLP": MLPClassifier(
-            hidden_layer_sizes=(64, 32), activation="relu",
-            solver="adam", max_iter=500, early_stopping=True,
-            validation_fraction=0.15, random_state=42,
+            hidden_layer_sizes=(64, 32),
+            activation="relu",
+            solver="adam",
+            max_iter=500,
+            early_stopping=True,
+            validation_fraction=0.15,
+            random_state=42,
         ),
     }
 
@@ -78,23 +110,41 @@ def get_all_models() -> dict:
 def get_stacking_model() -> StackingClassifier:
     """Crea un modelo Stacking con los mejores estimadores base."""
     estimators = [
-        ("rf", RandomForestClassifier(
-            n_estimators=200, max_depth=8, min_samples_leaf=5,
-            random_state=42, n_jobs=-1,
-        )),
-        ("gb", GradientBoostingClassifier(
-            n_estimators=150, max_depth=4, learning_rate=0.05,
-            random_state=42,
-        )),
-        ("lgbm", lgb.LGBMClassifier(
-            n_estimators=200, max_depth=5, learning_rate=0.05,
-            random_state=42, verbose=-1,
-        )),
+        (
+            "rf",
+            RandomForestClassifier(
+                n_estimators=200,
+                max_depth=8,
+                min_samples_leaf=5,
+                random_state=42,
+                n_jobs=-1,
+            ),
+        ),
+        (
+            "gb",
+            GradientBoostingClassifier(
+                n_estimators=150,
+                max_depth=4,
+                learning_rate=0.05,
+                random_state=42,
+            ),
+        ),
+        (
+            "lgbm",
+            lgb.LGBMClassifier(
+                n_estimators=200,
+                max_depth=5,
+                learning_rate=0.05,
+                random_state=42,
+                verbose=-1,
+            ),
+        ),
     ]
     return StackingClassifier(
         estimators=estimators,
         final_estimator=LogisticRegression(max_iter=1000, random_state=42),
-        cv=3, n_jobs=-1,
+        cv=3,
+        n_jobs=-1,
     )
 
 
@@ -128,8 +178,10 @@ def run_benchmark(
 
     results = []
     print("\n" + "=" * 90)
-    print(f"  {'Modelo':<22} {'Acc_val':>7} {'AUC_val':>7} {'Acc_test':>8} "
-          f"{'AUC_test':>8} {'Brier':>7} {'F1':>6} {'CV_5f':>7} {'Tiempo':>7}")
+    print(
+        f"  {'Modelo':<22} {'Acc_val':>7} {'AUC_val':>7} {'Acc_test':>8} "
+        f"{'AUC_test':>8} {'Brier':>7} {'F1':>6} {'CV_5f':>7} {'Tiempo':>7}"
+    )
     print("  " + "-" * 86)
 
     for name, model in models.items():
@@ -165,7 +217,12 @@ def run_benchmark(
         if run_cv:
             try:
                 cv_scores = cross_val_score(
-                    model, Xtr, y_train, cv=5, scoring="accuracy", n_jobs=-1,
+                    model,
+                    Xtr,
+                    y_train,
+                    cv=5,
+                    scoring="accuracy",
+                    n_jobs=-1,
                 )
                 cv_score = cv_scores.mean()
             except (Exception, KeyboardInterrupt):
@@ -173,20 +230,24 @@ def run_benchmark(
 
         elapsed = time.time() - t0
 
-        results.append({
-            "modelo": name,
-            "acc_val": acc_val,
-            "auc_val": auc_val,
-            "acc_test": acc_test,
-            "auc_test": auc_test,
-            "brier_test": brier,
-            "f1_test": f1,
-            "cv_5fold": cv_score,
-            "tiempo_s": elapsed,
-        })
+        results.append(
+            {
+                "modelo": name,
+                "acc_val": acc_val,
+                "auc_val": auc_val,
+                "acc_test": acc_test,
+                "auc_test": auc_test,
+                "brier_test": brier,
+                "f1_test": f1,
+                "cv_5fold": cv_score,
+                "tiempo_s": elapsed,
+            }
+        )
 
-        print(f"  {name:<22} {acc_val:>7.4f} {auc_val:>7.4f} {acc_test:>8.4f} "
-              f"{auc_test:>8.4f} {brier:>7.4f} {f1:>6.3f} {cv_score:>7.4f} {elapsed:>6.1f}s")
+        print(
+            f"  {name:<22} {acc_val:>7.4f} {auc_val:>7.4f} {acc_test:>8.4f} "
+            f"{auc_test:>8.4f} {brier:>7.4f} {f1:>6.3f} {cv_score:>7.4f} {elapsed:>6.1f}s"
+        )
 
     print("  " + "-" * 86)
 
@@ -194,8 +255,10 @@ def run_benchmark(
 
     # Marcar el mejor
     best = df.iloc[0]
-    print(f"\n  >> MEJOR MODELO: {best['modelo']} "
-          f"(Test AUC={best['auc_test']:.4f}, Acc={best['acc_test']:.4f})")
+    print(
+        f"\n  >> MEJOR MODELO: {best['modelo']} "
+        f"(Test AUC={best['auc_test']:.4f}, Acc={best['acc_test']:.4f})"
+    )
 
     return df
 
@@ -218,9 +281,12 @@ def run_full_benchmark():
 
     X_set, y_set = prepare_set_data(data["set_features"])
     df_set = run_benchmark(
-        X_set["train"], y_set["train"],
-        X_set["val"], y_set["val"],
-        X_set["test"], y_set["test"],
+        X_set["train"],
+        y_set["train"],
+        X_set["val"],
+        y_set["val"],
+        X_set["test"],
+        y_set["test"],
     )
 
     # ─── Benchmark en MATCH features ───
@@ -230,9 +296,12 @@ def run_full_benchmark():
 
     X_match, y_match = prepare_match_data(data["match_features"])
     df_match = run_benchmark(
-        X_match["train"], y_match["train"],
-        X_match["val"], y_match["val"],
-        X_match["test"], y_match["test"],
+        X_match["train"],
+        y_match["train"],
+        X_match["val"],
+        y_match["val"],
+        X_match["test"],
+        y_match["test"],
     )
 
     # Guardar resultados

@@ -17,23 +17,27 @@ from dataclasses import dataclass, field
 
 from src.simulation.set_math import p_point_from_p_set
 from src.simulation.constants import (
-    DEFAULT_CLAMP_RANGE, CLAMP_MARGIN_POINT, SET_BLEND_WEIGHT_ELO,
+    DEFAULT_CLAMP_RANGE,
+    CLAMP_MARGIN_POINT,
+    SET_BLEND_WEIGHT_ELO,
     POINT_PROB_CLIP_ADAPTIVE_HARD,
-    DEFAULT_SIDEOUT_RATE, POINT_PROB_CLIP,
+    DEFAULT_SIDEOUT_RATE,
+    POINT_PROB_CLIP,
     GLOBAL_MOMENTUM_FACTOR,
     MOMENTUM_BONUS as _MOMENTUM_BONUS,
     MOMENTUM_MAX_STREAK as _MOMENTUM_MAX_STREAK,
     MOMENTUM_DECAY as _MOMENTUM_DECAY,
 )
 
-
 # ─────────────────────────────────────────────────────────────
 # Estructuras de datos
 # ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class PointResult:
     """Resultado de un punto individual."""
+
     point_number: int
     score_home: int
     score_away: int
@@ -44,6 +48,7 @@ class PointResult:
 @dataclass
 class SetResult:
     """Resultado de un set completo."""
+
     set_number: int
     score_home: int
     score_away: int
@@ -56,6 +61,7 @@ class SetResult:
 @dataclass
 class MatchResult:
     """Resultado de un partido completo."""
+
     home_team: str
     away_team: str
     sets_home: int
@@ -68,6 +74,7 @@ class MatchResult:
 # ─────────────────────────────────────────────────────────────
 # Motor de simulacion
 # ─────────────────────────────────────────────────────────────
+
 
 class MatchSimulator:
     """
@@ -126,6 +133,7 @@ class MatchSimulator:
         # Per-team sideout rates (Batch 3 mid-effort). Falls back to
         # DEFAULT_SIDEOUT_RATE for unknown teams via get_team_sideout.
         from src.data.team_sideout import get_sideout_rates
+
         home_sideout, away_sideout = get_sideout_rates(home_team, away_team)
 
         # Obtener probabilidades de punto
@@ -139,8 +147,10 @@ class MatchSimulator:
             )
         else:
             point_probs = self._default_point_probs(
-                home_strength, away_strength,
-                home_sideout=home_sideout, away_sideout=away_sideout,
+                home_strength,
+                away_strength,
+                home_sideout=home_sideout,
+                away_sideout=away_sideout,
             )
 
         sets_home = 0
@@ -156,15 +166,19 @@ class MatchSimulator:
         set_number = 0
         while sets_home < 3 and sets_away < 3:
             set_number += 1
-            is_fifth_set = (sets_home == 2 and sets_away == 2)
+            is_fifth_set = sets_home == 2 and sets_away == 2
             target_score = 15 if is_fifth_set else 25
 
             # Build set context for SetPredictor calibration
             set_context = None
             if set_predictor is not None and team_features is not None:
                 set_context = self._build_set_context_base(
-                    set_number, home_team, away_team,
-                    sets_home, sets_away, team_features,
+                    set_number,
+                    home_team,
+                    away_team,
+                    sets_home,
+                    sets_away,
+                    team_features,
                     prev_home_won=prev_home_won,
                 )
 
@@ -188,10 +202,14 @@ class MatchSimulator:
             # Generar stats de jugadores
             if generate_player_stats and self.player_stats_gen:
                 set_result.home_player_stats = self.player_stats_gen.generate_set_stats(
-                    home_team, set_result.score_home, set_result.score_away,
+                    home_team,
+                    set_result.score_home,
+                    set_result.score_away,
                 )
                 set_result.away_player_stats = self.player_stats_gen.generate_set_stats(
-                    away_team, set_result.score_away, set_result.score_home,
+                    away_team,
+                    set_result.score_away,
+                    set_result.score_home,
                 )
 
             sets_results.append(set_result)
@@ -255,9 +273,7 @@ class MatchSimulator:
             # A4: el centro del clamp es una MEZCLA en escala de punto entre la
             # senal que ya gobierna el punto (`base_p_neutral`, derivada de las
             # fuerzas ya calibradas por Elo) y la del SetPredictor convertida.
-            base_p_neutral = (
-                point_probs["p_home_serving"] + point_probs["p_home_receiving"]
-            ) / 2
+            base_p_neutral = (point_probs["p_home_serving"] + point_probs["p_home_receiving"]) / 2
             p_center = base_p_neutral
 
             # Con SET_BLEND_WEIGHT_ELO >= 1.0 la aportacion del SetPredictor se
@@ -265,9 +281,13 @@ class MatchSimulator:
             # config ON cuesta ~17x la OFF en el backtest A5).
             if SET_BLEND_WEIGHT_ELO < 1.0:
                 p_set_home = self._eval_set_predictor(
-                    set_predictor, set_context_base,
-                    0, 0, target_score,
-                    sets_home_antes, sets_away_antes,
+                    set_predictor,
+                    set_context_base,
+                    0,
+                    0,
+                    target_score,
+                    sets_home_antes,
+                    sets_away_antes,
                 )
                 if p_set_home is not None:
                     # A2: p_set vive en escala de SET; el clamp gobierna PUNTOS.
@@ -320,13 +340,19 @@ class MatchSimulator:
                     home_serving = False
 
             if generate_points:
-                points.append(PointResult(
-                    point_number=point_num,
-                    score_home=score_home,
-                    score_away=score_away,
-                    winner=winner,
-                    server="home" if (home_serving if winner == "home" else not home_serving) else "away",
-                ))
+                points.append(
+                    PointResult(
+                        point_number=point_num,
+                        score_home=score_home,
+                        score_away=score_away,
+                        winner=winner,
+                        server=(
+                            "home"
+                            if (home_serving if winner == "home" else not home_serving)
+                            else "away"
+                        ),
+                    )
+                )
 
             # Comprobar fin del set
             if self._set_finished(score_home, score_away, target_score):
@@ -371,7 +397,7 @@ class MatchSimulator:
         feats = dict(team_features or {})
 
         # Correct in-match fields from the simulation loop
-        is_tiebreak = (sets_home_antes == 2 and sets_away_antes == 2)
+        is_tiebreak = sets_home_antes == 2 and sets_away_antes == 2
         feats["set_num_norm"] = (set_number - 1) / 4.0
         feats["sets_h_antes"] = float(sets_home_antes)
         feats["sets_a_antes"] = float(sets_away_antes)
@@ -424,7 +450,9 @@ class MatchSimulator:
             return None
 
     def _default_point_probs(
-        self, home_strength: float, away_strength: float,
+        self,
+        home_strength: float,
+        away_strength: float,
         home_sideout: float = DEFAULT_SIDEOUT_RATE,
         away_sideout: float = DEFAULT_SIDEOUT_RATE,
     ) -> dict:
@@ -438,11 +466,13 @@ class MatchSimulator:
         # Ajustar por sideout (equipo recibiendo tiene ventaja).
         # Per-team: when home serves, depends on away's sideout;
         # when away serves, depends on home's sideout.
-        p_serving = p_base * (1 - away_sideout) / (
-            p_base * (1 - away_sideout) + (1 - p_base) * away_sideout
+        p_serving = (
+            p_base
+            * (1 - away_sideout)
+            / (p_base * (1 - away_sideout) + (1 - p_base) * away_sideout)
         )
-        p_receiving = p_base * home_sideout / (
-            p_base * home_sideout + (1 - p_base) * (1 - home_sideout)
+        p_receiving = (
+            p_base * home_sideout / (p_base * home_sideout + (1 - p_base) * (1 - home_sideout))
         )
 
         return {
@@ -546,17 +576,21 @@ if __name__ == "__main__":
     print(f"  Ganador: {match.home_team if match.winner == 'home' else match.away_team}")
 
     for s in match.sets:
-        print(f"    Set {s.set_number}: {s.score_home}-{s.score_away} "
-              f"({'Local' if s.winner == 'home' else 'Visitante'})")
+        print(
+            f"    Set {s.set_number}: {s.score_home}-{s.score_away} "
+            f"({'Local' if s.winner == 'home' else 'Visitante'})"
+        )
 
-    print(f"\n  Monte Carlo (1000 simulaciones):")
+    print("\n  Monte Carlo (1000 simulaciones):")
     mc = sim.monte_carlo_simulate(
-        "Trento", "Perugia",
-        home_strength=0.55, away_strength=0.52,
+        "Trento",
+        "Perugia",
+        home_strength=0.55,
+        away_strength=0.52,
         n_simulations=1000,
     )
     print(f"    P(Trento gana):  {mc['home_win_prob']:.1%}")
     print(f"    P(Perugia gana): {mc['away_win_prob']:.1%}")
-    print(f"    Distribucion de resultados:")
+    print("    Distribucion de resultados:")
     for score, pct in sorted(mc["score_distribution"].items()):
         print(f"      {score}: {pct:.1%}")

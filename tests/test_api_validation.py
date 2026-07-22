@@ -5,37 +5,48 @@ Covers every ``_val_*`` validator in ``SimularPartidoRequest`` and
 quirk documented in the spec.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 from src.api.main import app
-
 
 # ─────────────────────────────────────────────────────────────
 # 422 validation paths
 # ─────────────────────────────────────────────────────────────
+
 
 class Test422TeamValidation:
     """_val_team: empty, non-string, unrecognised team."""
 
     def test_val_team_empty_rejected(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/partido", json={
-            "local": "", "visitante": "Perugia",
-        })
+        resp = client.post(
+            "/api/simular/partido",
+            json={
+                "local": "",
+                "visitante": "Perugia",
+            },
+        )
         assert resp.status_code == 422
 
     def test_val_team_non_string_rejected(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/partido", json={
-            "local": 42, "visitante": "Perugia",
-        })
+        resp = client.post(
+            "/api/simular/partido",
+            json={
+                "local": 42,
+                "visitante": "Perugia",
+            },
+        )
         assert resp.status_code == 422
 
     def test_val_team_unknown_rejected(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/partido", json={
-            "local": "NonExistentTeam", "visitante": "Perugia",
-        })
+        resp = client.post(
+            "/api/simular/partido",
+            json={
+                "local": "NonExistentTeam",
+                "visitante": "Perugia",
+            },
+        )
         assert resp.status_code == 422
 
 
@@ -44,9 +55,13 @@ class Test422DiffTeams:
 
     def test_val_diff_teams_same_string_rejected(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/partido", json={
-            "local": "Trento", "visitante": "Trento",
-        })
+        resp = client.post(
+            "/api/simular/partido",
+            json={
+                "local": "Trento",
+                "visitante": "Trento",
+            },
+        )
         assert resp.status_code == 422
 
     def test_val_diff_teams_cross_string_same_key_rejected(self, app_with_synthetic):
@@ -59,9 +74,13 @@ class Test422DiffTeams:
         and flags the spec discrepancy.
         """
         client = TestClient(app)
-        resp = client.post("/api/simular/partido", json={
-            "local": "Diatec Trentino", "visitante": "Trento",
-        })
+        resp = client.post(
+            "/api/simular/partido",
+            json={
+                "local": "Diatec Trentino",
+                "visitante": "Trento",
+            },
+        )
         assert resp.status_code == 422
 
 
@@ -70,9 +89,14 @@ class Test422Seed:
 
     def test_val_seed_negative_rejected(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/partido", json={
-            "local": "Trento", "visitante": "Perugia", "semilla": -1,
-        })
+        resp = client.post(
+            "/api/simular/partido",
+            json={
+                "local": "Trento",
+                "visitante": "Perugia",
+                "semilla": -1,
+            },
+        )
         assert resp.status_code == 422
 
 
@@ -81,18 +105,26 @@ class Test422Strength:
 
     def test_val_strength_too_low_rejected(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/partido", json={
-            "local": "Trento", "visitante": "Perugia",
-            "fuerza_local": -0.1,
-        })
+        resp = client.post(
+            "/api/simular/partido",
+            json={
+                "local": "Trento",
+                "visitante": "Perugia",
+                "fuerza_local": -0.1,
+            },
+        )
         assert resp.status_code == 422
 
     def test_val_strength_too_high_rejected(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/partido", json={
-            "local": "Trento", "visitante": "Perugia",
-            "fuerza_local": 1.1,
-        })
+        resp = client.post(
+            "/api/simular/partido",
+            json={
+                "local": "Trento",
+                "visitante": "Perugia",
+                "fuerza_local": 1.1,
+            },
+        )
         assert resp.status_code == 422
 
 
@@ -101,10 +133,13 @@ class Test422Half:
 
     def test_val_half_invalid_rejected(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/temporada", json={
-            "equipos": ["Trento", "Perugia"],
-            "half": "invalid",
-        })
+        resp = client.post(
+            "/api/simular/temporada",
+            json={
+                "equipos": ["Trento", "Perugia"],
+                "half": "invalid",
+            },
+        )
         assert resp.status_code == 422
 
 
@@ -113,10 +148,13 @@ class Test422HalfState:
 
     def test_val_half_state_missing_rejected(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/temporada", json={
-            "equipos": ["Trento", "Perugia"],
-            "half": "second",
-        })
+        resp = client.post(
+            "/api/simular/temporada",
+            json={
+                "equipos": ["Trento", "Perugia"],
+                "half": "second",
+            },
+        )
         assert resp.status_code == 422
 
 
@@ -125,22 +163,29 @@ class Test422EquiposCap:
 
     def test_equipos_cap_13_rejected(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/temporada", json={
-            "equipos": [f"Team{i}" for i in range(13)],
-        })
+        resp = client.post(
+            "/api/simular/temporada",
+            json={
+                "equipos": [f"Team{i}" for i in range(13)],
+            },
+        )
         assert resp.status_code == 422
 
     def test_equipos_less_than_2_rejected(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/temporada", json={
-            "equipos": ["Trento"],
-        })
+        resp = client.post(
+            "/api/simular/temporada",
+            json={
+                "equipos": ["Trento"],
+            },
+        )
         assert resp.status_code == 422
 
 
 # ─────────────────────────────────────────────────────────────
 # Happy-path 200 responses
 # ─────────────────────────────────────────────────────────────
+
 
 class TestHappyPath:
     """Endpoints return 200 for valid requests."""
@@ -157,20 +202,28 @@ class TestHappyPath:
 
     def test_post_simular_partido_returns_200(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/partido", json={
-            "local": "Trento", "visitante": "Perugia",
-            "semilla": 42, "generar_puntos": False,
-            "generar_stats_jugadores": False,
-        })
+        resp = client.post(
+            "/api/simular/partido",
+            json={
+                "local": "Trento",
+                "visitante": "Perugia",
+                "semilla": 42,
+                "generar_puntos": False,
+                "generar_stats_jugadores": False,
+            },
+        )
         assert resp.status_code == 200
 
     def test_post_simular_temporada_returns_200(self, app_with_synthetic):
         client = TestClient(app)
-        resp = client.post("/api/simular/temporada", json={
-            "equipos": ["Trento", "Perugia"],
-            "doble_vuelta": True,
-            "semilla": 42,
-            "use_match_predictor": False,
-            "use_set_calibration": False,
-        })
+        resp = client.post(
+            "/api/simular/temporada",
+            json={
+                "equipos": ["Trento", "Perugia"],
+                "doble_vuelta": True,
+                "semilla": 42,
+                "use_match_predictor": False,
+                "use_set_calibration": False,
+            },
+        )
         assert resp.status_code == 200

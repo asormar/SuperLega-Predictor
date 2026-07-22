@@ -43,7 +43,10 @@ sys.path.insert(0, str(BASE_DIR))
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
-    roc_auc_score, log_loss, accuracy_score, brier_score_loss,
+    roc_auc_score,
+    log_loss,
+    accuracy_score,
+    brier_score_loss,
 )
 
 from src.data.data_pipeline import run_pipeline
@@ -53,8 +56,13 @@ from src.data.rolling_features import build_rolling_match_features
 MODELS_DIR = BASE_DIR / "models"
 
 # Config final (derivada de la experimentación de las fases)
-MATCH_FEATURES = ["elo_diff", "diff_form_ewma", "h2h_win_rate_h",
-                  "diff_set_ratio", "diff_point_ratio"]
+MATCH_FEATURES = [
+    "elo_diff",
+    "diff_form_ewma",
+    "h2h_win_rate_h",
+    "diff_set_ratio",
+    "diff_point_ratio",
+]
 RECENT_TRAIN_SEASONS = [2022, 2023, 2024]
 TEST_SEASON = 2025
 SET_RECENCY_HALFLIFE = 2.0
@@ -132,8 +140,11 @@ def train_match(dfm: pd.DataFrame) -> dict:
 
     # El "modelo" es el sistema Elo (parámetros en rolling_features).
     joblib.dump(
-        {"type": "margin_elo", "features": ["elo_win_prob_h"],
-         "note": "Probabilidad de Elo con margen, rolling sin leakage."},
+        {
+            "type": "margin_elo",
+            "features": ["elo_win_prob_h"],
+            "note": "Probabilidad de Elo con margen, rolling sin leakage.",
+        },
         MODELS_DIR / "match_elo_v2.joblib",
     )
 
@@ -177,9 +188,13 @@ def train_set(data: dict) -> dict:
 
     # Guardar artefacto v2 (sin cambios)
     joblib.dump(
-        {"type": "logreg_recency", "model": model, "features": cols,
-         "recency_halflife": SET_RECENCY_HALFLIFE,
-         "train_seasons": RECENT_TRAIN_SEASONS},
+        {
+            "type": "logreg_recency",
+            "model": model,
+            "features": cols,
+            "recency_halflife": SET_RECENCY_HALFLIFE,
+            "train_seasons": RECENT_TRAIN_SEASONS,
+        },
         MODELS_DIR / "set_predictor_v2.joblib",
     )
 
@@ -211,29 +226,40 @@ def main():
 
     print("\n[MATCH] Elo con margen (rolling, sin leakage)...")
     m_match = train_match(dfm)
-    print(f"  TEST {TEST_SEASON}: AUC={m_match['test']['auc']:.4f} "
-          f"logloss={m_match['test']['logloss']:.4f} brier={m_match['test']['brier']:.4f} "
-          f"acc={m_match['test']['acc']:.4f} (n={m_match['test']['n_test']})")
+    print(
+        f"  TEST {TEST_SEASON}: AUC={m_match['test']['auc']:.4f} "
+        f"logloss={m_match['test']['logloss']:.4f} brier={m_match['test']['brier']:.4f} "
+        f"acc={m_match['test']['acc']:.4f} (n={m_match['test']['n_test']})"
+    )
     print(f"  CV: {m_match['cv']['n_folds']} folds (sin entrenamiento)")
 
     print("\n[SET] LogReg con recencia...")
     m_set = train_set(data)
-    print(f"  TEST {TEST_SEASON}: AUC={m_set['test']['auc']:.4f} "
-          f"logloss={m_set['test']['logloss']:.4f} brier={m_set['test']['brier']:.4f} "
-          f"acc={m_set['test']['acc']:.4f} (n={m_set['test']['n_test']})")
-    cv = m_set['cv']
-    print(f"  CV ({cv['n_folds']} folds): logloss={cv.get('logloss_mean', 'N/A'):.4f}±{cv.get('logloss_std', 0):.4f} "
-          f"auc={cv.get('auc_mean', 'N/A'):.4f}±{cv.get('auc_std', 0):.4f}")
+    print(
+        f"  TEST {TEST_SEASON}: AUC={m_set['test']['auc']:.4f} "
+        f"logloss={m_set['test']['logloss']:.4f} brier={m_set['test']['brier']:.4f} "
+        f"acc={m_set['test']['acc']:.4f} (n={m_set['test']['n_test']})"
+    )
+    cv = m_set["cv"]
+    print(
+        f"  CV ({cv['n_folds']} folds): logloss={cv.get('logloss_mean', 'N/A'):.4f}±{cv.get('logloss_std', 0):.4f} "
+        f"auc={cv.get('auc_mean', 'N/A'):.4f}±{cv.get('auc_std', 0):.4f}"
+    )
 
-    snapshot = {"match": m_match, "set": m_set,
-                "config": {"match_features": MATCH_FEATURES,
-                           "train_seasons": RECENT_TRAIN_SEASONS,
-                           "test_season": TEST_SEASON}}
+    snapshot = {
+        "match": m_match,
+        "set": m_set,
+        "config": {
+            "match_features": MATCH_FEATURES,
+            "train_seasons": RECENT_TRAIN_SEASONS,
+            "test_season": TEST_SEASON,
+        },
+    }
     out = MODELS_DIR / "precision_improved.json"
     with open(out, "w", encoding="utf-8") as f:
         json.dump(snapshot, f, indent=2)
     print(f"\n  Snapshot guardado en {out}")
-    print(f"  Artefactos: match_elo_v2.joblib, set_predictor_v2.joblib")
+    print("  Artefactos: match_elo_v2.joblib, set_predictor_v2.joblib")
 
 
 if __name__ == "__main__":

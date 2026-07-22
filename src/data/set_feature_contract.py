@@ -35,39 +35,39 @@ class SetContext:
     """
 
     # --- Identity (offline: from sets_partidos.csv row; online: from simulator) ---
-    temporada_inicio: int = 0       # e.g. 2024  (also used for recency in trainer)
-    jornada_num: int = 0            # 1..N within temporada
-    match_id: str = ""              # offline: "{t}/{t+1}_m{idx:05d}"; online: any stable id
-    set_index: int = 1              # 1..5 within the match (the set being played)
-    equipo_local: str = ""          # canonical (post normalize_team_name)
-    equipo_visitante: str = ""      # canonical
+    temporada_inicio: int = 0  # e.g. 2024  (also used for recency in trainer)
+    jornada_num: int = 0  # 1..N within temporada
+    match_id: str = ""  # offline: "{t}/{t+1}_m{idx:05d}"; online: any stable id
+    set_index: int = 1  # 1..5 within the match (the set being played)
+    equipo_local: str = ""  # canonical (post normalize_team_name)
+    equipo_visitante: str = ""  # canonical
 
     # --- Strength / Elo ---
-    elo_local: float = 1500.0       # raw Elo (pre-match)
-    elo_visitante: float = 1500.0   # raw Elo
-    strength_local: float = 0.5     # elo_to_strength(elo_local) — precomputed
+    elo_local: float = 1500.0  # raw Elo (pre-match)
+    elo_visitante: float = 1500.0  # raw Elo
+    strength_local: float = 0.5  # elo_to_strength(elo_local) — precomputed
     strength_visitante: float = 0.5
 
     # --- Rolling team state (pre-match) ---
     h_win_rate_global: float = 0.5  # all-games win rate expanding, [0,1]
     a_win_rate_global: float = 0.5
-    h_set_win_rate: float = 0.5     # sets win rate expanding, [0,1]
+    h_set_win_rate: float = 0.5  # sets win rate expanding, [0,1]
     a_set_win_rate: float = 0.5
-    h_form_ewma: float = 0.5        # EWMA form (ALL games, half-life=5), [0,1]
+    h_form_ewma: float = 0.5  # EWMA form (ALL games, half-life=5), [0,1]
     a_form_ewma: float = 0.5
-    h_set_diff_exp: float = 0.0     # EWMA set differential, [-1,1]-ish
+    h_set_diff_exp: float = 0.0  # EWMA set differential, [-1,1]-ish
     a_set_diff_exp: float = 0.0
-    h_point_ratio: float = 0.5      # expanding point ratio (historical pts_fav), [0,1]
+    h_point_ratio: float = 0.5  # expanding point ratio (historical pts_fav), [0,1]
     a_point_ratio: float = 0.5
-    h2h_win_rate: float = 0.5       # H2H decaying win rate (H2H_HALFLIFE=2), [0,1]
+    h2h_win_rate: float = 0.5  # H2H decaying win rate (H2H_HALFLIFE=2), [0,1]
 
     # --- In-match set state ---
-    sets_h_antes: int = 0           # sets won by local BEFORE this set (0..2)
-    sets_a_antes: int = 0           # sets won by visitante BEFORE this set (0..2)
-    prev_home_won: int = -1         # -1 unknown (set 1), 0 lost prev, 1 won prev — for momentum_h
+    sets_h_antes: int = 0  # sets won by local BEFORE this set (0..2)
+    sets_a_antes: int = 0  # sets won by visitante BEFORE this set (0..2)
+    prev_home_won: int = -1  # -1 unknown (set 1), 0 lost prev, 1 won prev — for momentum_h
 
     # --- Derived constants ---
-    target_score: int = 25          # 25 for sets 1-4, 15 for set 5
+    target_score: int = 25  # 25 for sets 1-4, 15 for set 5
 
 
 def build_set_features(ctx: SetContext) -> Dict[str, float]:

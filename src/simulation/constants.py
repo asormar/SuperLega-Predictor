@@ -70,7 +70,7 @@ MATCH_PREDICTOR_DAMPING = 0.5
 # están cálidas (final), queremos MÁS confianza en el modelo → damping
 # ALTO. Por eso START (inicio) < END (final).
 ADAPTIVE_DAMPING_START = 0.3  # early season: low damping = strong shrinkage
-ADAPTIVE_DAMPING_END = 0.7    # late season: high damping = trust the model
+ADAPTIVE_DAMPING_END = 0.7  # late season: high damping = trust the model
 SUPERLEGA_TOTAL_JORNADAS = 26  # ~13 equipos × 2 vueltas = 26 jornadas
 
 

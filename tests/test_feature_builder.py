@@ -2,7 +2,6 @@
 
 import threading
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -21,14 +20,16 @@ _ALL_H_A_COLS = [c for c in MATCH_FEATURE_COLS if c.startswith("h_") or c.starts
 def _make_minimal_csv(tmp_path):
     """Write a minimal CSV with all required h_/a_ columns to tmp_path."""
     import os
+
     path = os.path.join(str(tmp_path), "test.csv")
     base = ["local", "visitante", "gana_local", "temporada"]
     cols = base + list(_ALL_H_A_COLS)
     with open(path, "w", encoding="utf-8") as f:
         f.write(",".join(cols) + "\n")
-        f.write(",".join(["Trento", "Perugia", "1", "2024/2025"] + ["0.5"] * len(_ALL_H_A_COLS)) + "\n")
+        f.write(
+            ",".join(["Trento", "Perugia", "1", "2024/2025"] + ["0.5"] * len(_ALL_H_A_COLS)) + "\n"
+        )
     return path
-
 
 
 class TestBuildFeaturesFromStrengths:
@@ -39,10 +40,13 @@ class TestBuildFeaturesFromStrengths:
         feats = build_features_from_strengths(0.60, 0.40)
         assert feats["elo_diff"] == pytest.approx(0.20 * 200)
 
-    @pytest.mark.parametrize("home,away,expected", [
-        (0.40, 0.60, -0.20 * 200),
-        (0.50, 0.50, 0.0),
-    ])
+    @pytest.mark.parametrize(
+        "home,away,expected",
+        [
+            (0.40, 0.60, -0.20 * 200),
+            (0.50, 0.50, 0.0),
+        ],
+    )
     def test_elo_diff_various_strengths(self, home, away, expected):
         """elo_diff scaling holds for negative and zero diffs."""
         feats = build_features_from_strengths(home, away)
@@ -52,16 +56,15 @@ class TestBuildFeaturesFromStrengths:
                 assert val == pytest.approx(0.0), f"{key} should be 0"
 
 
-
 class TestAssumedRestDays:
     """ASSUMED_REST_DAYS is pinned at 7 in the feature builder module."""
 
     def test_pin_assumed_rest_days_7(self):
         """REGRESSION #10: ASSUMED_REST_DAYS must always be 7."""
         from src.simulation.constants import AVG_POINTS_PER_SET
+
         assert ASSUMED_REST_DAYS == 7
         assert AVG_POINTS_PER_SET == 23.5
-
 
 
 class TestRuntimeFeatureBuilder:
@@ -75,7 +78,9 @@ class TestRuntimeFeatureBuilder:
             lock_type = type(threading.Lock())
             assert isinstance(builder._lock, lock_type)
         finally:
-            import os; os.unlink(csv_path)
+            import os
+
+            os.unlink(csv_path)
 
     def test_build_features_returns_dataframe(self, synthetic_feature_builder):
         """build_features returns a non-empty DataFrame with expected columns."""
@@ -98,8 +103,9 @@ class TestRuntimeFeatureBuilder:
             assert df.iloc[0]["diff_win_rate_global"] == 0.0
             assert df.iloc[0]["elo_diff"] == 0.0
         finally:
-            import os; os.unlink(csv_path)
+            import os
 
+            os.unlink(csv_path)
 
 
 class TestWinRateAsymmetry:
@@ -108,6 +114,7 @@ class TestWinRateAsymmetry:
     def test_no_results_defaults(self, synthetic_feature_builder):
         """Before any matches, win_rates=0.5 and pts_fav_exp=AVG_POINTS_PER_SET."""
         from src.simulation.constants import AVG_POINTS_PER_SET
+
         df = synthetic_feature_builder.build_features("Trento", "Perugia", jornada=1)
         assert df.iloc[0]["h_win_rate_global"] == df.iloc[0]["a_win_rate_global"] == 0.5
         assert df.iloc[0]["h_pts_fav_exp"] == df.iloc[0]["a_pts_fav_exp"] == AVG_POINTS_PER_SET
@@ -116,10 +123,15 @@ class TestWinRateAsymmetry:
         """After one match, win_rates diverge (home≠away)."""
         builder = synthetic_feature_builder
         # Simulate a Trento home win
-        builder.update("Trento", "Perugia",
-                       sets_local=3, sets_visitante=1,
-                       winner="home",
-                       points_local=75, points_visitante=60)
+        builder.update(
+            "Trento",
+            "Perugia",
+            sets_local=3,
+            sets_visitante=1,
+            winner="home",
+            points_local=75,
+            points_visitante=60,
+        )
 
         df = builder.build_features("Trento", "Perugia", jornada=2)
         h_wr = df.iloc[0]["h_win_rate_global"]

@@ -13,7 +13,6 @@ import pytest
 from src.data.feature_store import SET_FEATURE_COLS
 from src.data.set_feature_contract import SetContext, build_set_features
 
-
 # ── Shared context for deterministic tests ──────────────────────────────────
 
 _BASE_CTX = SetContext(
@@ -48,13 +47,23 @@ _BASE_CTX = SetContext(
 # ── Test helpers ────────────────────────────────────────────────────────────
 
 TEAMS_12 = [
-    "Trento", "Perugia", "Piacenza", "Verona", "Lube",
-    "Milano", "Modena", "Monza", "Cisterna", "Padova",
-    "Taranto", "Grottazzolina",
+    "Trento",
+    "Perugia",
+    "Piacenza",
+    "Verona",
+    "Lube",
+    "Milano",
+    "Modena",
+    "Monza",
+    "Cisterna",
+    "Padova",
+    "Taranto",
+    "Grottazzolina",
 ]
 
 
 # ── Tests ───────────────────────────────────────────────────────────────────
+
 
 class TestContractDeterminism:
     """REQ-023, SCN-001: build_set_features is deterministic."""
@@ -64,18 +73,14 @@ class TestContractDeterminism:
         r0 = build_set_features(_BASE_CTX)
         for _ in range(99):
             r = build_set_features(_BASE_CTX)
-            assert r == r0, (
-                f"Feature dict changed on repeat call: {r} != {r0}"
-            )
+            assert r == r0, f"Feature dict changed on repeat call: {r} != {r0}"
 
     def test_contract_pure_no_mutation(self):
         """REQ-024, SCN-002: build_set_features does not mutate ctx."""
         ctx_before = dataclasses.asdict(_BASE_CTX)
         _ = build_set_features(_BASE_CTX)
         ctx_after = dataclasses.asdict(_BASE_CTX)
-        assert ctx_before == ctx_after, (
-            "SetContext mutated by build_set_features"
-        )
+        assert ctx_before == ctx_after, "SetContext mutated by build_set_features"
 
 
 class TestContractSchema:
@@ -103,20 +108,23 @@ class TestPtsFavNoLiveScore:
             a_point_ratio=0.45,
         )
         feats = build_set_features(ctx)
-        assert feats["pts_fav_h"] == pytest.approx(0.55, abs=1e-9), (
-            f"pts_fav_h={feats['pts_fav_h']} should be h_point_ratio=0.55"
-        )
-        assert feats["pts_fav_a"] == pytest.approx(0.45, abs=1e-9), (
-            f"pts_fav_a={feats['pts_fav_a']} should be a_point_ratio=0.45"
-        )
+        assert feats["pts_fav_h"] == pytest.approx(
+            0.55, abs=1e-9
+        ), f"pts_fav_h={feats['pts_fav_h']} should be h_point_ratio=0.55"
+        assert feats["pts_fav_a"] == pytest.approx(
+            0.45, abs=1e-9
+        ), f"pts_fav_a={feats['pts_fav_a']} should be a_point_ratio=0.45"
         # Verify momentum is discrete (decision #2)
-        assert feats["momentum_h"] in (0.0, 0.5, 1.0), (
-            f"momentum_h={feats['momentum_h']} should be discrete {{0, 0.5, 1.0}}"
-        )
+        assert feats["momentum_h"] in (
+            0.0,
+            0.5,
+            1.0,
+        ), f"momentum_h={feats['momentum_h']} should be discrete {{0, 0.5, 1.0}}"
         # This ctx has prev_home_won=1 -> momentum_h should be 1.0
         assert feats["momentum_h"] == 1.0
 
 
+@pytest.mark.slow
 class TestPSetDiscriminates:
     """REQ-022, SCN-008: p_set varies across the 132 A5 pairs."""
 
@@ -125,10 +133,13 @@ class TestPSetDiscriminates:
         """Load the v2 SetPredictor from disk."""
         import joblib
         from pathlib import Path
+
         BASE_DIR = Path(__file__).resolve().parent.parent
         model_path = BASE_DIR / "models" / "set_predictor_v2.joblib"
         if not model_path.exists():
-            pytest.fail("set_predictor_v2.joblib required for discrimination test — run `python -m src.models.train_improved` first")
+            pytest.fail(
+                "set_predictor_v2.joblib required for discrimination test — run `python -m src.models.train_improved` first"
+            )
         loaded = joblib.load(model_path)
         return loaded
 
@@ -136,8 +147,11 @@ class TestPSetDiscriminates:
     def team_data(self):
         """Real Elo ratings and strengths for TEAMS_12."""
         from src.data.rolling_features import (
-            get_historical_team_elo, elo_to_strength, ELO_BASE,
+            get_historical_team_elo,
+            elo_to_strength,
+            ELO_BASE,
         )
+
         elo_dict = get_historical_team_elo()
         return {
             t: {
@@ -205,6 +219,7 @@ class TestPSetDiscriminates:
         )
 
 
+@pytest.mark.slow
 class TestRuntimeConsumerPin:
     """R3#1 (CRITICAL): The runtime consumer _eval_set_predictor does NOT
     override contract-passed values with live score.
@@ -216,14 +231,13 @@ class TestRuntimeConsumerPin:
     computed from the contract-only path.
     """
 
-    V2_PATH = (
-        Path(__file__).resolve().parent.parent / "models" / "set_predictor_v2.joblib"
-    )
+    V2_PATH = Path(__file__).resolve().parent.parent / "models" / "set_predictor_v2.joblib"
 
     @pytest.fixture(scope="class")
     def v2_adapter(self):
         """Load the real v2 LogRegSetPredictor."""
         from src.models.set_predictor_v2 import LogRegSetPredictor
+
         return LogRegSetPredictor.load(self.V2_PATH)
 
     def test_eval_set_predictor_ignores_live_score(self, v2_adapter):
@@ -242,9 +256,7 @@ class TestRuntimeConsumerPin:
 
         # Compute expected prediction directly from the model using
         # contract-only features (pts_fav_h=0.55 via h_point_ratio)
-        df = pd.DataFrame(
-            [{f: feats.get(f, 0.0) for f in v2_adapter.feature_names}]
-        )
+        df = pd.DataFrame([{f: feats.get(f, 0.0) for f in v2_adapter.feature_names}])
         expected = float(v2_adapter.predict_proba(df)[0, 1])
 
         # Call _eval_set_predictor with live-score values that WOULD differ

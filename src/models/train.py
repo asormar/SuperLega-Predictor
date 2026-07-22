@@ -14,9 +14,13 @@ sys.path.insert(0, str(BASE_DIR))
 
 from src.data.data_pipeline import run_pipeline
 from src.data.feature_store import (
-    prepare_set_data, prepare_match_data,
-    MATCH_FEATURE_COLS, ENRICHED_MATCH_COLS, ROSTER_BASIC_COLS,
-    enrich_with_team_stats, compute_roster_features,
+    prepare_set_data,
+    prepare_match_data,
+    MATCH_FEATURE_COLS,
+    ENRICHED_MATCH_COLS,
+    ROSTER_BASIC_COLS,
+    enrich_with_team_stats,
+    compute_roster_features,
 )
 from src.models.set_predictor import SetPredictor
 from src.models.point_probability import PointProbabilityModel, build_point_training_data
@@ -84,9 +88,10 @@ def train_all():
 
     # Test rapido
     probs = point_model.get_point_probabilities(
-        home_strength=0.55, away_strength=0.45,
+        home_strength=0.55,
+        away_strength=0.45,
     )
-    print(f"\n  Test (home=0.55, away=0.45):")
+    print("\n  Test (home=0.55, away=0.45):")
     for k, v in probs.items():
         print(f"    {k}: {v:.4f}")
 
@@ -106,9 +111,11 @@ def train_all():
         test_stats = player_gen.generate_set_stats(test_team, 25, 20)
         print(f"\n  Test: stats simuladas para {test_team} (25-20):")
         for ps in test_stats[:5]:
-            print(f"    {ps['jugador'][:20]:<20} pts={ps.get('puntos',0):>2} "
-                  f"ace={ps.get('aces',0):.0f} atq={ps.get('ataques_ganados',0):.0f} "
-                  f"blq={ps.get('bloqueos',0):.0f}")
+            print(
+                f"    {ps['jugador'][:20]:<20} pts={ps.get('puntos',0):>2} "
+                f"ace={ps.get('aces',0):.0f} atq={ps.get('ataques_ganados',0):.0f} "
+                f"blq={ps.get('bloqueos',0):.0f}"
+            )
 
     player_gen.save()
 
@@ -124,7 +131,8 @@ def train_all():
 
     # Features: base + enriquecidas + roster basico (87 total)
     match_cols = [
-        c for c in MATCH_FEATURE_COLS + ENRICHED_MATCH_COLS + ROSTER_BASIC_COLS
+        c
+        for c in MATCH_FEATURE_COLS + ENRICHED_MATCH_COLS + ROSTER_BASIC_COLS
         if c in match_df.columns
     ]
     print(f"  [match] {len(match_cols)} features totales disponibles")
@@ -151,13 +159,17 @@ def train_all():
     print("\n" + "=" * 70)
     print("  ENTRENAMIENTO COMPLETADO")
     print("=" * 70)
-    print(f"  Set Predictor:    {set_predictor.best_model_name} "
-          f"(Test ACC={test_results['accuracy']:.3f}, "
-          f"AUC={test_results['auc_roc']:.3f})")
-    print(f"  Match Predictor:  {match_predictor.best_model_name} "
-          f"(Test ACC={match_test['accuracy']:.3f}, "
-          f"AUC={match_test['auc_roc']:.3f})")
-    print(f"  Point Probability: Modelo calibrado")
+    print(
+        f"  Set Predictor:    {set_predictor.best_model_name} "
+        f"(Test ACC={test_results['accuracy']:.3f}, "
+        f"AUC={test_results['auc_roc']:.3f})"
+    )
+    print(
+        f"  Match Predictor:  {match_predictor.best_model_name} "
+        f"(Test ACC={match_test['accuracy']:.3f}, "
+        f"AUC={match_test['auc_roc']:.3f})"
+    )
+    print("  Point Probability: Modelo calibrado")
     print(f"  Player Stats:      {len(player_gen.team_profiles)} equipos")
     print(f"\n  Modelos guardados en: {BASE_DIR / 'models'}")
 

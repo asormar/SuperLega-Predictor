@@ -86,8 +86,9 @@ def _worker(args: tuple) -> tuple:
     return key, season, m
 
 
-def _run_combo(season: int, n_sims: int, mb: float, gmf: float,
-               damping: float, point_model_path) -> dict:
+def _run_combo(
+    season: int, n_sims: int, mb: float, gmf: float, damping: float, point_model_path
+) -> dict:
     """Una corrida del backtest con overrides, sin tocar el JSON canonico."""
     res = run_backtest(
         season=season,
@@ -112,9 +113,14 @@ def _run_combo(season: int, n_sims: int, mb: float, gmf: float,
     }
 
 
-def run(pass1_sims: int = 100, pass2_sims: int = 500,
-        time_budget_s: float = 3600.0, point_model=None,
-        top_k: int = 4, workers: int = 6) -> dict:
+def run(
+    pass1_sims: int = 100,
+    pass2_sims: int = 500,
+    time_budget_s: float = 3600.0,
+    point_model=None,
+    top_k: int = 4,
+    workers: int = 6,
+) -> dict:
     """Ejecuta el grid en dos pasadas y devuelve el resumen."""
     point_model_path = point_model or POINT_MODEL_LT2024
 
@@ -122,11 +128,12 @@ def run(pass1_sims: int = 100, pass2_sims: int = 500,
     print("=" * 70)
     print("  B2 — TUNEO DE CONSTANTES DEL SIMULADOR")
     print("=" * 70)
-    print(f"  Combos distintos: {len(combos)} "
-          f"(el eje damping es degenerado, ver docstring)")
+    print(f"  Combos distintos: {len(combos)} " f"(el eje damping es degenerado, ver docstring)")
     print(f"  Tune sobre {TUNE_SEASONS}; 2025 NO se toca aqui.")
-    print(f"  Baseline actual: MOMENTUM_BONUS={MB_DEFAULT}, "
-          f"GLOBAL_MOMENTUM_FACTOR={GMF_DEFAULT}, damping={DAMPING_DEFAULT}")
+    print(
+        f"  Baseline actual: MOMENTUM_BONUS={MB_DEFAULT}, "
+        f"GLOBAL_MOMENTUM_FACTOR={GMF_DEFAULT}, damping={DAMPING_DEFAULT}"
+    )
     print()
 
     t0 = time.perf_counter()
@@ -134,27 +141,28 @@ def run(pass1_sims: int = 100, pass2_sims: int = 500,
     # ── Pasada 1: barata, sobre 2024, para descartar ──
     # Se paraleliza: los combos son independientes y la maquina tiene varios
     # cores. En serie, 12 combos costaban ~20 min; con 6 workers, ~4 min.
-    print(f"  --- PASADA 1 (n={pass1_sims}, temporada 2024, {workers} workers) ---",
-          flush=True)
+    print(f"  --- PASADA 1 (n={pass1_sims}, temporada 2024, {workers} workers) ---", flush=True)
     pass1 = {}
-    jobs = [(f"{mb}|{gmf}", 2024, pass1_sims, mb, gmf, DAMPING_DEFAULT,
-             point_model_path) for mb, gmf in combos]
+    jobs = [
+        (f"{mb}|{gmf}", 2024, pass1_sims, mb, gmf, DAMPING_DEFAULT, point_model_path)
+        for mb, gmf in combos
+    ]
 
     with ProcessPoolExecutor(max_workers=workers) as ex:
         for key, _season, m in ex.map(_worker, jobs):
             pass1[key] = m
             mb, gmf = key.split("|")
             flag = "" if m["brier"] <= PASS1_BRIER_CUTOFF else "  <- DESCARTADO"
-            print(f"    mb={mb:<6} gmf={gmf:<5} Brier={m['brier']:.4f} "
-                  f"ECE={m['ece']:.4f} ({m['seconds']:.0f}s){flag}", flush=True)
+            print(
+                f"    mb={mb:<6} gmf={gmf:<5} Brier={m['brier']:.4f} "
+                f"ECE={m['ece']:.4f} ({m['seconds']:.0f}s){flag}",
+                flush=True,
+            )
 
-    print(f"  Pasada 1 completa en {(time.perf_counter() - t0) / 60:.1f} min",
-          flush=True)
+    print(f"  Pasada 1 completa en {(time.perf_counter() - t0) / 60:.1f} min", flush=True)
 
-    survivors = [c for c in combos
-                 if pass1[f"{c[0]}|{c[1]}"]["brier"] <= PASS1_BRIER_CUTOFF]
-    print(f"\n  Supervivientes (Brier <= {PASS1_BRIER_CUTOFF}): "
-          f"{len(survivors)}/{len(combos)}")
+    survivors = [c for c in combos if pass1[f"{c[0]}|{c[1]}"]["brier"] <= PASS1_BRIER_CUTOFF]
+    print(f"\n  Supervivientes (Brier <= {PASS1_BRIER_CUTOFF}): " f"{len(survivors)}/{len(combos)}")
 
     # Time-box: la pasada 2 sobre 2023+2024 cuesta ~13 min/combo a n=500. Con
     # 12 supervivientes serian ~2.7 h, muy por encima del presupuesto. Se
@@ -171,13 +179,17 @@ def run(pass1_sims: int = 100, pass2_sims: int = 500,
         print(f"  Time-box: pasada 2 limitada a los {len(survivors)} mejores.")
 
     # ── Pasada 2: fina, sobre 2023 + 2024 ──
-    print(f"\n  --- PASADA 2 (n={pass2_sims}, temporadas {TUNE_SEASONS}, "
-          f"{workers} workers) ---", flush=True)
+    print(
+        f"\n  --- PASADA 2 (n={pass2_sims}, temporadas {TUNE_SEASONS}, " f"{workers} workers) ---",
+        flush=True,
+    )
     t_p2 = time.perf_counter()
     # Se paralelizan combo x temporada: cada (combo, season) es independiente.
-    jobs2 = [(f"{mb}|{gmf}", season, pass2_sims, mb, gmf, DAMPING_DEFAULT,
-              point_model_path)
-             for mb, gmf in survivors for season in TUNE_SEASONS]
+    jobs2 = [
+        (f"{mb}|{gmf}", season, pass2_sims, mb, gmf, DAMPING_DEFAULT, point_model_path)
+        for mb, gmf in survivors
+        for season in TUNE_SEASONS
+    ]
 
     raw = {}
     with ProcessPoolExecutor(max_workers=workers) as ex:
@@ -187,23 +199,23 @@ def run(pass1_sims: int = 100, pass2_sims: int = 500,
     pass2 = {}
     for key, per_season in raw.items():
         # Brier medio ponderado por numero de partidos de cada temporada.
-        num = sum(per_season[str(s)]["brier"] * per_season[str(s)]["n"]
-                  for s in TUNE_SEASONS)
+        num = sum(per_season[str(s)]["brier"] * per_season[str(s)]["n"] for s in TUNE_SEASONS)
         den = sum(per_season[str(s)]["n"] for s in TUNE_SEASONS)
         brier_mean = num / den
         pass2[key] = {
             "per_season": per_season,
             "brier_weighted": round(brier_mean, 5),
-            "seconds": round(sum(per_season[str(s)]["seconds"]
-                                 for s in TUNE_SEASONS), 1),
+            "seconds": round(sum(per_season[str(s)]["seconds"] for s in TUNE_SEASONS), 1),
         }
         mb, gmf = key.split("|")
-        print(f"    mb={mb:<6} gmf={gmf:<5} Brier(2023+2024)={brier_mean:.5f} "
-              f"[2023={per_season['2023']['brier']:.4f} "
-              f"2024={per_season['2024']['brier']:.4f}]", flush=True)
+        print(
+            f"    mb={mb:<6} gmf={gmf:<5} Brier(2023+2024)={brier_mean:.5f} "
+            f"[2023={per_season['2023']['brier']:.4f} "
+            f"2024={per_season['2024']['brier']:.4f}]",
+            flush=True,
+        )
 
-    print(f"  Pasada 2 completa en {(time.perf_counter() - t_p2) / 60:.1f} min",
-          flush=True)
+    print(f"  Pasada 2 completa en {(time.perf_counter() - t_p2) / 60:.1f} min", flush=True)
 
     best_key = min(pass2, key=lambda k: pass2[k]["brier_weighted"])
     best_mb, best_gmf = (float(x) for x in best_key.split("|"))
@@ -267,10 +279,9 @@ if __name__ == "__main__":
     ap.add_argument("--pass2-sims", type=int, default=500)
     ap.add_argument("--time-budget-s", type=float, default=3600.0)
     ap.add_argument("--point-model", default=None)
-    ap.add_argument("--workers", type=int, default=6,
-                    help="Procesos en paralelo.")
-    ap.add_argument("--top-k", type=int, default=4,
-                    help="Combos que pasan a la pasada 2 (time-box).")
+    ap.add_argument("--workers", type=int, default=6, help="Procesos en paralelo.")
+    ap.add_argument(
+        "--top-k", type=int, default=4, help="Combos que pasan a la pasada 2 (time-box)."
+    )
     a = ap.parse_args()
-    run(a.pass1_sims, a.pass2_sims, a.time_budget_s, a.point_model, a.top_k,
-        a.workers)
+    run(a.pass1_sims, a.pass2_sims, a.time_budget_s, a.point_model, a.top_k, a.workers)

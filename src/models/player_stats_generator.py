@@ -25,12 +25,18 @@ class PlayerStatsGenerator:
     """
 
     # Stats que generamos por jugador por set
-    STAT_KEYS = ["puntos", "aces", "ataques_ganados", "bloqueos",
-                 "recepciones_exc", "errores_saque"]
+    STAT_KEYS = [
+        "puntos",
+        "aces",
+        "ataques_ganados",
+        "bloqueos",
+        "recepciones_exc",
+        "errores_saque",
+    ]
 
     def __init__(self):
         self.team_profiles = {}  # {equipo_id: {jugador: {stat: {mean, std}}}}
-        self.team_rosters = {}   # {equipo_id: [lista de jugadores]}
+        self.team_rosters = {}  # {equipo_id: [lista de jugadores]}
         self._canonical_map = None  # cache: dict canonical_name -> equipo_id
 
     def _build_canonical_map(self):
@@ -42,6 +48,7 @@ class PlayerStatsGenerator:
         garantizar determinismo independientemente del orden de pd.unique().
         """
         from src.data.team_mapper import normalize_team_name
+
         self._canonical_map = {}
         for eid in self.team_profiles:
             canonical = normalize_team_name(self._extract_team_name(eid))
@@ -71,6 +78,7 @@ class PlayerStatsGenerator:
         if self._canonical_map is None:
             self._build_canonical_map()
         from src.data.team_mapper import normalize_team_name
+
         canonical = normalize_team_name(team_name)
         if canonical in self._canonical_map:
             return self._canonical_map[canonical]
@@ -104,9 +112,7 @@ class PlayerStatsGenerator:
                 df_equipo = df_equipo[df_equipo["temporada"] == latest_season]
 
             # Filtrar jugadores con suficientes partidos (minimo 5 sets)
-            df_equipo = df_equipo[
-                df_equipo["sets"].fillna(0) >= 5
-            ].copy()
+            df_equipo = df_equipo[df_equipo["sets"].fillna(0) >= 5].copy()
 
             if len(df_equipo) == 0:
                 continue
@@ -135,14 +141,14 @@ class PlayerStatsGenerator:
                         }
                     else:
                         stats[stat_key] = {
-                            "mean": 0.0, "std": 0.1,
-                            "total": 0.0, "sets": int(sets_played),
+                            "mean": 0.0,
+                            "std": 0.1,
+                            "total": 0.0,
+                            "sets": int(sets_played),
                         }
 
                 # Participacion (que porcentaje de sets juega)
-                stats["participation"] = float(sets_played) / float(
-                    df_equipo["sets"].max() or 1
-                )
+                stats["participation"] = float(sets_played) / float(df_equipo["sets"].max() or 1)
 
                 profile[jugador] = stats
                 roster.append(jugador)
@@ -151,8 +157,10 @@ class PlayerStatsGenerator:
             self.team_rosters[equipo_id] = roster
             teams_processed.add(equipo_name)
 
-        print(f"  [PlayerStats] {len(teams_processed)} equipos procesados, "
-              f"{sum(len(r) for r in self.team_rosters.values())} jugadores")
+        print(
+            f"  [PlayerStats] {len(teams_processed)} equipos procesados, "
+            f"{sum(len(r) for r in self.team_rosters.values())} jugadores"
+        )
 
     def _extract_team_name(self, equipo_id: str) -> str:
         """Extrae el nombre canonico del equipo desde el ID del CSV.
@@ -260,9 +268,7 @@ class PlayerStatsGenerator:
             # Formula estandar de voleibol: PTS = ataques_ganados + aces + bloqueos
             # Los errores del rival no se atribuyen a ningun jugador.
             stats["puntos"] = (
-                stats.get("ataques_ganados", 0)
-                + stats.get("aces", 0)
-                + stats.get("bloqueos", 0)
+                stats.get("ataques_ganados", 0) + stats.get("aces", 0) + stats.get("bloqueos", 0)
             )
 
             player_stats.append(stats)

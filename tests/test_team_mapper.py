@@ -6,14 +6,12 @@ between source modules is FLAGGED by assertion but NOT fixed here
 (batch scope: out-of-scope).
 """
 
-import pytest
-
 from src.data.team_mapper import normalize_team_name, get_all_viable_teams
-
 
 # ─────────────────────────────────────────────────────────────
 # Normalize vectors
 # ─────────────────────────────────────────────────────────────
+
 
 class TestNormalizeVectors:
     """Canonical normalize_team_name examples that must not regress."""
@@ -83,19 +81,22 @@ class TestViableTeamsThreshold:
 # Constants pinning (folded — no separate test_constants.py)
 # ─────────────────────────────────────────────────────────────
 
+
 class TestDefaultSideoutRate:
     """DEFAULT_SIDEOUT_RATE centralized in src.simulation.constants (was duplicated in point_probability.py before Batch 3)."""
 
     def test_constants_module_sideout(self):
         from src.simulation.constants import DEFAULT_SIDEOUT_RATE
+
         assert DEFAULT_SIDEOUT_RATE == 0.62
 
     def test_point_probability_no_longer_has_class_attr(self):
         """The class-level duplicate was removed; only the central constant remains."""
         from src.models.point_probability import PointProbabilityModel
-        assert not hasattr(PointProbabilityModel, "DEFAULT_SIDEOUT_RATE"), (
-            "DEFAULT_SIDEOUT_RATE was deduplicated; the class attribute should be removed."
-        )
+
+        assert not hasattr(
+            PointProbabilityModel, "DEFAULT_SIDEOUT_RATE"
+        ), "DEFAULT_SIDEOUT_RATE was deduplicated; the class attribute should be removed."
 
 
 class TestClampRanges:
@@ -103,14 +104,17 @@ class TestClampRanges:
 
     def test_default_clamp_range(self):
         from src.simulation.constants import DEFAULT_CLAMP_RANGE
+
         assert DEFAULT_CLAMP_RANGE == (0.20, 0.80)
 
     def test_adaptive_clamp_hard(self):
         from src.simulation.constants import POINT_PROB_CLIP_ADAPTIVE_HARD
+
         assert POINT_PROB_CLIP_ADAPTIVE_HARD == (0.10, 0.90)
 
     def test_clamp_margin(self):
         from src.simulation.constants import CLAMP_MARGIN
+
         assert CLAMP_MARGIN == 0.20
 
 
@@ -119,14 +123,17 @@ class TestMomentumConstants:
 
     def test_momentum_bonus(self):
         from src.simulation.constants import MOMENTUM_BONUS
+
         assert MOMENTUM_BONUS == 0.015
 
     def test_momentum_max_streak(self):
         from src.simulation.constants import MOMENTUM_MAX_STREAK
+
         assert MOMENTUM_MAX_STREAK == 4
 
     def test_momentum_decay(self):
         from src.simulation.constants import MOMENTUM_DECAY
+
         assert MOMENTUM_DECAY == 0.5
 
     def test_simulator_class_attrs_match(self):
@@ -137,6 +144,7 @@ class TestMomentumConstants:
             MOMENTUM_MAX_STREAK,
             MOMENTUM_DECAY,
         )
+
         assert MatchSimulator.MOMENTUM_BONUS == MOMENTUM_BONUS
         assert MatchSimulator.MOMENTUM_MAX_STREAK == MOMENTUM_MAX_STREAK
         assert MatchSimulator.MOMENTUM_DECAY == MOMENTUM_DECAY
@@ -147,4 +155,5 @@ class TestAssumedRestDays:
 
     def test_assumed_rest_days_value(self):
         from src.simulation.feature_builder import ASSUMED_REST_DAYS
+
         assert ASSUMED_REST_DAYS == 7

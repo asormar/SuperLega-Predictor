@@ -28,7 +28,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from src.data.rolling_features import (
-    build_rolling_match_features, _aggregate_matches, ELO_HOME_ADV,
+    build_rolling_match_features,
+    _aggregate_matches,
+    ELO_HOME_ADV,
 )
 
 MATCH_FEATURES_PATH = BASE_DIR / "DB" / "features" / "match_features.csv"
@@ -149,24 +151,71 @@ def build_match_features(sp: pd.DataFrame) -> pd.DataFrame:
 
     # -- Orden de columnas exacto del CSV original (66 columnas) --
     ordered = [
-        "partido_id", "temporada", "jornada_num", "local", "visitante",
-        "h_win_rate_global", "h_win_rate_last5", "h_win_rate_home", "h_win_rate_away",
-        "h_pts_fav_exp", "h_pts_con_exp", "h_set_win_rate", "h_set_diff_exp",
-        "h_forma_home", "h_forma_away", "h_ultimo_set_diff", "h_racha",
-        "h_h2h_set_diff_exp", "h_h2h_win_rate",
-        "a_win_rate_global", "a_win_rate_last5", "a_win_rate_home", "a_win_rate_away",
-        "a_pts_fav_exp", "a_pts_con_exp", "a_set_win_rate", "a_set_diff_exp",
-        "a_forma_home", "a_forma_away", "a_ultimo_set_diff", "a_racha",
-        "a_h2h_set_diff_exp", "a_h2h_win_rate",
-        "diff_win_rate_global", "diff_win_rate_last5", "diff_set_win_rate",
+        "partido_id",
+        "temporada",
+        "jornada_num",
+        "local",
+        "visitante",
+        "h_win_rate_global",
+        "h_win_rate_last5",
+        "h_win_rate_home",
+        "h_win_rate_away",
+        "h_pts_fav_exp",
+        "h_pts_con_exp",
+        "h_set_win_rate",
+        "h_set_diff_exp",
+        "h_forma_home",
+        "h_forma_away",
+        "h_ultimo_set_diff",
+        "h_racha",
+        "h_h2h_set_diff_exp",
+        "h_h2h_win_rate",
+        "a_win_rate_global",
+        "a_win_rate_last5",
+        "a_win_rate_home",
+        "a_win_rate_away",
+        "a_pts_fav_exp",
+        "a_pts_con_exp",
+        "a_set_win_rate",
+        "a_set_diff_exp",
+        "a_forma_home",
+        "a_forma_away",
+        "a_ultimo_set_diff",
+        "a_racha",
+        "a_h2h_set_diff_exp",
+        "a_h2h_win_rate",
+        "diff_win_rate_global",
+        "diff_win_rate_last5",
+        "diff_set_win_rate",
         "diff_set_diff_exp",
-        "diff_pts_fav_exp", "diff_pts_con_exp", "diff_racha", "diff_ultimo_set_diff",
-        "diff_rank_season", "diff_forma_efectiva",
-        "h_descanso", "a_descanso", "diff_descanso", "h_rank_season", "a_rank_season",
-        "elo_h", "elo_a", "elo_h_home", "elo_a_away", "elo_diff", "elo_win_prob_h",
-        "set_ratio_h", "set_ratio_a", "point_ratio_h", "point_ratio_a",
-        "dominancia_h", "dominancia_a", "diff_set_ratio", "diff_dominancia",
-        "sos_h", "sos_a", "diff_sos",
+        "diff_pts_fav_exp",
+        "diff_pts_con_exp",
+        "diff_racha",
+        "diff_ultimo_set_diff",
+        "diff_rank_season",
+        "diff_forma_efectiva",
+        "h_descanso",
+        "a_descanso",
+        "diff_descanso",
+        "h_rank_season",
+        "a_rank_season",
+        "elo_h",
+        "elo_a",
+        "elo_h_home",
+        "elo_a_away",
+        "elo_diff",
+        "elo_win_prob_h",
+        "set_ratio_h",
+        "set_ratio_a",
+        "point_ratio_h",
+        "point_ratio_a",
+        "dominancia_h",
+        "dominancia_a",
+        "diff_set_ratio",
+        "diff_dominancia",
+        "sos_h",
+        "sos_a",
+        "diff_sos",
         "gana_local",
     ]
 
@@ -189,6 +238,7 @@ def main():
     sp = pd.read_csv(BASE_DIR / "DB" / "sets_partidos.csv", encoding="utf-8")
     # Normalizar equipos (igual que data_pipeline.load_sets_partidos)
     from src.data.team_mapper import normalize_team_name
+
     sp["equipo_local"] = sp["equipo_local"].apply(normalize_team_name)
     sp["equipo_visitante"] = sp["equipo_visitante"].apply(normalize_team_name)
 

@@ -10,13 +10,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-import numpy as np
-import pandas as pd
 from src.data.data_pipeline import run_pipeline
 from src.data.feature_store import prepare_set_data, prepare_match_data
 from src.data.team_mapper import get_superliga_teams, _ALL_VIABLE_TEAMS
 from src.models.benchmark import run_benchmark
-
 
 CURRENT_12 = set(get_superliga_teams("2024/2025"))
 ALL_16 = set(_ALL_VIABLE_TEAMS)
@@ -52,9 +49,12 @@ def run_comparison():
     print(f"  Sets con 12 equipos: {len(sf_12)}")
     X_12, y_12 = prepare_set_data(sf_12)
     df_set_12 = run_benchmark(
-        X_12["train"], y_12["train"],
-        X_12["val"], y_12["val"],
-        X_12["test"], y_12["test"],
+        X_12["train"],
+        y_12["train"],
+        X_12["val"],
+        y_12["val"],
+        X_12["test"],
+        y_12["test"],
     )
 
     print("\n" + "=" * 90)
@@ -65,9 +65,12 @@ def run_comparison():
     print(f"  Sets con 16 equipos: {len(sf_16)}")
     X_16, y_16 = prepare_set_data(sf_16)
     df_set_16 = run_benchmark(
-        X_16["train"], y_16["train"],
-        X_16["val"], y_16["val"],
-        X_16["test"], y_16["test"],
+        X_16["train"],
+        y_16["train"],
+        X_16["val"],
+        y_16["val"],
+        X_16["test"],
+        y_16["test"],
     )
 
     # ─── MATCH PREDICTOR ───
@@ -79,9 +82,12 @@ def run_comparison():
     print(f"  Partidos con 12 equipos: {len(mf_12)}")
     X_m12, y_m12 = prepare_match_data(mf_12)
     df_match_12 = run_benchmark(
-        X_m12["train"], y_m12["train"],
-        X_m12["val"], y_m12["val"],
-        X_m12["test"], y_m12["test"],
+        X_m12["train"],
+        y_m12["train"],
+        X_m12["val"],
+        y_m12["val"],
+        X_m12["test"],
+        y_m12["test"],
     )
 
     print("\n" + "=" * 90)
@@ -92,9 +98,12 @@ def run_comparison():
     print(f"  Partidos con 16 equipos: {len(mf_16)}")
     X_m16, y_m16 = prepare_match_data(mf_16)
     df_match_16 = run_benchmark(
-        X_m16["train"], y_m16["train"],
-        X_m16["val"], y_m16["val"],
-        X_m16["test"], y_m16["test"],
+        X_m16["train"],
+        y_m16["train"],
+        X_m16["val"],
+        y_m16["val"],
+        X_m16["test"],
+        y_m16["test"],
     )
 
     # ─── RESUMEN ───
@@ -110,25 +119,33 @@ def run_comparison():
     print(f"\n  {'':30s} {'12 equipos':>15} {'16 equipos':>15} {'Delta':>8}")
     print("  " + "-" * 70)
 
-    print(f"  {'SET - Mejor AUC':30s} "
-          f"{best_12_set['auc_test']:>15.4f} "
-          f"{best_16_set['auc_test']:>15.4f} "
-          f"{best_16_set['auc_test'] - best_12_set['auc_test']:>+8.4f}")
+    print(
+        f"  {'SET - Mejor AUC':30s} "
+        f"{best_12_set['auc_test']:>15.4f} "
+        f"{best_16_set['auc_test']:>15.4f} "
+        f"{best_16_set['auc_test'] - best_12_set['auc_test']:>+8.4f}"
+    )
 
-    print(f"  {'SET - Mejor Acc':30s} "
-          f"{best_12_set['acc_test']:>15.4f} "
-          f"{best_16_set['acc_test']:>15.4f} "
-          f"{best_16_set['acc_test'] - best_12_set['acc_test']:>+8.4f}")
+    print(
+        f"  {'SET - Mejor Acc':30s} "
+        f"{best_12_set['acc_test']:>15.4f} "
+        f"{best_16_set['acc_test']:>15.4f} "
+        f"{best_16_set['acc_test'] - best_12_set['acc_test']:>+8.4f}"
+    )
 
-    print(f"  {'MATCH - Mejor AUC':30s} "
-          f"{best_12_match['auc_test']:>15.4f} "
-          f"{best_16_match['auc_test']:>15.4f} "
-          f"{best_16_match['auc_test'] - best_12_match['auc_test']:>+8.4f}")
+    print(
+        f"  {'MATCH - Mejor AUC':30s} "
+        f"{best_12_match['auc_test']:>15.4f} "
+        f"{best_16_match['auc_test']:>15.4f} "
+        f"{best_16_match['auc_test'] - best_12_match['auc_test']:>+8.4f}"
+    )
 
-    print(f"  {'MATCH - Mejor Acc':30s} "
-          f"{best_12_match['acc_test']:>15.4f} "
-          f"{best_16_match['acc_test']:>15.4f} "
-          f"{best_16_match['acc_test'] - best_12_match['acc_test']:>+8.4f}")
+    print(
+        f"  {'MATCH - Mejor Acc':30s} "
+        f"{best_12_match['acc_test']:>15.4f} "
+        f"{best_16_match['acc_test']:>15.4f} "
+        f"{best_16_match['acc_test'] - best_12_match['acc_test']:>+8.4f}"
+    )
 
     print("  " + "-" * 70)
     print(f"  {'SET - Mejor modelo (12)':30s} {best_12_set['modelo']:>15}")

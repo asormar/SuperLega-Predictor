@@ -15,10 +15,10 @@ import pytest
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 
-
 # ─────────────────────────────────────────────────────────────
 # Autouse: seed everything before every test
 # ─────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(autouse=True)
 def seed_everything():
@@ -35,7 +35,9 @@ def seed_everything():
 _N_SYNTHETIC = 50
 
 
-def _make_synthetic_binary_df(feature_cols: List[str], n: int = _N_SYNTHETIC) -> Tuple[pd.DataFrame, pd.Series]:
+def _make_synthetic_binary_df(
+    feature_cols: List[str], n: int = _N_SYNTHETIC
+) -> Tuple[pd.DataFrame, pd.Series]:
     """Create a tiny synthetic DataFrame + binary target for quick model fitting."""
     X = pd.DataFrame({col: np.random.uniform(-1, 1, n) for col in feature_cols})
     y = pd.Series(np.random.randint(0, 2, n))
@@ -45,6 +47,7 @@ def _make_synthetic_binary_df(feature_cols: List[str], n: int = _N_SYNTHETIC) ->
 # ─────────────────────────────────────────────────────────────
 # Synthetic fixture: SetPredictor
 # ─────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="function")
 def synthetic_set_predictor():
@@ -56,8 +59,14 @@ def synthetic_set_predictor():
     from src.models.set_predictor import SetPredictor
 
     feat_names = [
-        "set_num_norm", "sets_h_antes", "sets_a_antes", "diff_sets_antes",
-        "es_desempate", "momentum_h", "pts_fav_h", "pts_fav_a",
+        "set_num_norm",
+        "sets_h_antes",
+        "sets_a_antes",
+        "diff_sets_antes",
+        "es_desempate",
+        "momentum_h",
+        "pts_fav_h",
+        "pts_fav_a",
     ]
     X, y = _make_synthetic_binary_df(feat_names)
 
@@ -72,13 +81,16 @@ def synthetic_set_predictor():
     predictor.calibrated_model = cal
     predictor.feature_names = feat_names
     predictor.scaler.fit(X)  # fit the scaler so transform works
-    predictor.results = {"LogisticRegression": {"accuracy": 0.5, "auc_roc": 0.5, "brier_score": 0.25}}
+    predictor.results = {
+        "LogisticRegression": {"accuracy": 0.5, "auc_roc": 0.5, "brier_score": 0.25}
+    }
     return predictor
 
 
 # ─────────────────────────────────────────────────────────────
 # Synthetic fixture: MatchPredictor
 # ─────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="function")
 def synthetic_match_predictor():
@@ -88,8 +100,12 @@ def synthetic_match_predictor():
     from sklearn.calibration import CalibratedClassifierCV
 
     feat_names = [
-        "h_win_rate_global", "a_win_rate_global", "diff_win_rate_global",
-        "elo_diff", "h_descanso", "a_descanso",
+        "h_win_rate_global",
+        "a_win_rate_global",
+        "diff_win_rate_global",
+        "elo_diff",
+        "h_descanso",
+        "a_descanso",
     ]
     X, y = _make_synthetic_binary_df(feat_names)
 
@@ -110,22 +126,25 @@ def synthetic_match_predictor():
 # Synthetic fixture: PointProbabilityModel
 # ─────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(scope="function")
 def synthetic_point_model():
     """Real PointProbabilityModel fit on tiny synthetic match_features."""
     from src.models.point_probability import PointProbabilityModel
 
     n = 30
-    df = pd.DataFrame({
-        "point_ratio_h": np.random.uniform(0.45, 0.55, n),
-        "point_ratio_a": np.random.uniform(0.35, 0.45, n),
-        "elo_diff": np.random.uniform(-50, 50, n),
-        "diff_win_rate_global": np.random.uniform(-0.2, 0.2, n),
-        "diff_set_win_rate": np.random.uniform(-0.2, 0.2, n),
-        "diff_dominancia": np.random.uniform(-0.2, 0.2, n),
-        "diff_set_ratio": np.random.uniform(-0.2, 0.2, n),
-        "diff_forma_efectiva": np.random.uniform(-0.2, 0.2, n),
-    })
+    df = pd.DataFrame(
+        {
+            "point_ratio_h": np.random.uniform(0.45, 0.55, n),
+            "point_ratio_a": np.random.uniform(0.35, 0.45, n),
+            "elo_diff": np.random.uniform(-50, 50, n),
+            "diff_win_rate_global": np.random.uniform(-0.2, 0.2, n),
+            "diff_set_win_rate": np.random.uniform(-0.2, 0.2, n),
+            "diff_dominancia": np.random.uniform(-0.2, 0.2, n),
+            "diff_set_ratio": np.random.uniform(-0.2, 0.2, n),
+            "diff_forma_efectiva": np.random.uniform(-0.2, 0.2, n),
+        }
+    )
 
     model = PointProbabilityModel()
     model.fit(df)
@@ -136,6 +155,7 @@ def synthetic_point_model():
 # Synthetic fixture: PlayerStatsGenerator
 # ─────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(scope="function")
 def synthetic_player_gen():
     """Real PlayerStatsGenerator fit on synthetic player/team stats."""
@@ -143,18 +163,20 @@ def synthetic_player_gen():
 
     players = ["PlayerA", "PlayerB", "PlayerC"]
     n = len(players)
-    player_df = pd.DataFrame({
-        "equipo_id": ["TEAM01"] * n,
-        "jugador": players,
-        "sets": [50, 45, 40],
-        "temporada": ["2024/2025"] * n,
-        "puntos": [200, 180, 150],
-        "aces": [15, 10, 8],
-        "ataques_ganados": [150, 120, 100],
-        "bloqueos": [35, 50, 42],
-        "recepciones_exc": [80, 70, 60],
-        "errores_saque": [10, 8, 5],
-    })
+    player_df = pd.DataFrame(
+        {
+            "equipo_id": ["TEAM01"] * n,
+            "jugador": players,
+            "sets": [50, 45, 40],
+            "temporada": ["2024/2025"] * n,
+            "puntos": [200, 180, 150],
+            "aces": [15, 10, 8],
+            "ataques_ganados": [150, 120, 100],
+            "bloqueos": [35, 50, 42],
+            "recepciones_exc": [80, 70, 60],
+            "errores_saque": [10, 8, 5],
+        }
+    )
     team_df = pd.DataFrame({"equipo": ["Trento"]})
 
     gen = PlayerStatsGenerator()
@@ -165,6 +187,7 @@ def synthetic_player_gen():
 # ─────────────────────────────────────────────────────────────
 # Synthetic fixture: RuntimeFeatureBuilder (tmp_path CSV)
 # ─────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="function")
 def synthetic_feature_builder(tmp_path: Path):
@@ -178,10 +201,7 @@ def synthetic_feature_builder(tmp_path: Path):
     from src.simulation.feature_builder import RuntimeFeatureBuilder
     from src.data.feature_store import MATCH_FEATURE_COLS
 
-    all_h_a_cols = [
-        c for c in MATCH_FEATURE_COLS
-        if c.startswith("h_") or c.startswith("a_")
-    ]
+    all_h_a_cols = [c for c in MATCH_FEATURE_COLS if c.startswith("h_") or c.startswith("a_")]
 
     csv_path = tmp_path / "match_features.csv"
     rows = []
@@ -209,6 +229,7 @@ def synthetic_feature_builder(tmp_path: Path):
 # API override fixture: swap src.api.main singletons in + teardown
 # ─────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(scope="function")
 def app_with_synthetic(
     monkeypatch,
@@ -234,16 +255,25 @@ def app_with_synthetic(
 
     # Rebuild simulator with synthetic dependencies
     from src.simulation.simulator import MatchSimulator
-    monkeypatch.setattr(api, "simulator", MatchSimulator(
-        point_model=synthetic_point_model,
-        player_stats_gen=synthetic_player_gen,
-    ))
+
+    monkeypatch.setattr(
+        api,
+        "simulator",
+        MatchSimulator(
+            point_model=synthetic_point_model,
+            player_stats_gen=synthetic_player_gen,
+        ),
+    )
 
     # Recompute TEAM_STRENGTHS with synthetic data so sample teams resolve
-    monkeypatch.setattr(api, "TEAM_STRENGTHS", {
-        "Trento": 0.55,
-        "Perugia": 0.52,
-    })
+    monkeypatch.setattr(
+        api,
+        "TEAM_STRENGTHS",
+        {
+            "Trento": 0.55,
+            "Perugia": 0.52,
+        },
+    )
 
     yield
 
@@ -253,6 +283,7 @@ def app_with_synthetic(
 # ─────────────────────────────────────────────────────────────
 # Sample-team fixture
 # ─────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="function")
 def sample_teams():
@@ -264,19 +295,23 @@ def sample_teams():
 # tmp_path CSV helper
 # ─────────────────────────────────────────────────────────────
 
+
 @pytest.fixture(scope="function")
 def csv_helper(tmp_path: Path):
     """Write a minimal CSV to tmp_path and return its path."""
+
     def _write(df: pd.DataFrame, filename: str = "test.csv") -> Path:
         path = tmp_path / filename
         df.to_csv(path, index=False, encoding="utf-8")
         return path
+
     return _write
 
 
 # ─────────────────────────────────────────────────────────────
 # Normalize vectors fixture data
 # ─────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="session")
 def normalize_vectors() -> List[Tuple[str, str]]:

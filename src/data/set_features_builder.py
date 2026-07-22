@@ -109,11 +109,18 @@ def build_set_features(sp: pd.DataFrame) -> pd.DataFrame:
         set_wr_h, set_wr_a = float(r["h_set_ratio"]), float(r["a_set_ratio"])
         forma_h, forma_a = float(r["h_form_ewma"]), float(r["a_form_ewma"])
         base = {
-            "strength_h": s_h, "strength_a": s_a, "strength_diff": s_h - s_a,
+            "strength_h": s_h,
+            "strength_a": s_a,
+            "strength_diff": s_h - s_a,
             "elo_diff": elo_h - elo_a,
-            "set_wr_h": set_wr_h, "set_wr_a": set_wr_a, "diff_set_wr": set_wr_h - set_wr_a,
-            "forma_h": forma_h, "forma_a": forma_a, "diff_forma": forma_h - forma_a,
-            "pts_fav_h": float(r["h_point_ratio"]), "pts_fav_a": float(r["a_point_ratio"]),
+            "set_wr_h": set_wr_h,
+            "set_wr_a": set_wr_a,
+            "diff_set_wr": set_wr_h - set_wr_a,
+            "forma_h": forma_h,
+            "forma_a": forma_a,
+            "diff_forma": forma_h - forma_a,
+            "pts_fav_h": float(r["h_point_ratio"]),
+            "pts_fav_a": float(r["a_point_ratio"]),
             "h2h_diff": (float(r["h2h_win_rate_h"]) - 0.5) * 2.0,
             "diff_set_ratio": float(r["diff_set_ratio"]),
             "diff_dominancia": float(r["diff_set_ratio"]),
@@ -125,17 +132,19 @@ def build_set_features(sp: pd.DataFrame) -> pd.DataFrame:
             momentum = 0.5 if prev_home_won is None else (1.0 if prev_home_won else 0.0)
             es_desempate = 1 if (sets_h == 2 and sets_a == 2) else 0
             row = dict(base)
-            row.update({
-                "partido_id": uid,
-                "set_num": si,
-                "set_num_norm": (si - 1) / 4.0,
-                "sets_h_antes": sets_h,
-                "sets_a_antes": sets_a,
-                "diff_sets_antes": sets_h - sets_a,
-                "momentum_h": momentum,
-                "es_desempate": es_desempate,
-                "ganador_set_local": int(winner_set),
-            })
+            row.update(
+                {
+                    "partido_id": uid,
+                    "set_num": si,
+                    "set_num_norm": (si - 1) / 4.0,
+                    "sets_h_antes": sets_h,
+                    "sets_a_antes": sets_a,
+                    "diff_sets_antes": sets_h - sets_a,
+                    "momentum_h": momentum,
+                    "es_desempate": es_desempate,
+                    "ganador_set_local": int(winner_set),
+                }
+            )
             rows.append(row)
             if winner_set == 1:
                 sets_h += 1
@@ -165,8 +174,10 @@ def main():
     df_t["t"] = df_t["partido_id"].str.split("/").str[0].astype(int)
     print("  Sets por temporada:")
     print(df_t.groupby("t")["set_num"].count().to_string())
-    print(f"  sets_h_antes rango: [{df['sets_h_antes'].min()}, {df['sets_h_antes'].max()}] "
-          f"(esperado max 2)")
+    print(
+        f"  sets_h_antes rango: [{df['sets_h_antes'].min()}, {df['sets_h_antes'].max()}] "
+        f"(esperado max 2)"
+    )
     print(f"  Balance target ganador_set_local: {df['ganador_set_local'].mean():.3f}")
 
     # Backup del CSV colisionado (solo la primera vez).

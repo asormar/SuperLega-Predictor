@@ -15,13 +15,19 @@ from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
 
 from src.simulation.constants import (
-    DEFAULT_SIDEOUT_RATE, POINT_PROB_CLIP, POINT_RATIO_CLIP,
+    DEFAULT_SIDEOUT_RATE,
+    POINT_PROB_CLIP,
+    POINT_RATIO_CLIP,
 )
 
 # Feature keys esperados por el modelo entrenado
 _FEATURE_KEYS = [
-    "elo_diff", "diff_win_rate_global", "diff_set_win_rate",
-    "diff_dominancia", "diff_set_ratio", "diff_forma_efectiva",
+    "elo_diff",
+    "diff_win_rate_global",
+    "diff_set_win_rate",
+    "diff_dominancia",
+    "diff_set_ratio",
+    "diff_forma_efectiva",
 ]
 
 # Mapeo de las 6 `_FEATURE_KEYS` (nombres del RUNTIME) a sus equivalentes en
@@ -135,6 +141,7 @@ def build_features_from_strengths(home_strength: float, away_strength: float) ->
         "diff_forma_efectiva": diff,
     }
 
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MODELS_DIR = BASE_DIR / "models"
 
@@ -186,8 +193,14 @@ class PointProbabilityModel:
         # Entrenar un modelo simple para ajustar la probabilidad
         # según las features del partido
         feature_cols = []
-        for col in ["elo_diff", "diff_win_rate_global", "diff_set_win_rate",
-                     "diff_dominancia", "diff_set_ratio", "diff_forma_efectiva"]:
+        for col in [
+            "elo_diff",
+            "diff_win_rate_global",
+            "diff_set_win_rate",
+            "diff_dominancia",
+            "diff_set_ratio",
+            "diff_forma_efectiva",
+        ]:
             if col in df.columns:
                 feature_cols.append(col)
 
@@ -250,9 +263,7 @@ class PointProbabilityModel:
             # El clip es solo un salvavidas (ver POINT_RATIO_CLIP); ya no hay
             # mapping `0.45 + 0.10 * p_dominante`.
             pred = float(self.model.predict(X_scaled)[0])
-            p_home_point = float(
-                np.clip(pred, POINT_RATIO_CLIP[0], POINT_RATIO_CLIP[1])
-            )
+            p_home_point = float(np.clip(pred, POINT_RATIO_CLIP[0], POINT_RATIO_CLIP[1]))
         else:
             # Usar strength directamente
             total = home_strength + away_strength
@@ -270,11 +281,15 @@ class PointProbabilityModel:
         # - Cuando LOCAL saca, la probabilidad depende del AWAY sideout
         #   (qué tan bueno es el visitante recibiendo).
         # - Cuando VISITANTE saca, depende del HOME sideout.
-        p_home_serving = p_home_point * (1 - away_sideout) / (
-            p_home_point * (1 - away_sideout) + p_away_point * away_sideout
+        p_home_serving = (
+            p_home_point
+            * (1 - away_sideout)
+            / (p_home_point * (1 - away_sideout) + p_away_point * away_sideout)
         )
-        p_home_receiving = p_home_point * home_sideout / (
-            p_home_point * home_sideout + p_away_point * (1 - home_sideout)
+        p_home_receiving = (
+            p_home_point
+            * home_sideout
+            / (p_home_point * home_sideout + p_away_point * (1 - home_sideout))
         )
 
         # Clamp para evitar probabilidades extremas

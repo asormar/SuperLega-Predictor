@@ -151,6 +151,7 @@ class LogRegSetPredictor:
 
         if legacy_path is not None:
             from src.models.set_predictor import SetPredictor as LegacySetPredictor
+
             legacy_path = Path(legacy_path)
             if legacy_path.exists():
                 return LegacySetPredictor.load(legacy_path), "extra_trees_v1"

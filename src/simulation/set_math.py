@@ -43,10 +43,7 @@ def p_set_from_p_point(p: float, target: int = 25) -> float:
     # Victoria sin deuce: gana target-a-j con j <= target-2. Los primeros
     # (target-1+j) puntos contienen target-1 ganados y j perdidos; el ultimo
     # punto lo gana el ganador del set.
-    win = sum(
-        comb(target - 1 + j, j) * p ** target * (1 - p) ** j
-        for j in range(target - 1)
-    )
+    win = sum(comb(target - 1 + j, j) * p**target * (1 - p) ** j for j in range(target - 1))
     # Deuce: llegar a (target-1)-(target-1) y despues ganar por 2 (geometrico).
     deuce_reach = comb(2 * (target - 1), target - 1) * (p * (1 - p)) ** (target - 1)
     p_deuce_win = p * p / (p * p + (1 - p) * (1 - p))

@@ -27,7 +27,7 @@ Leyenda: ✅ HECHO · 🚧 PENDIENTE · ⏸️ BLOQUEADO (por calendario / datos
 | Item | Estado | Notas |
 |---|---|---|
 | B1 — Backtest del simulador | ✅ HECHO (2026-07-15) | Cuantificó la sobreconfianza pre-B3 (ECE 0.242, 53% de 3-0) |
-| B2 — Tuning de constantes del simulador | 🚧 PENDIENTE | Siguiente palanca del simulador, B1 lo hace medible |
+| B2 — Tuning de constantes del simulador | ✅ HECHO (2026-07-22) — RESULTADO NEGATIVO | Grid de constantes parametrizado y evaluado (36 combos, 12 distintos); resultado negativo, no se adoptan constantes nuevas. Detalle en §B2 más abajo. |
 | **B3** — PointProbabilityModel: regresión continua | ✅ **HECHO (2026-07-22)** | Ridge(α=1.0) sobre target continuo + clip (0.40, 0.60). Brier 0.273→0.182, ECE 0.242→0.057, 3-0 53%→37.6% (real 38.7%). El simulador pasa de degradar al Elo a superarlo. |
 | B4 — Predictor de partido best-of-5 | 🚧 PENDIENTE | Retorno marginal no compensaba; re-evaluar post-B2/B3 |
 | B5 — Roster churn | 🚧 PENDIENTE | Única señal pre-temporada de fichajes |
@@ -38,7 +38,7 @@ Leyenda: ✅ HECHO · 🚧 PENDIENTE · ⏸️ BLOQUEADO (por calendario / datos
 
 | Item | Estado | Notas |
 |---|---|---|
-| C1 — Ruff + Black + CI | 🚧 PENDIENTE | Tras C2 |
+| C1 — Ruff + Black + CI | ✅ HECHO (2026-07-22) | CI matrix Ubuntu+Windows verde; PR #2 en `asormar/SuperLega-Predictor`. Detalle en §C1 más abajo. |
 | **C2** — Remote de GitHub | ✅ **HECHO** | `asormar/SuperLega-Predictor` activo, PR #1 mergeado, B3 mergeado |
 | C3 — Migración de logging | 🚧 PENDIENTE | 260+ `print()` → `logging` |
 | C4 — Hardening del API | 🚧 PENDIENTE | Pre-deploy |
@@ -55,8 +55,8 @@ Todos 🚧 PENDIENTES (E1 MC en UI, E2 explicabilidad, E3 `precision_report.py`,
 
 ### Resumen ejecutivo
 
-- **Items cerrados**: B0 (colisión partido_id), B0b (regen set_features), B1, A1–A6, B3, C2. Total: **9 items**.
-- **Items pendientes no bloqueados**: B2, B4, B5, B6, C1, C3, C4, C5, C6, D1–D4, E1–E5. Total: **17 items**.
+- **Items cerrados**: B0 (colisión partido_id), B0b (regen set_features), B1, A1–A6, B2 (resultado negativo), B3, C1, C2. Total: **11 items**.
+- **Items pendientes no bloqueados**: B4, B5, B6, C3, C4, C5, C6, D1–D4, E1–E5. Total: **15 items**.
 - **Items bloqueados externamente**: B7. Total: **1 item**.
 
 ---
@@ -143,7 +143,7 @@ Verificado contra código y commits:
   ([main.py:95-109](../src/api/main.py): `RuntimeFeatureBuilder(initial_elo=get_historical_team_elo())`
   con fallback a arranque plano si falla). Lo que sigue frío son las demás
   features dinámicas (ver D1).
-- `pyproject.toml` con deps + pytest (sin ruff/black todavía). `.gitignore` raíz existe.
+- `pyproject.toml` con deps + pytest + ruff + black (line-length 100, target py310). `.gitignore` raíz existe.
 - LaTeX: esqueleto de 10 capítulos + apéndices compilando (branch `mejora-precision`).
 
 **Cerrado por evidencia negativa (NO reintentar sin motivo nuevo):** tuning de
@@ -443,7 +443,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 
 ## GRUPO B — Fase 4 (parcialmente completada): precisión end-to-end del simulador
 
-> **Estado al 2026-07-22**: B1 ✅ y B3 ✅ cerrados. Pendientes: B2 (próxima palanca), B4, B5, B6. B7 bloqueado por calendario.
+> **Estado al 2026-07-22**: B1 ✅, B2 ✅ (resultado negativo) y B3 ✅ cerrados. Pendientes: B4, B5, B6. B7 bloqueado por calendario.
 
 ### B1 — Backtest del simulador contra la temporada real (`src/models/backtest_simulator.py`)  ✅ IMPLEMENTADO (2026-07-15)
 
@@ -740,32 +740,14 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
 
 ## GRUPO C — Infra y calidad (Batch 2c/2d parcialmente avanzados)
 
-> **Estado al 2026-07-22**: C2 ✅ (remote activo en `asormar/SuperLega-Predictor`, PR #1 y B3 mergeados). Pendientes: C1, C3, C4, C5, C6.
+> **Estado al 2026-07-22**: C1 ✅, C2 ✅ (remote activo en `asormar/SuperLega-Predictor`, PR #1 y B3 mergeados). Pendientes: C3, C4, C5, C6.
 
-### C1 — Ruff + Black + CI  🚧 PENDIENTE
+### C1 — Ruff + Black + CI  ✅ HECHO (2026-07-22)
 
-1. Añadir a [pyproject.toml](../pyproject.toml) (hoy solo tiene project+pytest):
-   ```toml
-   [tool.ruff]
-   line-length = 100
-   target-version = "py312"
-   exclude = ["src/web", "latex", "memoria", "docs"]
+Ruff + Black configurados en `pyproject.toml` (`[tool.ruff]` + `[tool.black]`, `line-length = 100`, `target-version = "py310"` para coincidir con `requires-python = ">=3.10"`, exclusiones: `src/web`, `latex`, `memoria`, `docs`). E402 ignorado en `[tool.ruff.lint]` por el boilerplate `sys.path.insert(0, str(BASE_DIR))` de los módulos de `src/` (Guardrail 7). 49 archivos reformateados por el autofix en un commit dedicado; 6 lints resueltos a mano en otro commit. `.github/workflows/ci.yml` con matrix `ubuntu-latest` + `windows-latest`, `fail-fast: false`, `concurrency` con `cancel-in-progress`, y `workflow_dispatch`. CI verde en ambos OS. PR #2 abierta en `asormar/SuperLega-Predictor`.
 
-   [tool.black]
-   line-length = 100
-   target-version = ["py312"]
-   ```
-2. `pip install ruff black` → `ruff check src/ tests/` y arreglar findings
-   (esperar sobre todo imports no usados y f-strings); `black --check src/ tests/`
-   y aplicar. **Commit del autofix SEPARADO de cualquier cambio manual.**
-3. `.github/workflows/ci.yml`: jobs sobre `windows-latest` Y `ubuntu-latest`
-   (el repo se desarrolla en Windows; los paths con espacios/paréntesis ya
-   mordieron antes): `pip install -e ".[test]" ruff black` →
-   `ruff check` → `black --check` → `pytest -q -m "not slow"` →
-   `python -m src.data.data_pipeline`. Nota: los tests `slow` requieren
-   `models/*.joblib` (gitignored) — excluirlos en CI o añadir un job que corra
-   `train_improved` antes.
-- **Esfuerzo**: ~2 h. **Dependencias**: C2 para que el workflow corra de verdad.
+- **Esfuerzo**: ~2 h. **Dependencias**: C2 ✅ (hecho).
+- **Gotcha**: `hyperparameter_search` (módulo de experimento, Batch 3 resultado negativo) requería `optuna`, que no es dep del proyecto; el test correspondiente usa `importorskip` para no romper CI.
 
 ### C2 — Remote de GitHub (seguro de vida del TFG)  ✅ **HECHO**
 
@@ -984,9 +966,9 @@ workflows sobre el remote.
 | 1 | ~~**B1** backtest simulador~~ | ✅ HECHO (2026-07-15) | Reveló que el simulador estaba sobreconfiado (Brier +0.079, ECE +0.198 vs Elo). |
 | 2 | ~~**Grupo A** (A5→A3→A2→A4→A6)~~ | ✅ HECHO (2026-07-21) | Diagnóstico hecho; elimina ruido cuantificado y ×60 de coste. Desenlace: `w=1.0` (SetPredictor cableado pero inactivo). |
 | 3 | **B3** PointProb continuo | ✅ HECHO (2026-07-22) | Brier 0.273→0.182, ECE 0.242→0.057, 3-0 53%→37.6%. El simulador pasa de degradar al Elo a superarlo. |
-| 4 | **B2** tuning de constantes del simulador | 🚧 PENDIENTE | Siguiente palanca del simulador, B1 lo hace medible. Empezar por aquí. |
+| 4 | ~~**B2** tuning de constantes del simulador~~ | ✅ HECHO (2026-07-22) — RESULTADO NEGATIVO | Grid parametrizado y evaluado; no se adoptaron constantes nuevas. |
 | 5 | ~~**C2** remote de GitHub~~ | ✅ HECHO | `asormar/SuperLega-Predictor` activo, PRs mergeados. |
-| 6 | **C1** Ruff + Black + CI | 🚧 PENDIENTE | Ahora ya tiene sentido: C2 listo. |
+| 6 | **C1** Ruff + Black + CI | ✅ HECHO | Ruff+Black+CI matrix Ubuntu+Windows en verde. PR #2. |
 | 7 | **E1** MC de temporada en UI + **E3** reporte reproducible | 🚧 PENDIENTE | Máximo valor de defensa por hora. |
 | 8 | **B4, B5, D1, D3, E5** | 🚧 PENDIENTE | Backlog medio; cada uno se cierra en una tarde. |
 | 9 | **B6** ampliar dataset | 🚧 PENDIENTE | La palanca de modelo más grande, pero la más cara; tras B2. |

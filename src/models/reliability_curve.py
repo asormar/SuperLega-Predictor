@@ -16,11 +16,10 @@ Incluye:
 import sys
 from pathlib import Path
 import numpy as np
-import pandas as pd
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -28,13 +27,13 @@ sys.path.insert(0, str(BASE_DIR))
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.metrics import brier_score_loss, roc_auc_score, accuracy_score
-from sklearn.preprocessing import StandardScaler
 
 from src.data.data_pipeline import run_pipeline
 from src.data.feature_store import (
-    prepare_set_data, prepare_match_data,
-    TEMPORAL_SPLITS, MATCH_FEATURE_COLS, SET_FEATURE_COLS,
-    enrich_with_team_stats, compute_roster_features,
+    prepare_set_data,
+    prepare_match_data,
+    enrich_with_team_stats,
+    compute_roster_features,
 )
 
 OUTPUT_DIR = BASE_DIR / "models" / "plots"
@@ -44,6 +43,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ─────────────────────────────────────────────────────────────
 # Funciones de utilidad
 # ─────────────────────────────────────────────────────────────
+
 
 def compute_ece(y_true, y_prob, n_bins=10):
     """
@@ -83,8 +83,10 @@ def print_calibration_analysis(y_true, y_prob, name, n_bins=10):
     print(f"\n  {'='*68}")
     print(f"  ANALISIS POR BIN DE PROBABILIDAD - {name}")
     print(f"  {'='*68}")
-    print(f"  {'Rango prob':>18} {'N':>6} {'%total':>7} "
-          f"{'Pred_avg':>9} {'Real_avg':>9} {'Gap':>8} {'Diagnostico'}")
+    print(
+        f"  {'Rango prob':>18} {'N':>6} {'%total':>7} "
+        f"{'Pred_avg':>9} {'Real_avg':>9} {'Gap':>8} {'Diagnostico'}"
+    )
     print(f"  {'-'*66}")
 
     for i in range(n_bins):
@@ -115,22 +117,27 @@ def print_calibration_analysis(y_true, y_prob, name, n_bins=10):
         else:
             diag = ""
 
-        print(f"  [{lo:.1f}-{hi:.1f}] {n_bin:>7} {pct:>6.1f}% "
-              f"{avg_conf:>9.3f} {avg_acc:>9.3f} {gap:>+8.3f}  {diag}")
+        print(
+            f"  [{lo:.1f}-{hi:.1f}] {n_bin:>7} {pct:>6.1f}% "
+            f"{avg_conf:>9.3f} {avg_acc:>9.3f} {gap:>+8.3f}  {diag}"
+        )
 
     # Resumen
     ece = compute_ece(y_true, y_prob, n_bins=n_bins)
-    over_mask = y_prob > y_true.mean()
-    under_mask = y_prob < y_true.mean()
     print(f"  {'-'*66}")
-    print(f"  ECE: {ece:.4f}  |  Media real (y): {y_true.mean():.3f}  "
-          f"|  Media predicha: {y_prob.mean():.3f}  "
-          f"|  Gap global: {y_prob.mean() - y_true.mean():+.3f}")
+    print(
+        f"  ECE: {ece:.4f}  |  Media real (y): {y_true.mean():.3f}  "
+        f"|  Media predicha: {y_prob.mean():.3f}  "
+        f"|  Gap global: {y_prob.mean() - y_true.mean():+.3f}"
+    )
     print()
 
 
 def plot_reliability_diagram(
-    y_test, prob_dict, title, filename,
+    y_test,
+    prob_dict,
+    title,
+    filename,
     n_bins=15,
 ):
     """
@@ -143,8 +150,7 @@ def plot_reliability_diagram(
         filename: nombre del archivo de salida (.png)
         n_bins: numero de bins para la curva de fiabilidad
     """
-    fig, axes = plt.subplots(2, 1, figsize=(9, 11),
-                             gridspec_kw={"height_ratios": [2.5, 1]})
+    fig, axes = plt.subplots(2, 1, figsize=(9, 11), gridspec_kw={"height_ratios": [2.5, 1]})
     ax_cal = axes[0]
     ax_hist = axes[1]
 
@@ -158,38 +164,59 @@ def plot_reliability_diagram(
         color = colors.get(name, None)
 
         # Curva de fiabilidad
-        prob_true, prob_pred = calibration_curve(
-            y_test, y_prob, n_bins=n_bins, strategy="uniform"
-        )
+        prob_true, prob_pred = calibration_curve(y_test, y_prob, n_bins=n_bins, strategy="uniform")
         ece = compute_ece(y_test, y_prob, n_bins=n_bins)
         brier = brier_score_loss(y_test, y_prob)
 
         ax_cal.plot(
-            prob_pred, prob_true, marker="o", linewidth=2.2,
-            markersize=7, label=f"{name}  (ECE={ece:.4f}, Brier={brier:.4f})",
+            prob_pred,
+            prob_true,
+            marker="o",
+            linewidth=2.2,
+            markersize=7,
+            label=f"{name}  (ECE={ece:.4f}, Brier={brier:.4f})",
             color=color,
         )
 
         # Histograma
         ax_hist.hist(
-            y_prob, bins=30, alpha=0.55, label=name,
-            color=color, edgecolor="white", linewidth=0.5,
+            y_prob,
+            bins=30,
+            alpha=0.55,
+            label=name,
+            color=color,
+            edgecolor="white",
+            linewidth=0.5,
         )
 
     # Línea de calibración perfecta
     ax_cal.plot([0, 1], [0, 1], "k--", linewidth=1.3, alpha=0.7, label="Calibracion perfecta")
 
     # Líneas de referencia: sobre/subconfianza
-    ax_cal.fill_between([0, 1], [0, 0], [0, 1], alpha=0.04, color="red",
-                        label="_nolegend_")
-    ax_cal.fill_between([0, 1], [0, 1], [1, 1], alpha=0.04, color="blue",
-                        label="_nolegend_")
+    ax_cal.fill_between([0, 1], [0, 0], [0, 1], alpha=0.04, color="red", label="_nolegend_")
+    ax_cal.fill_between([0, 1], [0, 1], [1, 1], alpha=0.04, color="blue", label="_nolegend_")
 
     # Anotaciones de zonas
-    ax_cal.text(0.80, 0.58, "SOBRECONFIANZA\n(pred > real)", fontsize=9,
-                ha="center", color="darkred", style="italic", alpha=0.7)
-    ax_cal.text(0.80, 0.28, "SUBCONFIANZA\n(pred < real)", fontsize=9,
-                ha="center", color="darkblue", style="italic", alpha=0.7)
+    ax_cal.text(
+        0.80,
+        0.58,
+        "SOBRECONFIANZA\n(pred > real)",
+        fontsize=9,
+        ha="center",
+        color="darkred",
+        style="italic",
+        alpha=0.7,
+    )
+    ax_cal.text(
+        0.80,
+        0.28,
+        "SUBCONFIANZA\n(pred < real)",
+        fontsize=9,
+        ha="center",
+        color="darkblue",
+        style="italic",
+        alpha=0.7,
+    )
 
     # Configurar eje de calibración
     ax_cal.set_xlim(0, 1)
@@ -216,9 +243,12 @@ def plot_reliability_diagram(
 
 
 def train_and_evaluate_gb_model(
-    X_train, y_train,
-    X_val, y_val,
-    X_test, y_test,
+    X_train,
+    y_train,
+    X_val,
+    y_val,
+    X_test,
+    y_test,
     name="GradientBoosting",
 ):
     """
@@ -243,10 +273,14 @@ def train_and_evaluate_gb_model(
 
     gb_cal = CalibratedClassifierCV(
         GradientBoostingClassifier(
-            n_estimators=200, max_depth=4, learning_rate=0.05,
-            subsample=0.8, random_state=42,
+            n_estimators=200,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            random_state=42,
         ),
-        cv=3, method="isotonic",
+        cv=3,
+        method="isotonic",
     )
     gb_cal.fit(X_train_full, y_train_full)
     y_prob_cal = gb_cal.predict_proba(X_test)[:, 1]
@@ -258,8 +292,7 @@ def train_and_evaluate_gb_model(
         auc = roc_auc_score(y_test, yp)
         brier = brier_score_loss(y_test, yp)
         ece = compute_ece(y_test, yp)
-        print(f"    {label}  Acc={acc:.4f}  AUC={auc:.4f}  "
-              f"Brier={brier:.4f}  ECE={ece:.4f}")
+        print(f"    {label}  Acc={acc:.4f}  AUC={auc:.4f}  " f"Brier={brier:.4f}  ECE={ece:.4f}")
 
     return {
         "GradientBoosting (crudo)": y_prob_raw,
@@ -270,6 +303,7 @@ def train_and_evaluate_gb_model(
 # ─────────────────────────────────────────────────────────────
 # MAIN
 # ─────────────────────────────────────────────────────────────
+
 
 def main():
     print("=" * 75)
@@ -298,17 +332,23 @@ def main():
     y_te = y_set["test"].values
 
     probs_set = train_and_evaluate_gb_model(
-        X_tr, y_tr, X_va, y_va, X_te, y_te,
+        X_tr,
+        y_tr,
+        X_va,
+        y_va,
+        X_te,
+        y_te,
         name="GB-Set",
     )
 
-    print_calibration_analysis(y_te, probs_set["GradientBoosting (crudo)"],
-                               "GB SET - Crudo")
-    print_calibration_analysis(y_te, probs_set["GradientBoosting (calibrado)"],
-                               "GB SET - Calibrado")
+    print_calibration_analysis(y_te, probs_set["GradientBoosting (crudo)"], "GB SET - Crudo")
+    print_calibration_analysis(
+        y_te, probs_set["GradientBoosting (calibrado)"], "GB SET - Calibrado"
+    )
 
     plot_reliability_diagram(
-        y_te, probs_set,
+        y_te,
+        probs_set,
         title="Diagrama de Fiabilidad - GradientBoosting en SET",
         filename="reliability_set.png",
         n_bins=15,
@@ -338,17 +378,23 @@ def main():
     y_te_m = y_match["test"].values
 
     probs_match = train_and_evaluate_gb_model(
-        X_tr_m, y_tr_m, X_va_m, y_va_m, X_te_m, y_te_m,
+        X_tr_m,
+        y_tr_m,
+        X_va_m,
+        y_va_m,
+        X_te_m,
+        y_te_m,
         name="GB-Match",
     )
 
-    print_calibration_analysis(y_te_m, probs_match["GradientBoosting (crudo)"],
-                               "GB MATCH - Crudo")
-    print_calibration_analysis(y_te_m, probs_match["GradientBoosting (calibrado)"],
-                               "GB MATCH - Calibrado")
+    print_calibration_analysis(y_te_m, probs_match["GradientBoosting (crudo)"], "GB MATCH - Crudo")
+    print_calibration_analysis(
+        y_te_m, probs_match["GradientBoosting (calibrado)"], "GB MATCH - Calibrado"
+    )
 
     plot_reliability_diagram(
-        y_te_m, probs_match,
+        y_te_m,
+        probs_match,
         title="Diagrama de Fiabilidad - GradientBoosting en PARTIDOS",
         filename="reliability_match.png",
         n_bins=15,
@@ -365,14 +411,16 @@ def main():
     probs_match_cal = {"GradientBoosting (calibrado)": probs_match["GradientBoosting (calibrado)"]}
 
     plot_reliability_diagram(
-        y_te, probs_set_cal,
+        y_te,
+        probs_set_cal,
         title="Diagrama de Fiabilidad - GradientBoosting Calibrado en SET",
         filename="reliability_set_calibrado.png",
         n_bins=15,
     )
 
     plot_reliability_diagram(
-        y_te_m, probs_match_cal,
+        y_te_m,
+        probs_match_cal,
         title="Diagrama de Fiabilidad - GradientBoosting Calibrado en PARTIDOS",
         filename="reliability_match_calibrado.png",
         n_bins=15,

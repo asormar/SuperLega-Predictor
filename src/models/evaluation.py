@@ -21,7 +21,10 @@ from pathlib import Path
 from typing import Optional, Callable
 
 from sklearn.metrics import (
-    accuracy_score, roc_auc_score, brier_score_loss, log_loss,
+    accuracy_score,
+    roc_auc_score,
+    brier_score_loss,
+    log_loss,
 )
 from sklearn.preprocessing import StandardScaler
 
@@ -68,6 +71,7 @@ def rolling_origin_folds(
 def _fit_predict(model, X_tr, y_tr, X_ev, name, sample_weight=None):
     """Entrena y devuelve probabilidades P(clase=1) sobre X_ev."""
     from sklearn.base import clone
+
     m = clone(model)
     if name in _SCALED_MODELS:
         scaler = StandardScaler()
@@ -152,16 +156,29 @@ def select_champion(
     rows = []
     for name, model in candidates.items():
         res = evaluate_model_rolling(
-            model, name, df, feature_cols, target,
-            season_col=season_col, n_val_folds=n_val_folds,
+            model,
+            name,
+            df,
+            feature_cols,
+            target,
+            season_col=season_col,
+            n_val_folds=n_val_folds,
             sample_weight_fn=sample_weight_fn,
         )
         res["modelo"] = name
         rows.append(res)
 
     tabla = pd.DataFrame(rows).sort_values("logloss_mean").reset_index(drop=True)
-    cols = ["modelo", "logloss_mean", "logloss_std", "auc_mean", "auc_std",
-            "brier_mean", "acc_mean", "n_folds"]
+    cols = [
+        "modelo",
+        "logloss_mean",
+        "logloss_std",
+        "auc_mean",
+        "auc_std",
+        "brier_mean",
+        "acc_mean",
+        "n_folds",
+    ]
     tabla = tabla[cols]
 
     if verbose:
@@ -170,10 +187,12 @@ def select_champion(
         print(f"  {'Modelo':<20} {'LogLoss':>14} {'AUC':>14} {'Brier':>8} {'Acc':>7}")
         print("  " + "-" * 78)
         for _, r in tabla.iterrows():
-            print(f"  {r['modelo']:<20} "
-                  f"{r['logloss_mean']:.4f}±{r['logloss_std']:.3f}   "
-                  f"{r['auc_mean']:.4f}±{r['auc_std']:.3f}   "
-                  f"{r['brier_mean']:.4f}  {r['acc_mean']:.3f}")
+            print(
+                f"  {r['modelo']:<20} "
+                f"{r['logloss_mean']:.4f}±{r['logloss_std']:.3f}   "
+                f"{r['auc_mean']:.4f}±{r['auc_std']:.3f}   "
+                f"{r['brier_mean']:.4f}  {r['acc_mean']:.3f}"
+            )
         print("  " + "-" * 78)
 
     best_name = tabla.iloc[0]["modelo"]

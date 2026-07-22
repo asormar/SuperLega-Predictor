@@ -21,10 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
-import json
 import pandas as pd
 
-from src.data.team_mapper import get_superliga_teams, get_all_viable_teams, normalize_team_name, TEAM_ALIASES
+from src.data.team_mapper import get_all_viable_teams, normalize_team_name
 from src.simulation.simulator import MatchSimulator
 from src.simulation.season_simulator import SeasonSimulator, generate_jornadas
 from src.simulation.feature_builder import RuntimeFeatureBuilder
@@ -97,13 +96,13 @@ try:
     # señal de partido sea fiel desde la jornada 1 en lugar de arrancar plano.
     try:
         from src.data.rolling_features import get_historical_team_elo
+
         _initial_elo = get_historical_team_elo()
     except Exception as _e:
         print(f"[API] WARN: no se pudo sembrar Elo historico ({_e}); arranque plano")
         _initial_elo = None
     feature_builder = RuntimeFeatureBuilder(initial_elo=_initial_elo)
-    print("[API] Feature builder cargado OK"
-          f"{' (Elo sembrado)' if _initial_elo else ''}")
+    print("[API] Feature builder cargado OK" f"{' (Elo sembrado)' if _initial_elo else ''}")
 except Exception as e:
     print(f"[API] WARN: No se pudo cargar feature_builder: {e}")
     feature_builder = None
@@ -113,6 +112,7 @@ simulator = MatchSimulator(
     point_model=point_model,
     player_stats_gen=player_gen,
 )
+
 
 # ─── Fuerzas de equipos ───
 def _compute_team_strengths() -> dict:
@@ -125,8 +125,8 @@ def _compute_team_strengths() -> dict:
     """
     try:
         from src.data.rolling_features import get_historical_team_strengths
-        strengths = {t: round(float(v), 3)
-                     for t, v in get_historical_team_strengths().items()}
+
+        strengths = {t: round(float(v), 3) for t, v in get_historical_team_strengths().items()}
         print(f"[API] Fuerzas (margin-Elo) calculadas para {len(strengths)} equipos")
         return strengths
     except Exception as e:
@@ -151,13 +151,26 @@ def _compute_team_strengths() -> dict:
         print(f"[API] WARN: No se pudieron calcular fuerzas: {e}")
         return {}
 
+
 TEAM_STRENGTHS = _compute_team_strengths()
 # Fallbacks para equipos sin suficientes datos
 _STRENGTH_DEFAULTS = {
-    "Trento": 0.68, "Perugia": 0.65, "Verona": 0.60, "Piacenza": 0.58,
-    "Lube": 0.56, "Milano": 0.53, "Modena": 0.52, "Monza": 0.48,
-    "Padova": 0.47, "Cisterna": 0.45, "Taranto": 0.40, "Grottazzolina": 0.35,
-    "Siena": 0.42, "Ravenna": 0.45, "Acicastello": 0.36, "Cuneo": 0.38,
+    "Trento": 0.68,
+    "Perugia": 0.65,
+    "Verona": 0.60,
+    "Piacenza": 0.58,
+    "Lube": 0.56,
+    "Milano": 0.53,
+    "Modena": 0.52,
+    "Monza": 0.48,
+    "Padova": 0.47,
+    "Cisterna": 0.45,
+    "Taranto": 0.40,
+    "Grottazzolina": 0.35,
+    "Siena": 0.42,
+    "Ravenna": 0.45,
+    "Acicastello": 0.36,
+    "Cuneo": 0.38,
 }
 for k, v in _STRENGTH_DEFAULTS.items():
     if k not in TEAM_STRENGTHS:
@@ -189,6 +202,7 @@ TEAM_COLORS = {
 # Schemas Pydantic
 # ─────────────────────────────────────────────────────────────
 
+
 class SimularPartidoRequest(BaseModel):
     local: str = Field(..., description="Nombre del equipo local")
     visitante: str = Field(..., description="Nombre del equipo visitante")
@@ -205,6 +219,7 @@ class SimularPartidoRequest(BaseModel):
         if not v or not isinstance(v, str):
             raise ValueError(f"Nombre de equipo invalido: {v!r}")
         from src.data.team_mapper import normalize_team_name
+
         name = normalize_team_name(v)
         if name not in TEAM_STRENGTHS:
             raise ValueError(f"Equipo '{v}' no reconocido en la base de datos")
@@ -227,6 +242,7 @@ class SimularPartidoRequest(BaseModel):
     @model_validator(mode="after")
     def _val_diff_teams(self):
         from src.data.team_mapper import normalize_team_name
+
         if normalize_team_name(self.local) == normalize_team_name(self.visitante):
             raise ValueError("Los equipos local y visitante deben ser distintos")
         return self
@@ -237,10 +253,16 @@ class SimularTemporadaRequest(BaseModel):
     doble_vuelta: bool = Field(True, description="Ida y vuelta")
     semilla: Optional[int] = Field(None, description="Semilla para reproducibilidad")
     fuerzas: Optional[dict[str, float]] = Field(None, description="Fuerzas personalizadas")
-    half: Optional[str] = Field(None, description="'first' para primera vuelta, 'second' para segunda")
-    first_half_state: Optional[dict] = Field(None, description="Estado de la primera vuelta (para segunda)")
+    half: Optional[str] = Field(
+        None, description="'first' para primera vuelta, 'second' para segunda"
+    )
+    first_half_state: Optional[dict] = Field(
+        None, description="Estado de la primera vuelta (para segunda)"
+    )
     use_match_predictor: bool = Field(True, description="Calibrar fuerzas con MatchPredictor ML")
-    use_set_calibration: bool = Field(True, description="Calibrar clamp punto a punto con SetPredictor")
+    use_set_calibration: bool = Field(
+        True, description="Calibrar clamp punto a punto con SetPredictor"
+    )
 
     @field_validator("semilla")
     @classmethod
@@ -257,6 +279,7 @@ class SimularTemporadaRequest(BaseModel):
         if len(v) > 12:
             raise ValueError("Maximo 12 equipos por temporada")
         from src.data.team_mapper import normalize_team_name
+
         normalized = [normalize_team_name(e) for e in v]
         if len(normalized) != len(set(normalized)):
             raise ValueError("Equipos duplicados en la lista")
@@ -300,6 +323,7 @@ class IniciarTemporadaRequest(BaseModel):
         if len(v) > 12:
             raise ValueError("Maximo 12 equipos por temporada")
         from src.data.team_mapper import normalize_team_name
+
         normalized = [normalize_team_name(e) for e in v]
         if len(normalized) != len(set(normalized)):
             raise ValueError("Equipos duplicados en la lista")
@@ -342,6 +366,7 @@ class SimularJornadaRequest(BaseModel):
         if len(v) > 12:
             raise ValueError("Maximo 12 equipos por temporada")
         from src.data.team_mapper import normalize_team_name
+
         normalized = [normalize_team_name(e) for e in v]
         if len(normalized) != len(set(normalized)):
             raise ValueError("Equipos duplicados en la lista")
@@ -362,13 +387,16 @@ class SimularJornadaRequest(BaseModel):
 # Endpoints
 # ─────────────────────────────────────────────────────────────
 
+
 @app.get("/api/equipos")
 async def listar_equipos():
     """Lista todos los equipos viables (con datos completos)."""
     equipos = []
     for team_info in get_all_viable_teams():
         team = team_info["nombre"]
-        colors = TEAM_COLORS.get(team, {"primary": "#607D8B", "secondary": "#FFFFFF", "accent": "#000"})
+        colors = TEAM_COLORS.get(
+            team, {"primary": "#607D8B", "secondary": "#FFFFFF", "accent": "#000"}
+        )
         strength = TEAM_STRENGTHS.get(team, 0.5)
 
         # Obtener roster si disponible
@@ -376,13 +404,15 @@ async def listar_equipos():
         if player_gen:
             roster = player_gen.get_roster(team)
 
-        equipos.append({
-            "nombre": team,
-            "fuerza": strength,
-            "colores": colors,
-            "num_jugadores": len(roster),
-            "categoria": team_info["categoria"],
-        })
+        equipos.append(
+            {
+                "nombre": team,
+                "fuerza": strength,
+                "colores": colors,
+                "num_jugadores": len(roster),
+                "categoria": team_info["categoria"],
+            }
+        )
 
     return {"equipos": equipos}
 
@@ -549,38 +579,43 @@ async def simular_temporada(req: SimularTemporadaRequest):
     # Serializar clasificación
     clasificacion = []
     for i, s in enumerate(result["standings"], 1):
-        clasificacion.append({
-            "posicion": i,
-            "equipo": s.team,
-            "puntos": s.points,
-            "pj": s.matches_played,
-            "pg": s.wins,
-            "pp": s.losses,
-            "sg": s.sets_won,
-            "sp": s.sets_lost,
-            "sr": round(s.set_ratio, 2),
-            "pts_favor": s.points_scored,
-            "pts_contra": s.points_conceded,
-            "v3_0": s.wins_3_0,
-            "v3_1": s.wins_3_1,
-            "v3_2": s.wins_3_2,
-            "d2_3": s.losses_2_3,
-            "d1_3": s.losses_1_3,
-            "d0_3": s.losses_0_3,
-            "colores": TEAM_COLORS.get(s.team, {}),
-        })
+        clasificacion.append(
+            {
+                "posicion": i,
+                "equipo": s.team,
+                "puntos": s.points,
+                "pj": s.matches_played,
+                "pg": s.wins,
+                "pp": s.losses,
+                "sg": s.sets_won,
+                "sp": s.sets_lost,
+                "sr": round(s.set_ratio, 2),
+                "pts_favor": s.points_scored,
+                "pts_contra": s.points_conceded,
+                "v3_0": s.wins_3_0,
+                "v3_1": s.wins_3_1,
+                "v3_2": s.wins_3_2,
+                "d2_3": s.losses_2_3,
+                "d1_3": s.losses_1_3,
+                "d0_3": s.losses_0_3,
+                "colores": TEAM_COLORS.get(s.team, {}),
+            }
+        )
 
     # Serializar resultados de partidos
     partidos = []
     for m in result["matches"]:
-        partidos.append({
-            "local": m.home_team,
-            "visitante": m.away_team,
-            "resultado": m.resultado,
-            "ganador": m.home_team if m.winner == "home" else m.away_team,
-            "sets": [{"puntos_local": s.score_home, "puntos_visitante": s.score_away}
-                     for s in m.sets],
-        })
+        partidos.append(
+            {
+                "local": m.home_team,
+                "visitante": m.away_team,
+                "resultado": m.resultado,
+                "ganador": m.home_team if m.winner == "home" else m.away_team,
+                "sets": [
+                    {"puntos_local": s.score_home, "puntos_visitante": s.score_away} for s in m.sets
+                ],
+            }
+        )
 
     # Serializar stats de jugadores acumulados
     player_stats_list = sorted(
@@ -708,16 +743,17 @@ async def simular_jornada(req: SimularJornadaRequest):
     # Serializar los partidos de la jornada
     jornada_matches_serialized = []
     for m in result["jornada_matches"]:
-        jornada_matches_serialized.append({
-            "local": m.home_team,
-            "visitante": m.away_team,
-            "resultado": m.resultado,
-            "ganador": m.home_team if m.winner == "home" else m.away_team,
-            "sets": [
-                {"puntos_local": s.score_home, "puntos_visitante": s.score_away}
-                for s in m.sets
-            ],
-        })
+        jornada_matches_serialized.append(
+            {
+                "local": m.home_team,
+                "visitante": m.away_team,
+                "resultado": m.resultado,
+                "ganador": m.home_team if m.winner == "home" else m.away_team,
+                "sets": [
+                    {"puntos_local": s.score_home, "puntos_visitante": s.score_away} for s in m.sets
+                ],
+            }
+        )
 
     return {
         "jornada_index": result["jornada_index"],
@@ -773,7 +809,9 @@ async def modelo_info():
     if match_predictor and match_predictor._test_metrics:
         info["match_predictor"] = {
             "modelo": match_predictor.best_model_name,
-            "num_features": len(match_predictor.feature_names) if match_predictor.feature_names else 0,
+            "num_features": (
+                len(match_predictor.feature_names) if match_predictor.feature_names else 0
+            ),
             "test_auc": round(match_predictor._test_metrics.get("auc_roc", 0), 4),
             "test_accuracy": round(match_predictor._test_metrics.get("accuracy", 0), 4),
             "test_brier": round(match_predictor._test_metrics.get("brier_score", 0), 4),
@@ -790,4 +828,5 @@ if FRONTEND_DIR.exists():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("src.api.main:app", host="0.0.0.0", port=8000, reload=False)
