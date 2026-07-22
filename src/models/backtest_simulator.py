@@ -63,6 +63,7 @@ from src.data.rolling_features import (
     FASE_ORDER,
     ELO_BASE, ELO_K, ELO_HOME_ADV, ELO_SEASON_REGRESS,
 )
+import src.simulation.simulator as simulator_module
 from src.simulation.simulator import MatchSimulator
 from src.simulation.season_simulator import SeasonSimulator
 from src.simulation.feature_builder import RuntimeFeatureBuilder
@@ -275,8 +276,18 @@ def _run_season_simulation(
     damping: float,
     max_seconds: float,
     force: bool,
+    momentum_bonus: Optional[float] = None,
+    global_momentum_factor: Optional[float] = None,
+    seed_base: int = MATCH_SEED_BASE,
 ) -> dict:
     """Recorre los partidos de la temporada, simula MC y acumula resultados.
+
+    Args:
+        momentum_bonus: override de `MOMENTUM_BONUS` (B2). Se aplica como
+            atributo de INSTANCIA del simulador, no mutando constants.py.
+        global_momentum_factor: override de `GLOBAL_MOMENTUM_FACTOR` (B2).
+            Este si es un global del modulo `simulator`, asi que se hace
+            setattr temporal y se restaura en el `finally`.
 
     Returns:
         dict con ``y``, ``p_sim``, ``p_elo``, acumuladores de margen,
@@ -284,6 +295,38 @@ def _run_season_simulation(
     """
     fb = RuntimeFeatureBuilder(initial_elo=initial_elo)
     simulator = MatchSimulator(point_model=point_model, player_stats_gen=None)
+
+    # B2: overrides de constantes SIN tocar constants.py.
+    if momentum_bonus is not None:
+        simulator.MOMENTUM_BONUS = momentum_bonus  # atributo de instancia
+    _gmf_original = simulator_module.GLOBAL_MOMENTUM_FACTOR
+    if global_momentum_factor is not None:
+        simulator_module.GLOBAL_MOMENTUM_FACTOR = global_momentum_factor
+
+    try:
+        return _run_season_loop(
+            matches_in_season, fb, simulator, strengths,
+            n_sims, use_set_calibration, set_predictor, damping,
+            max_seconds, force, seed_base,
+        )
+    finally:
+        simulator_module.GLOBAL_MOMENTUM_FACTOR = _gmf_original
+
+
+def _run_season_loop(
+    matches_in_season: pd.DataFrame,
+    fb,
+    simulator,
+    strengths: dict,
+    n_sims: int,
+    use_set_calibration: bool,
+    set_predictor,
+    damping: float,
+    max_seconds: float,
+    force: bool,
+    seed_base: int = MATCH_SEED_BASE,
+) -> dict:
+    """Bucle de simulacion partido a partido (extraido para el try/finally)."""
 
     n = len(matches_in_season)
     y = np.zeros(n, dtype=int)
@@ -325,7 +368,7 @@ def _run_season_simulation(
             away_strength=a_str,
             match_features=point_mf,
             n_simulations=n_sims,
-            seed=MATCH_SEED_BASE + i,
+            seed=seed_base + i,
             set_predictor=set_predictor if use_set_calibration else None,
             team_features=team_feats,
         )
@@ -423,14 +466,20 @@ def _save_and_plot(
     season: int,
     use_set_calibration: bool,
     make_plot: bool = True,
+    save_json: bool = True,
 ):
-    """Guarda JSON y (opcionalmente) grafico de fiabilidad."""
+    """Guarda JSON y (opcionalmente) grafico de fiabilidad.
+
+    `save_json=False` lo usa el grid de B2: 12 combos no deben sobrescribir
+    el JSON canonico de la temporada.
+    """
     _print_summary(results)
 
-    out = MODELS_DIR / f"backtest_simulator_{season}.json"
-    with open(out, "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2)
-    print(f"\n  Resultados guardados en {out}")
+    if save_json:
+        out = MODELS_DIR / f"backtest_simulator_{season}.json"
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(results, f, indent=2)
+        print(f"\n  Resultados guardados en {out}")
 
     if make_plot:
         _plot_reliability(y, p_sim, p_elo, season, use_set_calibration)
@@ -445,6 +494,10 @@ def run_backtest(
     force: bool = False,
     make_plot: bool = True,
     point_model_path=None,
+    momentum_bonus: Optional[float] = None,
+    global_momentum_factor: Optional[float] = None,
+    save_json: bool = True,
+    seed_base: int = MATCH_SEED_BASE,
 ) -> dict:
     """Recorre la temporada `season` real y mide la precision del simulador.
 
@@ -484,6 +537,9 @@ def run_backtest(
         point_model, set_predictor,
         n_sims, use_set_calibration, damping,
         max_seconds, force,
+        momentum_bonus=momentum_bonus,
+        global_momentum_factor=global_momentum_factor,
+        seed_base=seed_base,
     )
 
     if accum["time_budget_exceeded"]:
@@ -496,7 +552,8 @@ def run_backtest(
             accum["elapsed"],
         )
         _save_and_plot(results, accum["y"], accum["p_sim"], accum["p_elo"],
-                       season, use_set_calibration, make_plot=False)
+                       season, use_set_calibration, make_plot=False,
+                       save_json=save_json)
         return results
 
     results = _aggregate_metrics(
@@ -507,7 +564,8 @@ def run_backtest(
         accum["elapsed"],
     )
     _save_and_plot(results, accum["y"], accum["p_sim"], accum["p_elo"],
-                   season, use_set_calibration, make_plot=make_plot)
+                   season, use_set_calibration, make_plot=make_plot,
+                   save_json=save_json)
     return results
 
 
@@ -609,6 +667,10 @@ def main():
                     help="Presupuesto de tiempo; aborta si la proyeccion lo supera.")
     ap.add_argument("--force", action="store_true", help="Ignorar el presupuesto de tiempo.")
     ap.add_argument("--no-plot", action="store_true", help="No generar el PNG.")
+    ap.add_argument("--momentum-bonus", type=float, default=None,
+                    help="Override de MOMENTUM_BONUS (B2).")
+    ap.add_argument("--global-momentum-factor", type=float, default=None,
+                    help="Override de GLOBAL_MOMENTUM_FACTOR (B2).")
     ap.add_argument("--point-model", default=None,
                     help="Ruta a un point_probability.joblib alternativo, "
                          "p.ej. entrenado solo con historia < season.")
@@ -623,6 +685,8 @@ def main():
         force=args.force,
         make_plot=not args.no_plot,
         point_model_path=args.point_model,
+        momentum_bonus=args.momentum_bonus,
+        global_momentum_factor=args.global_momentum_factor,
     )
 
 
