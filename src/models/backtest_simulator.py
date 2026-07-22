@@ -229,11 +229,17 @@ def _sim_margin_probs(score_dist: dict) -> dict:
 # Carga de modelos de produccion
 # ─────────────────────────────────────────────────────────────
 
-def _load_point_model():
-    """Carga el PointProbabilityModel de produccion (None si no existe)."""
+def _load_point_model(path=None):
+    """Carga el PointProbabilityModel (None si no existe).
+
+    Args:
+        path: joblib alternativo. Sirve para backtestear con un modelo
+            entrenado SOLO con historia < season, sin leakage temporal
+            (Guardrail 1). Por defecto usa el de produccion.
+    """
     try:
         from src.models.point_probability import PointProbabilityModel
-        return PointProbabilityModel.load(MODELS_DIR / "point_probability.joblib")
+        return PointProbabilityModel.load(path or (MODELS_DIR / "point_probability.joblib"))
     except Exception as e:  # noqa: BLE001
         print(f"  [WARN] point_probability no disponible ({e}); se usa el fallback interno.")
         return None
@@ -438,6 +444,7 @@ def run_backtest(
     max_seconds: float = DEFAULT_MAX_SECONDS,
     force: bool = False,
     make_plot: bool = True,
+    point_model_path=None,
 ) -> dict:
     """Recorre la temporada `season` real y mide la precision del simulador.
 
@@ -468,7 +475,7 @@ def run_backtest(
     print(f"  Partidos reales en {season}: {len(matches_in_season)}")
 
     # Modelos de produccion.
-    point_model = _load_point_model()
+    point_model = _load_point_model(point_model_path)
     set_predictor = _load_set_predictor() if use_set_calibration else None
 
     # Simular partido a partido.
@@ -602,6 +609,9 @@ def main():
                     help="Presupuesto de tiempo; aborta si la proyeccion lo supera.")
     ap.add_argument("--force", action="store_true", help="Ignorar el presupuesto de tiempo.")
     ap.add_argument("--no-plot", action="store_true", help="No generar el PNG.")
+    ap.add_argument("--point-model", default=None,
+                    help="Ruta a un point_probability.joblib alternativo, "
+                         "p.ej. entrenado solo con historia < season.")
     args = ap.parse_args()
 
     run_backtest(
@@ -612,6 +622,7 @@ def main():
         max_seconds=args.max_seconds,
         force=args.force,
         make_plot=not args.no_plot,
+        point_model_path=args.point_model,
     )
 
 

@@ -6,95 +6,96 @@
     "set_blend_weight_elo": 1.0,
     "clamp_margin_point": 0.1,
     "use_set_calibration": true,
-    "set_predictor_source": "logreg_v2"
+    "set_predictor_source": "logreg_v2",
+    "point_model": true
   },
-  "spearman_fuerza_posicion": -1.0,
-  "spearman_pvalue": 0.0,
-  "mean_std_position": 0.4575,
-  "seconds": 6.7,
+  "spearman_fuerza_posicion": -0.97203,
+  "spearman_pvalue": 1.2868115751495013e-07,
+  "mean_std_position": 1.2467,
+  "seconds": 26.3,
   "standings": [
     {
       "equipo": "Perugia",
-      "posicion_media": 1.1,
-      "posicion_std": 0.44,
-      "puntos_medios": 64.8,
+      "posicion_media": 1.4,
+      "posicion_std": 0.66,
+      "puntos_medios": 58.3,
       "fuerza_margin_elo": 0.833
     },
     {
       "equipo": "Trento",
-      "posicion_media": 2.0,
-      "posicion_std": 0.0,
-      "puntos_medios": 58.1,
+      "posicion_media": 2.45,
+      "posicion_std": 1.12,
+      "puntos_medios": 52.0,
       "fuerza_margin_elo": 0.734
     },
     {
-      "equipo": "Verona",
-      "posicion_media": 3.4,
-      "posicion_std": 0.86,
-      "puntos_medios": 50.0,
-      "fuerza_margin_elo": 0.672
-    },
-    {
-      "equipo": "Modena",
-      "posicion_media": 4.3,
-      "posicion_std": 0.95,
-      "puntos_medios": 45.9,
-      "fuerza_margin_elo": 0.639
-    },
-    {
       "equipo": "Lube",
-      "posicion_media": 4.6,
-      "posicion_std": 0.97,
-      "puntos_medios": 45.3,
+      "posicion_media": 3.35,
+      "posicion_std": 1.15,
+      "puntos_medios": 48.0,
       "fuerza_margin_elo": 0.616
     },
     {
+      "equipo": "Modena",
+      "posicion_media": 4.2,
+      "posicion_std": 2.06,
+      "puntos_medios": 42.9,
+      "fuerza_margin_elo": 0.639
+    },
+    {
+      "equipo": "Verona",
+      "posicion_media": 5.5,
+      "posicion_std": 1.12,
+      "puntos_medios": 37.5,
+      "fuerza_margin_elo": 0.672
+    },
+    {
       "equipo": "Piacenza",
-      "posicion_media": 5.65,
-      "posicion_std": 0.73,
-      "puntos_medios": 38.7,
+      "posicion_media": 5.95,
+      "posicion_std": 1.75,
+      "puntos_medios": 35.5,
       "fuerza_margin_elo": 0.58
     },
     {
       "equipo": "Taranto",
-      "posicion_media": 7.05,
-      "posicion_std": 0.38,
-      "puntos_medios": 30.9,
+      "posicion_media": 6.25,
+      "posicion_std": 1.84,
+      "puntos_medios": 33.1,
       "fuerza_margin_elo": 0.526
     },
     {
       "equipo": "Milano",
-      "posicion_media": 7.9,
-      "posicion_std": 0.3,
-      "puntos_medios": 25.1,
+      "posicion_media": 7.8,
+      "posicion_std": 1.4,
+      "puntos_medios": 27.4,
       "fuerza_margin_elo": 0.474
     },
     {
       "equipo": "Monza",
-      "posicion_media": 9.25,
-      "posicion_std": 0.43,
-      "puntos_medios": 16.9,
+      "posicion_media": 8.95,
+      "posicion_std": 1.32,
+      "puntos_medios": 22.4,
       "fuerza_margin_elo": 0.374
     },
     {
       "equipo": "Padova",
-      "posicion_media": 9.75,
-      "posicion_std": 0.43,
-      "puntos_medios": 12.8,
+      "posicion_media": 9.85,
+      "posicion_std": 1.11,
+      "puntos_medios": 17.6,
       "fuerza_margin_elo": 0.331
     },
     {
       "equipo": "Cisterna",
-      "posicion_media": 11.0,
-      "posicion_std": 0.0,
-      "puntos_medios": 7.2,
+      "posicion_media": 10.5,
+      "posicion_std": 0.92,
+      "puntos_medios": 15.3,
       "fuerza_margin_elo": 0.275
     },
     {
       "equipo": "Grottazzolina",
-      "posicion_media": 12.0,
-      "posicion_std": 0.0,
-      "puntos_medios": 0.4,
+      "posicion_media": 11.8,
+      "posicion_std": 0.51,
+      "puntos_medios": 6.0,
       "fuerza_margin_elo": 0.183
     }
   ]

@@ -40,6 +40,7 @@ from src.models.backtest_clamp import (
     _load_match_predictor,
     _load_set_predictor_v2,
 )
+from src.models.backtest_simulator import _load_point_model
 from src.simulation.constants import CLAMP_MARGIN_POINT, SET_BLEND_WEIGHT_ELO
 from src.simulation.feature_builder import RuntimeFeatureBuilder
 from src.simulation.season_simulator import SeasonSimulator
@@ -66,6 +67,14 @@ def run(n_seeds: int = 20, use_set_calibration: bool = True,
     match_predictor = _load_match_predictor()
     print(f"  MatchPredictor:  {'OK' if match_predictor else 'NO DISPONIBLE'}")
 
+    # El PointProbabilityModel es parte del camino de PRODUCCION (el API lo
+    # inyecta en el MatchSimulator, main.py:112). La primera version de este
+    # script pasaba point_model=None y por tanto medía `_default_point_probs`,
+    # no el modelo entrenado: la medida no era fiel a produccion y era ciega a
+    # cambios como B3. Se carga aqui.
+    point_model = _load_point_model()
+    print(f"  PointProbability: {'OK' if point_model else 'NO DISPONIBLE (fallback)'}")
+
     elo_dict = get_historical_team_elo()
     strengths = {t: elo_to_strength(elo_dict.get(t, ELO_BASE)) for t in TEAMS_12}
     print(f"  Elo historico: {len(elo_dict)} equipos")
@@ -78,7 +87,7 @@ def run(n_seeds: int = 20, use_set_calibration: bool = True,
     for s in range(n_seeds):
         # Estado LIMPIO por temporada (ver docstring).
         season_sim = SeasonSimulator(
-            simulator=MatchSimulator(point_model=None, player_stats_gen=None),
+            simulator=MatchSimulator(point_model=point_model, player_stats_gen=None),
             team_strengths=strengths,
             set_predictor=set_predictor,
             feature_builder=RuntimeFeatureBuilder(initial_elo=elo_dict),
@@ -146,6 +155,7 @@ def run(n_seeds: int = 20, use_set_calibration: bool = True,
             "clamp_margin_point": CLAMP_MARGIN_POINT,
             "use_set_calibration": use_set_calibration,
             "set_predictor_source": sp_source,
+            "point_model": point_model is not None,
         },
         "spearman_fuerza_posicion": round(float(rho), 5),
         "spearman_pvalue": float(pval),
