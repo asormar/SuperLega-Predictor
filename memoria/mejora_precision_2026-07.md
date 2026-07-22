@@ -189,46 +189,54 @@ acabar 4º en un solo seed.
 
 ### 7.1 Validación Monte Carlo — 20 temporadas simuladas
 
-**Corrida vigente (2026-07-21, tras A2/A4).** 20 temporadas completas
+**Corrida vigente (2026-07-22, tras A2/A4 + B3).** 20 temporadas completas
 (12 equipos, ida y vuelta, seeds 0-19), Elo sembrado desde el histórico real,
 clamp en la configuración final del Grupo A (`SET_BLEND_WEIGHT_ELO = 1.0`,
-`CLAMP_MARGIN_POINT = 0.10`). Estado dinámico reiniciado en cada temporada.
-Reproducible con `python -m src.models.mc_season_validation --n-seeds 20`;
-cifras en `models/mc_season_validation.json`.
+`CLAMP_MARGIN_POINT = 0.10`) y el `PointProbabilityModel` de B3. Estado
+dinámico reiniciado en cada temporada. Reproducible con
+`python -m src.models.mc_season_validation --n-seeds 20`; cifras en
+`models/mc_season_validation.json`.
 
 | # | Equipo | Posición media | Pos. std | Fuerza (margin-Elo) |
 |---|---|---:|---:|---:|
-| 1 | Perugia | 1.1 | 0.44 | 0.833 |
-| 2 | Trento | 2.0 | 0.00 | 0.734 |
-| 3 | Verona | 3.4 | 0.86 | 0.672 |
-| 4 | Modena | 4.3 | 0.95 | 0.639 |
-| 5 | Lube | 4.6 | 0.97 | 0.616 |
-| 6 | Piacenza | 5.7 | 0.73 | 0.580 |
-| 7 | Taranto | 7.0 | 0.38 | 0.526 |
-| 8 | Milano | 7.9 | 0.30 | 0.474 |
-| 9 | Monza | 9.2 | 0.43 | 0.374 |
-| 10 | Padova | 9.8 | 0.43 | 0.331 |
-| 11 | Cisterna | 11.0 | 0.00 | 0.275 |
-| 12 | Grottazzolina | 12.0 | 0.00 | 0.183 |
+| 1 | Perugia | 1.4 | 0.66 | 0.833 |
+| 2 | Trento | 2.5 | 1.12 | 0.734 |
+| 3 | Lube | 3.4 | 1.15 | 0.616 |
+| 4 | Modena | 4.2 | 2.06 | 0.639 |
+| 5 | Verona | 5.5 | 1.12 | 0.672 |
+| 6 | Piacenza | 6.0 | 1.75 | 0.580 |
+| 7 | Taranto | 6.2 | 1.84 | 0.526 |
+| 8 | Milano | 7.8 | 1.40 | 0.474 |
+| 9 | Monza | 8.9 | 1.32 | 0.374 |
+| 10 | Padova | 9.8 | 1.11 | 0.331 |
+| 11 | Cisterna | 10.5 | 0.92 | 0.275 |
+| 12 | Grottazzolina | 11.8 | 0.51 | 0.183 |
 
-**Spearman fuerza→posición = −1.0000** (p < 1e-16); std media de posición 0.457.
+**Spearman fuerza→posición = −0.9720** (p = 1.3e-07); std media de posición
+**1.247**.
 
 **Lectura honesta:**
 
-- El orden simulado reproduce **exactamente** el orden de fuerza margin-Elo.
-  Las dos anomalías de la corrida vieja desaparecen: Taranto ya no sobrerrinde
-  al 4º puesto (ahora 7º, coherente con su fuerza 0.526 post-B0) y Verona sube
-  al 3º (fuerza 0.672). Ambas eran consecuencia del sembrado roto de Elo y de
-  las fuerzas colisionadas de pre-B0, no del simulador.
-- **Pero un Spearman de −1.0 es demasiado limpio para ser realista.** Con
-  22 jornadas, una liga real reordena el mid-table; aquí cuatro equipos tienen
-  std de posición 0.00. El simulador está **sub-disperso**: produce ligas casi
-  deterministas. Es la misma patología que cuantifica el backtest B1 (ECE 0.242,
-  53% de 3-0 simulados frente a 39% reales) y **no la corrige el Grupo A**,
-  porque su origen está en el modelo de punto, no en el clamp. Queda como
-  trabajo pendiente (B3: `PointProbabilityModel` con regresión continua).
-- Es decir: esta tabla valida que la **señal de fuerza llega íntegra** al
-  simulador, no que la *incertidumbre* esté bien calibrada.
+- La correlación fuerza→posición es muy fuerte pero **ya no perfecta**, que es
+  lo que cabe esperar de una liga de 22 jornadas: el top-2 y el fondo son
+  estables, y el mid-table se reordena entre temporadas (Lube 3º pese a tener
+  menos fuerza que Verona, 5º; Piacenza y Taranto prácticamente empatados).
+- Las anomalías de la corrida de 2026-07-08 siguen resueltas: eran consecuencia
+  del sembrado roto de Elo y de las fuerzas colisionadas pre-B0.
+
+> **⚠️ Corrección metodológica (2026-07-22).** La corrida publicada el
+> 2026-07-21 daba Spearman **−1.0000** y std media 0.457, con cuatro equipos a
+> std 0.00 — una liga prácticamente determinista. Ese resultado era en buena
+> parte **artefacto del instrumento**: `mc_season_validation.py` construía el
+> `MatchSimulator` con `point_model=None`, así que medía el fallback
+> `_default_point_probs` en lugar del modelo entrenado que inyecta el API
+> (`main.py:112`). Al corregirlo y usar el modelo de B3, la dispersión sube
+> **2,7×** (std 0.457 → 1.247) y ningún equipo queda ya con std 0.00.
+>
+> Es decir: parte de la "sub-dispersión" atribuida al simulador en A6 no era
+> del simulador, sino de una medición que no reproducía el camino de
+> producción. La parte real —la que sí medía B1, que siempre usó el modelo de
+> punto— es la que corrige B3 (§7.3).
 
 <details>
 <summary>Corrida histórica invalidada (2026-07-08) — se conserva como registro del proceso</summary>
@@ -417,6 +425,72 @@ python -c "from src.models.measure_precision import measure; print(measure())"
 Y comparar el AUC en 2026 contra los números de 2018-2025 de la tabla de
 arriba. **No tocar el protocolo, no cambiar el modelo: solo agregar datos y
 medir igual.**
+
+### 7.3 B3 — PointProbabilityModel con regresión continua (2026-07-22)
+
+**El problema.** El modelo de punto binarizaba su target (`y_binary = y > 0.5`)
+y aplastaba la salida con `p = 0.45 + 0.10 · p_dominante`. Dos daños:
+
+1. La binarización tiraba toda la información de **magnitud**: un partido con
+   ratio de puntos 0.51 y otro con 0.58 eran la misma clase.
+2. El mapping fijaba la salida en `[0.45, 0.55]` y, peor, la **sesgaba**: con
+   features neutras el clasificador predecía `p_dominante = 0.8875` (había
+   aprendido la tasa base de victoria local), luego `p = 0.5387`.
+
+Ese sesgo es pequeño por punto pero la cadena de Markov lo **amplifica ~7×** a
+lo largo de un partido: dos equipos iguales daban **P(local) = 0.845** frente a
+un home-win real de 0.573. Es el origen de la sub-dispersión que detectó §7.1
+(Spearman −1.0) y que cuantificó el backtest B1 (ECE 0.242, 53 % de 3-0).
+
+**La corrección.** `Ridge(alpha=1.0)` sobre el target continuo
+`point_ratio_h = pts_h / (pts_h + pts_a)`, entrenado con features rolling
+pre-partido (sin leakage), y salida `clip(pred, POINT_RATIO_CLIP)` con
+`POINT_RATIO_CLIP = (0.40, 0.60)` actuando solo de salvavidas. El intercept
+aprendido es **0.5081** — el ratio de puntos real medio — frente al 0.5387
+sesgado de antes.
+
+**Resultado — backtest B1 sobre 2024** (222 partidos, n=500, clamp OFF). Para
+que la medida sea honesta, el modelo se reentrenó **solo con historia < 2024**
+(786 partidos) y el backtest se corrió con él, no con el de producción:
+
+| Métrica | Antes (binarizado) | **B3** | Elo (ref) |
+|---|---:|---:|---:|
+| Brier | 0.2731 | **0.1815** | 0.1941 |
+| LogLoss | 0.8241 | **0.5365** | 0.5690 |
+| Accuracy | 0.6486 | **0.7207** | 0.6892 |
+| ECE | 0.2419 | **0.0565** | 0.0454 |
+| 3-0 simulado | 53.0 % | **37.6 %** | real 38.7 % |
+| L1 (márgenes) | 0.2858 | **0.0315** | — |
+
+- El simulador pasa de **degradar** la señal Elo a **superarla** en Brier,
+  logloss y accuracy. La lectura de §10.2 de `simulator.md` se invierte.
+- La distribución de márgenes deja de estar sesgada hacia el 3-0: los tres
+  márgenes caen a menos de 2 puntos porcentuales del real, y la distancia L1
+  baja **9×**.
+- La calibración mejora **4,3×** (ECE 0.242 → 0.057) y queda ya muy cerca del
+  Elo puro (0.045).
+
+**Control de leakage.** El mismo backtest con el modelo de producción
+(entrenado con 2016-2025, incluyendo 2024) da Brier 0.1822 y ECE 0.0824 — es
+decir, prácticamente lo mismo, y con **peor** ECE. La mejora es estructural,
+no un artefacto de haber visto la temporada de test.
+
+**Sanity de la cadena.** Test nuevo `TestMarkovChainSanity` en
+`tests/test_simulator.py`: con p_punto = 0.52 constante y momentum neutralizado,
+el MC (n=2000) da 0.6845 frente a la forma cerrada 0.6967 (Δ = 0.012). La
+cadena conserva la probabilidad de punto correctamente.
+
+> **Corrección al plan.** La spec de B3 (paso 4) pedía pinear
+> `p_set_from_p_point(0.52, 25) ≈ 0.66` y de ahí derivaba una banda esperada de
+> P(match) de 0.74 ± 0.03. Ese 0.66 es incorrecto —es el mismo error de
+> constante que ya se corrigió en A2— y arrastra la banda entera: el valor real
+> de la fórmula es **0.6131**, que da **P(match) = 0.6967**. El test pinea el
+> valor derivado de `set_math`, no el número del documento.
+
+**Qué no arregla B3.** El ECE sigue por encima del Elo puro (0.057 vs 0.045):
+queda algo de sobreconfianza residual. Y el modelo tiene ahora más rango
+dinámico en las colas (elo_diff = ±400 da P = 0.95 / 0.085), lo que conviene
+vigilar si en el futuro se amplía el dataset (B6) con más partidos desiguales.
 
 ## 8. Qué NO se hizo (honestidad de alcance)
 
