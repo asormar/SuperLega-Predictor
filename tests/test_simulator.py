@@ -288,6 +288,76 @@ class TestAdaptiveClamp:
 
 
 
+class TestMarkovChainSanity:
+    """B3: la cadena debe convertir p_punto en P(partido) segun la teoria.
+
+    Es el guardrail de la cadena: si el MC se desvia de la forma cerrada,
+    hay un bug en el motor (clamp que muerde, momentum no neutralizado,
+    sideout asimetrico) y cualquier cambio en el modelo de punto se mide mal.
+    """
+
+    @staticmethod
+    def _p_match_iid(p_point: float) -> float:
+        """P(ganar al mejor de 5) con p_punto constante e i.i.d."""
+        from src.simulation.set_math import p_set_from_p_point
+        q = p_set_from_p_point(p_point, 25)
+        q5 = p_set_from_p_point(p_point, 15)
+        return q ** 3 + 3 * q ** 3 * (1 - q) + 6 * q ** 2 * (1 - q) ** 2 * q5
+
+    def test_p_set_from_p_point_reference(self):
+        """Valor de referencia de la conversion punto -> set.
+
+        NOTA (Guardrail 4): el plan (B3, paso 4) dice
+        `p_set_from_p_point(0.52, 25) ~ 0.66` y de ahi deriva una banda
+        esperada de P(match) de 0.74 +- 0.03 (criterio [0.71, 0.77]). Ese
+        0.66 es INCORRECTO --- es el mismo error que ya se corrigio en A2 ---
+        y arrastra la banda entera. El valor real de la formula es 0.6131,
+        que da P(match) = 0.6967. La formula se valida de forma independiente
+        en tests/test_set_math.py (0.5 exacto en p=0.5, simetria, monotonia,
+        roundtrip), asi que lo erroneo es la constante del documento.
+        """
+        from src.simulation.set_math import p_set_from_p_point
+        assert p_set_from_p_point(0.52, 25) == pytest.approx(0.6131, abs=0.001)
+        assert self._p_match_iid(0.52) == pytest.approx(0.6967, abs=0.001)
+
+    def test_mc_matches_closed_form(self, monkeypatch):
+        """Con p_punto constante y sin momentum, el MC reproduce la teoria."""
+        import src.simulation.simulator as sim_mod
+
+        p_point = 0.52
+
+        class ConstantPointModel:
+            """Devuelve p_punto fijo, sin ventaja de saque ni sideout."""
+
+            def get_point_probabilities(self, **kwargs):
+                return {
+                    "p_home_serving": p_point,
+                    "p_home_receiving": p_point,
+                    "p_away_serving": 1 - p_point,
+                    "p_away_receiving": 1 - p_point,
+                }
+
+        # Neutralizar ambos niveles de momentum para aislar la cadena pura.
+        monkeypatch.setattr(sim_mod, "GLOBAL_MOMENTUM_FACTOR", 0.0)
+        sim = MatchSimulator(point_model=ConstantPointModel())
+        monkeypatch.setattr(sim, "MOMENTUM_BONUS", 0.0)
+
+        result = sim.monte_carlo_simulate(
+            "H", "A", 0.5, 0.5,
+            match_features={"dummy": 1.0},
+            n_simulations=2000, seed=42,
+        )
+        p_mc = result["home_win_prob"]
+        expected = self._p_match_iid(p_point)
+
+        # Tolerancia: error de Monte Carlo (n=2000 -> ~0.010 de 1 sigma) mas
+        # la discretizacion del clamp por defecto. 0.03 es ~3 sigma.
+        assert p_mc == pytest.approx(expected, abs=0.03), (
+            f"P_MC={p_mc:.4f} se desvia de la teorica {expected:.4f}; "
+            "la cadena de Markov no conserva la probabilidad de punto"
+        )
+
+
 class TestMCDeterminism:
     """Monte Carlo simulation with the same seed must produce identical results."""
 
