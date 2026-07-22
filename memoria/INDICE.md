@@ -22,6 +22,12 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
 | [`prediccion_partidos.md`](prediccion_partidos.md) | `MatchSimulator` — simulación detallada de un partido + Monte Carlo | ✅ Completo |
 | [`prediccion_temporadas.md`](prediccion_temporadas.md) | `SeasonSimulator` — simulación de temporada con calibración ML | ✅ Completo |
 
+### Marco teórico
+
+| Documento | Cubre | Estado |
+|---|---|---|
+| [`marco_teorico.md`](marco_teorico.md) | **Marco teórico consolidado** — cadenas de Markov, sistema Elo, ML supervisado, validación temporal sin leakage, métricas (Brier/logloss/ECE/AUC), calibración (Platt/isotonic), simulación Monte Carlo. Fuente única para el Cap 2 del LaTeX | ✅ Nuevo (2026-07-22) |
+
 ### Modelos ML
 
 | Documento | Cubre | Estado |
@@ -58,11 +64,12 @@ Documentación técnica del simulador de partidos/temporadas de la SuperLega ita
 ### Para entender el proyecto de cero
 
 1. [`../AGENTS.md`](../AGENTS.md) — layout y comandos
-2. [`prediccion_partidos.md`](prediccion_partidos.md) — el corazón de la simulación
-3. [`prediccion_temporadas.md`](prediccion_temporadas.md) — la integración ML
-4. [`point_probability.md`](point_probability.md) — el modelo más simple (fácil de leer)
-5. [`set_predictor.md`](set_predictor.md) — pipeline de un modelo con benchmark
-6. [`match_predictor.md`](match_predictor.md) — el modelo más complejo
+2. [`marco_teorico.md`](marco_teorico.md) — la base matemática (Markov, Elo, ML, métricas, calibración)
+3. [`prediccion_partidos.md`](prediccion_partidos.md) — el corazón de la simulación
+4. [`prediccion_temporadas.md`](prediccion_temporadas.md) — la integración ML
+5. [`point_probability.md`](point_probability.md) — el modelo más simple (fácil de leer)
+6. [`set_predictor.md`](set_predictor.md) — pipeline de un modelo con benchmark
+7. [`match_predictor.md`](match_predictor.md) — el modelo más complejo
 
 ### Para la defensa del TFG
 
