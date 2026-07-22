@@ -1,5 +1,7 @@
 # Plan de Mejora del Clamp Adaptativo del SetPredictor
 
+> **STATUS: HISTÓRICO (2026-07-22)** — Todos los items T1–T6 ejecutados como A1–A6 dentro del [Plan Consolidado](./PLAN_MEJORAS_CONSOLIDADO.md) §GRUPO A (cerrado 2026-07-21). Se conserva este documento como registro del diagnóstico y de las decisiones. Desenlace: `SET_BLEND_WEIGHT_ELO = 1.0` (SetPredictor cableado pero inactivo en runtime). Detalle del desenlace en `memoria/set_predictor.md` §10.5 y `memoria/simulator.md` §4.3.
+
 Investigación del ruido que el clamp del SetPredictor introduce en la
 clasificación de temporada, y plan para arreglarlo. Continuación natural de
 `PLAN_MEJORA_PRECISION.md` (§7.1 de `memoria/mejora_precision_2026-07.md`

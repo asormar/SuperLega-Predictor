@@ -46,7 +46,12 @@ Python (all run via `python -m`):
 Frontend (in `src/web/`):
 - `npm run dev` / `npm run build` / `npm run preview` / `npm run lint` (ESLint flat config, ignores `dist`).
 
-There is no test suite, no Python linter, no formatter, no type checker, and no CI in this repo. There is no root `.gitignore` (only `src/web/.gitignore`).
+Quality (ruff + black + pytest, config in `pyproject.toml`):
+- `ruff check src/ tests/` — lint (debe pasar antes de push).
+- `black --check src/ tests/` — formato (debe pasar antes de push).
+- `pytest -q -m "not slow"` — tests rápidos (los `slow` requieren `models/*.joblib` y `player_stats_params.json`, que están gitignored).
+
+There is no root `.gitignore` (only `src/web/.gitignore`). Linter, formatter, tests and CI están configurados vía `pyproject.toml` y `.github/workflows/ci.yml` (ver la sección **Quality** arriba y la convención **Linting/formatting** abajo).
 
 ## Python dependencies (no requirements.txt)
 
@@ -89,11 +94,12 @@ This is a strict temporal split — never shuffle or use future data in training
 - `PointProbabilityModel` (post-B3, 2026-07-22) entrena una `Ridge(alpha=1.0)` sobre el target **continuo** `point_ratio_h` con features rolling pre-partido, y la salida es `clip(pred, POINT_RATIO_CLIP)` con `POINT_RATIO_CLIP = (0.40, 0.60)` (`src/simulation/constants.py`) solo de salvavidas. **Ya no** binariza el target ni aplasta la salida a `0.45 + 0.10·p_dominante` (esa fórmula sesgaba la salida y la cadena de Markov amplificaba el sesgo ~7× hasta P(local) = 0.845 entre iguales). El joblib conserva las 6 claves (`model`, `scaler`, `feature_cols`, `base_home_point_prob`, `base_away_point_prob`, `is_fitted`) para no romper `load()`. Detalle y cifras en `memoria/mejora_precision_2026-07.md` §7.3 y `memoria/point_probability.md` §3.3.
 - `benchmark.py` evaluates model performance including Brier score (calibration metric). It uses the same temporal split as the feature store.
 - All user-facing copy, docstrings, and the `<title>` in `src/web/index.html` are in Spanish. Keep new UI strings Spanish unless told otherwise.
+- **Linting/formatting**: ruff + black enforced via CI (`.github/workflows/ci.yml`, matrix Ubuntu+Windows, verde en ambos). Config en `pyproject.toml` (`[tool.ruff]`, `[tool.black]`, `line-length = 100`, `target-version = "py310"`, exclusiones: `src/web`, `latex`, `memoria`, `docs`). E402 ignorado en `[tool.ruff.lint]` por el boilerplate `sys.path.insert(0, str(BASE_DIR))` que los módulos de `src/` llevan antes de los `import src.*` (Guardrail 7). Antes de pushear: `ruff check src/ tests/ && black --check src/ tests/` y `pytest -q -m "not slow"`.
 
 ## Gotchas
 
 - The model files in `models/` required for the API are: `set_predictor_v2.joblib` (preferred) or `set_predictor.joblib` (fallback), `match_elo_v2.joblib` or `match_predictor.joblib` (fallback), `point_probability.joblib`, `player_stats_params.json`. On a fresh clone, run `python -m src.models.train_improved` to generate the v2 artifacts; otherwise the API starts in degraded mode (uses legacy fallbacks if available, or returns empty rosters).
 - `src/web/node_modules/` may be checked into git; if you change `package.json`, run `npm install` again.
-- No `requirements.txt` or `pyproject.toml` exists. Dependencies must be installed manually into a venv.
+- No `requirements.txt` exists; las dependencias viven en `pyproject.toml` (`[project]` + `[project.optional-dependencies]` con `test = ["pytest>=8", "httpx>=0.27"]`). Para instalar todo (runtime + tests) en un venv: `pip install -e ".[test]"`. La sección **Python dependencies** debajo lista los paquetes concretos a modo de referencia histórica.
 - The repo folder name contains spaces and parentheses — quote all paths in shell commands.
 - `get_all_viable_teams()` returns only teams meeting a minimum-data threshold. Teams below the threshold won't appear in the API even if they exist in `TEAM_ALIASES`.

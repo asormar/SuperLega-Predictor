@@ -1,5 +1,7 @@
 # Plan de Mejora de Precisión de los Modelos
 
+> **STATUS: HISTÓRICO (2026-07-22)** — Items B0, B1, B2 (resultado negativo), B3 ejecutados y reflejados en el [Plan Consolidado](./PLAN_MEJORAS_CONSOLIDADO.md) §GRUPO B. Items B4, B5, B6, B7 pendientes y detallados allí. Se conserva este documento como registro del diagnóstico original (Problema 1-4) y de la expectativa honesta de ganancia.
+
 Plan para ser ejecutado por un agente. Objetivo: subir la precisión **real** (no solo la medida) del SetPredictor, MatchPredictor y del pipeline de simulación completo. Ordenado por impacto esperado. Cada fase es independiente y commiteable por separado; ejecutar en orden porque la Fase 0 cambia cómo se mide todo lo demás.
 
 ## Contexto: estado actual y diagnóstico
