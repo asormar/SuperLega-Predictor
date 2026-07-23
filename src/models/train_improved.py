@@ -624,6 +624,8 @@ def run_b5_route(
     if not mf_path.exists():
         raise FileNotFoundError(f"Missing match_features.csv: {mf_path}")
     dfm = pd.read_csv(mf_path)
+    # temporada is "YYYY/YYYY" string — convert to int (start year) for recency math.
+    dfm["temporada"] = dfm["temporada"].str.split("/").str[0].astype(int)
     logger.info(f"Loaded {len(dfm)} rows from match_features.csv ({dfm.shape[1]} cols)")
 
     # ── Step 3: Skip imputed rows (REQ-016) ──────────────────────────────
@@ -632,7 +634,7 @@ def run_b5_route(
     # league median for that season.  We compute the median per season.
     n_total = len(dfm)
     for side in ("h_roster_continuity", "a_roster_continuity"):
-        season_medians = dfm.groupby("temporada_inicio")[side].transform("median")
+        season_medians = dfm.groupby("temporada")[side].transform("median")
         dfm[f"{side}_is_imputed"] = np.abs(dfm[side] - season_medians) < 1e-6
     dfm["any_imputed"] = (
         dfm["h_roster_continuity_is_imputed"] | dfm["a_roster_continuity_is_imputed"]
@@ -653,10 +655,8 @@ def run_b5_route(
     y = df_clean["gana_local"].values
 
     # Recency weights: half-life 2 seasons
-    current_max_season = df_clean["temporada_inicio"].max()
-    df_clean["recency_w"] = 0.5 ** (
-        (current_max_season - df_clean["temporada_inicio"].values) / 2.0
-    )
+    current_max_season = df_clean["temporada"].max()
+    df_clean["recency_w"] = 0.5 ** ((current_max_season - df_clean["temporada"].values) / 2.0)
     w = df_clean["recency_w"].values
 
     logger.info(f"Primary analysis: {len(df_clean)} rows (skipped {n_skipped} imputed)")
@@ -668,8 +668,8 @@ def run_b5_route(
     logloss_elo_only_per_fold = []
 
     for vy in val_year_list:
-        tr_mask = df_clean["temporada_inicio"] != vy
-        va_mask = df_clean["temporada_inicio"] == vy
+        tr_mask = df_clean["temporada"] != vy
+        va_mask = df_clean["temporada"] == vy
         X_tr, y_tr, w_tr = X[tr_mask.values], y[tr_mask.values], w[tr_mask.values]
         X_va, y_va = X[va_mask.values], y[va_mask.values]
 
@@ -731,7 +731,7 @@ def run_b5_route(
     z_stat = churn_coef_global / churn_coef_std_err if churn_coef_std_err > 0 else 0.0
 
     # ── Step 8: Compute test-2025 metrics ────────────────────────────────
-    te_mask = df_clean["temporada_inicio"] == test_year
+    te_mask = df_clean["temporada"] == test_year
     if te_mask.sum() > 10:
         X_te = X[te_mask.values]
         y_te = y[te_mask.values]
@@ -783,14 +783,14 @@ def run_b5_route(
     )
     X_sens = df_sens[feature_cols].fillna(0).values
     y_sens = df_sens["gana_local"].values
-    w_sens = 0.5 ** ((current_max_season - df_sens["temporada_inicio"].values) / 2.0)
+    w_sens = 0.5 ** ((current_max_season - df_sens["temporada"].values) / 2.0)
 
     churn_coef_per_fold_sens = []
     logloss_per_fold_sens = []
     logloss_elo_only_per_fold_sens = []
     for vy in val_year_list:
-        tr_mask = df_sens["temporada_inicio"] != vy
-        va_mask = df_sens["temporada_inicio"] == vy
+        tr_mask = df_sens["temporada"] != vy
+        va_mask = df_sens["temporada"] == vy
         X_tr_s, y_tr_s, w_tr_s = (
             X_sens[tr_mask.values],
             y_sens[tr_mask.values],
@@ -874,8 +874,11 @@ def run_b5_route(
         "sigma_lofo": sigma_lofo,
         "n_folds": n_folds,
         "n_imputed_skipped": int(n_skipped),
+        "sample_population": int(len(df_clean)),
+        "elo_baseline_logloss": float(elo_baseline),
         "test_year": test_year,
         "val_years": list(val_years),
+        "test_metrics": test_metrics,
         "test_metrics_if_computed": test_metrics,
         "failing_conditions": failing_conditions,
         "sensitivity_verdict": sensitivity_verdict,
