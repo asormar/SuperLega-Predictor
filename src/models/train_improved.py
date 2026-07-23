@@ -229,8 +229,18 @@ def evaluate_adoption(
     n_folds_win_required: int = 3,
     noise_floor: float = 0.005,
     w_sat_threshold: float = 0.05,
+    gate: str = "b4",
 ) -> str:
-    """Evaluate the B4 adoption gate (REQ-016 / REQ-017).
+    """Evaluate the B4 or B5 adoption gate (REQ-016 / REQ-017 / REQ-019).
+
+    Args:
+        result: Dict with per-fold and global metrics.
+        elo_test_logloss_baseline: Elo-only test logloss from precision_improved.json.
+        n_folds_required: Number of LOFO folds required (default 4).
+        n_folds_win_required: Number of folds where improvement is positive (default 3).
+        noise_floor: Minimum improvement threshold (default 0.005).
+        w_sat_threshold: Saturation threshold for B4 w_global (default 0.05).
+        gate: ``"b4"`` (default, B4 AND-of-4) or ``"b5"`` (B5-adapted AND-of-4).
 
     Returns one of ``"adopted"``, ``"negative"``, or ``"shortcut_negative"``.
     Populates ``result["failing_conditions"]`` with human-readable names of
@@ -238,6 +248,64 @@ def evaluate_adoption(
     """
     failing_conditions = []
 
+    if gate == "b5":
+        # ── B5-adapted AND-of-4 gate (REQ-017..REQ-021) ────────────────
+        # Hard shortcut (REQ-021)
+        churn_coef = result.get("churn_coef_global", 0.0)
+        logloss_logreg = result.get("logloss_mean", float("inf"))
+        logloss_constant = result.get("logloss_constant", float("inf"))
+        if abs(churn_coef) < 1e-6 and abs(logloss_logreg - logloss_constant) < 1e-9:
+            failing_conditions.append("hard_shortcut")
+            result["failing_conditions"] = failing_conditions
+            return "shortcut_negative"
+
+        # Condition 1: count(positive churn_coef_per_fold) >= 3
+        churn_coefs = result.get("churn_coef_per_fold", [])
+        n_positive = sum(1 for c in churn_coefs if c > 0)
+        cond1_pass = n_positive >= n_folds_win_required
+        if not cond1_pass:
+            failing_conditions.append(
+                f"cond1: positive_churn_coefs={n_positive}/{len(churn_coefs)} < required={n_folds_win_required}"
+            )
+
+        # Condition 2: improvement_mean > max(sigma_lofo, noise_floor)
+        improvement = result["improvement_mean"]
+        sigma = result.get("sigma_lofo", 0.0)
+        imp_threshold = max(sigma, noise_floor)
+        cond2_pass = improvement > imp_threshold
+        if not cond2_pass:
+            failing_conditions.append(
+                f"cond2: improvement_mean={improvement:.6f} <= max(sigma={sigma:.4f}, "
+                f"noise_floor={noise_floor})"
+            )
+
+        # Condition 3: test-2025 logloss < Elo baseline
+        test_metrics = result.get("test_metrics_if_computed")
+        cond3_pass = False
+        if test_metrics is not None and "logloss" in test_metrics:
+            cond3_pass = test_metrics["logloss"] < elo_test_logloss_baseline
+        if not cond3_pass:
+            test_ll = test_metrics.get("logloss", float("nan")) if test_metrics else float("nan")
+            failing_conditions.append(
+                f"cond3: test_logloss={test_ll:.6f} >= baseline={elo_test_logloss_baseline:.6f}"
+            )
+
+        # Condition 4: churn_coef_global > 0 AND |z| > 1.0
+        churn_coef = result.get("churn_coef_global", 0.0)
+        z_stat = result.get("z_stat", 0.0)
+        cond4_pass = churn_coef > 0 and abs(z_stat) > 1.0
+        if not cond4_pass:
+            failing_conditions.append(
+                f"cond4: churn_coef={churn_coef:.6f}, |z|={abs(z_stat):.4f} — need coef>0 AND |z|>1.0"
+            )
+
+        result["failing_conditions"] = failing_conditions
+
+        if cond1_pass and cond2_pass and cond3_pass and cond4_pass:
+            return "adopted"
+        return "negative"
+
+    # ── B4 path (default, UNTOUCHED — R-DRIFT-1) ──────────────────────────
     # ── REQ-017: Hard shortcut (both conditions required) ────────────────
     if result["w_global"] >= 0.999 and result["improvement_mean"] < 0.001:
         failing_conditions.append("hard_shortcut")
@@ -498,8 +566,388 @@ def run_b4_route(
     return verdict
 
 
+def run_b5_route(
+    *,
+    test_year: int = 2025,
+    val_years: tuple = (2021, 2022, 2023, 2024),
+) -> str:
+    """B5 experiment route: LOFO-CV LogReg on [logit(elo_win_prob_h), diff_roster_continuity].
+
+    Steps:
+      1. Read Elo baseline from precision_improved.json (FAIL LOUD if missing).
+      2. Load match_features.csv (1322 × 69).
+      3. Skip rows with imputed roster_continuity (~18% from R-SAMPLE).
+      4. Build X = [logit(elo_win_prob_h), diff_roster_continuity], y = gana_local,
+         w = recency weight (half-life 2).
+      5. LOFO-CV: for each val fold f, fit LogReg(C=0.5) on the OTHER 3 folds,
+         evaluate on f.
+      6. Per-fold: churn_coef_per_fold[f], logloss_per_fold[f], logloss_elo_only_per_fold[f].
+      7. Global fit on all data: churn_coef_global, churn_coef_std_err (manual
+         inverse-Hessian, no statsmodels dep — OQ-2).
+      8. Apply AND-of-4 gate (REQ-017..REQ-021).
+      9. Write models/b5_churn_results.json.
+      10. Return verdict.
+
+    Returns:
+        Verdict string: ``"adopted"``, ``"negative"``, or ``"shortcut_negative"``.
+    """
+    logger = logging.getLogger("b5_churn")
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.INFO)
+        logger.addHandler(ch)
+
+    logger.info("=" * 60)
+    logger.info("  B5 — Roster churn LogReg (AND-of-4 gate)")
+    logger.info("=" * 60)
+
+    # ── Step 1: Read Elo baseline (FAIL LOUD if missing — R-ELO-BASELINE) ──
+    baseline_path = MODELS_DIR / "precision_improved.json"
+    if not baseline_path.exists():
+        raise RuntimeError(
+            "R-ELO-BASELINE: precision_improved.json not found. "
+            "Run `python -m src.models.train_improved` first."
+        )
+    with open(baseline_path) as f:
+        precision_data = json.load(f)
+    elo_baseline = precision_data.get("match", {}).get("test", {}).get("logloss")
+    if elo_baseline is None:
+        raise RuntimeError(
+            "R-ELO-BASELINE: match.test.logloss not found in precision_improved.json. "
+            "Run `python -m src.models.train_improved` first."
+        )
+    logger.info(f"Elo test-logloss baseline: {elo_baseline:.6f}")
+
+    # ── Step 2: Load match_features.csv ──────────────────────────────────
+    mf_path = BASE_DIR / "DB" / "features" / "match_features.csv"
+    if not mf_path.exists():
+        raise FileNotFoundError(f"Missing match_features.csv: {mf_path}")
+    dfm = pd.read_csv(mf_path)
+    # temporada is "YYYY/YYYY" string — convert to int (start year) for recency math.
+    dfm["temporada"] = dfm["temporada"].str.split("/").str[0].astype(int)
+    logger.info(f"Loaded {len(dfm)} rows from match_features.csv ({dfm.shape[1]} cols)")
+
+    # ── Step 3: Skip imputed rows (REQ-016) ──────────────────────────────
+    # Roster continuity is imputed for first-season teams (~18% of rows).
+    # We detect imputed rows by checking if the continuity value equals the
+    # league median for that season.  We compute the median per season.
+    n_total = len(dfm)
+    for side in ("h_roster_continuity", "a_roster_continuity"):
+        season_medians = dfm.groupby("temporada")[side].transform("median")
+        dfm[f"{side}_is_imputed"] = np.abs(dfm[side] - season_medians) < 1e-6
+    dfm["any_imputed"] = (
+        dfm["h_roster_continuity_is_imputed"] | dfm["a_roster_continuity_is_imputed"]
+    )
+    n_imputed = dfm["any_imputed"].sum()
+    df_clean = dfm[~dfm["any_imputed"]].copy()
+    n_skipped = n_imputed
+    logger.info(
+        f"Imputed rows: {n_imputed}/{n_total} ({100*n_imputed/n_total:.1f}%) — skipped for primary analysis"
+    )
+
+    # ── Step 4: Build X, y, w ────────────────────────────────────────────
+    from scipy.special import logit
+
+    df_clean["logit_elo"] = logit(np.clip(df_clean["elo_win_prob_h"].values, 1e-6, 1 - 1e-6))
+    feature_cols = ["logit_elo", "diff_roster_continuity"]
+    X = df_clean[feature_cols].fillna(0).values
+    y = df_clean["gana_local"].values
+
+    # Recency weights: half-life 2 seasons
+    current_max_season = df_clean["temporada"].max()
+    df_clean["recency_w"] = 0.5 ** ((current_max_season - df_clean["temporada"].values) / 2.0)
+    w = df_clean["recency_w"].values
+
+    logger.info(f"Primary analysis: {len(df_clean)} rows (skipped {n_skipped} imputed)")
+
+    # ── Step 5: LOFO-CV ──────────────────────────────────────────────────
+    val_year_list = list(val_years)
+    churn_coef_per_fold = []
+    logloss_per_fold = []
+    logloss_elo_only_per_fold = []
+
+    for vy in val_year_list:
+        tr_mask = df_clean["temporada"] != vy
+        va_mask = df_clean["temporada"] == vy
+        X_tr, y_tr, w_tr = X[tr_mask.values], y[tr_mask.values], w[tr_mask.values]
+        X_va, y_va = X[va_mask.values], y[va_mask.values]
+
+        if len(X_va) < 5 or len(np.unique(y_va)) < 2:
+            logger.warning(f"  fold {vy}: too few rows or single class, skipping")
+            continue
+
+        model = LogisticRegression(max_iter=2000, C=0.5, random_state=42)
+        model.fit(X_tr, y_tr, sample_weight=w_tr)
+        p_va = model.predict_proba(X_va)[:, 1]
+        p_va = np.clip(p_va, 1e-6, 1 - 1e-6)
+
+        # Elo-only baseline on this fold
+        logit_elo_va = X_va[:, 0]
+        p_elo_va = 1.0 / (1.0 + np.exp(-logit_elo_va))
+        p_elo_va = np.clip(p_elo_va, 1e-6, 1 - 1e-6)
+
+        churn_coef = float(model.coef_[0, 1])
+        churn_coef_per_fold.append(churn_coef)
+        logloss_per_fold.append(float(log_loss(y_va, p_va)))
+        logloss_elo_only_per_fold.append(float(log_loss(y_va, p_elo_va)))
+
+        logger.info(
+            f"  fold {vy}: churn_coef={churn_coef:+.6f}  "
+            f"logloss={logloss_per_fold[-1]:.4f}  "
+            f"elo={logloss_elo_only_per_fold[-1]:.4f}  "
+            f"improvement={logloss_elo_only_per_fold[-1] - logloss_per_fold[-1]:+.4f}"
+        )
+
+    n_folds = len(churn_coef_per_fold)
+    if n_folds == 0:
+        logger.error("No valid folds — writing NEGATIVE fallback")
+        return _write_b5_fallback("No valid LOFO folds", test_year)
+
+    improvements = [e - b for e, b in zip(logloss_elo_only_per_fold, logloss_per_fold)]
+    improvement_mean = float(np.mean(improvements))
+    sigma_lofo = float(np.std(improvements)) if len(improvements) > 1 else 0.0
+    sigma_lofo = max(sigma_lofo, 0.005)
+
+    # ── Step 7: Global fit on all data ────────────────────────────────────
+    model_all = LogisticRegression(max_iter=2000, C=0.5, random_state=42)
+    model_all.fit(X, y, sample_weight=w)
+    churn_coef_global = float(model_all.coef_[0, 1])
+
+    # Manual inverse-Hessian for std_err (no statsmodels dep — OQ-2)
+    p_all = model_all.predict_proba(X)[:, 1]
+    p_all = np.clip(p_all, 1e-6, 1 - 1e-6)
+    # Hessian = X^T diag(p*(1-p)) X  (for log-loss, each obs contributes p*(1-p) * x_i x_i^T)
+    diag_w = (p_all * (1 - p_all)) * w  # recency-weighted
+    Xw = X * diag_w[:, np.newaxis]
+    hessian = Xw.T @ X
+    try:
+        cov = np.linalg.inv(hessian)
+        churn_coef_std_err = float(np.sqrt(cov[1, 1]))
+    except np.linalg.LinAlgError:
+        logger.warning("Hessian singular — falling back to pseudo-inverse for std_err")
+        cov = np.linalg.pinv(hessian)
+        churn_coef_std_err = float(np.sqrt(cov[1, 1]))
+    z_stat = churn_coef_global / churn_coef_std_err if churn_coef_std_err > 0 else 0.0
+
+    # ── Step 8: Compute test-2025 metrics ────────────────────────────────
+    te_mask = df_clean["temporada"] == test_year
+    if te_mask.sum() > 10:
+        X_te = X[te_mask.values]
+        y_te = y[te_mask.values]
+        p_te = model_all.predict_proba(X_te)[:, 1]
+        p_te = np.clip(p_te, 1e-6, 1 - 1e-6)
+        p_elo_te = 1.0 / (1.0 + np.exp(-X_te[:, 0]))
+        p_elo_te = np.clip(p_elo_te, 1e-6, 1 - 1e-6)
+        test_metrics = {
+            "n": int(len(y_te)),
+            "logloss": float(log_loss(y_te, p_te)),
+            "logloss_elo": float(log_loss(y_te, p_elo_te)),
+            "auc": float(roc_auc_score(y_te, p_te)),
+            "brier": float(brier_score_loss(y_te, p_te)),
+            "acc": float(accuracy_score(y_te, (p_te >= 0.5).astype(int))),
+        }
+    else:
+        test_metrics = None
+
+    # ── Step 9: Apply AND-of-4 gate ──────────────────────────────────────
+    result = {
+        "n_folds": n_folds,
+        "churn_coef_per_fold": churn_coef_per_fold,
+        "logloss_per_fold": logloss_per_fold,
+        "logloss_elo_only_per_fold": logloss_elo_only_per_fold,
+        "logloss_mean": float(np.mean(logloss_per_fold)) if logloss_per_fold else float("nan"),
+        "logloss_elo_only_mean": (
+            float(np.mean(logloss_elo_only_per_fold)) if logloss_elo_only_per_fold else float("nan")
+        ),
+        "improvement_mean": improvement_mean,
+        "sigma_lofo": sigma_lofo,
+        "churn_coef_global": churn_coef_global,
+        "churn_coef_std_err": churn_coef_std_err,
+        "z_stat": z_stat,
+        "test_metrics_if_computed": test_metrics,
+    }
+
+    verdict = evaluate_adoption(
+        result,
+        elo_test_logloss_baseline=elo_baseline,
+        gate="b5",
+    )
+    failing_conditions = result.get("failing_conditions", [])
+
+    # ── Sensitivity check: re-run with imputed rows INCLUDED ────────────
+    df_sens = dfm.copy()
+    df_sens["logit_elo"] = np.log(
+        np.clip(df_sens["elo_win_prob_h"].values, 1e-6, 1 - 1e-6)
+        / (1 - np.clip(df_sens["elo_win_prob_h"].values, 1e-6, 1 - 1e-6))
+    )
+    X_sens = df_sens[feature_cols].fillna(0).values
+    y_sens = df_sens["gana_local"].values
+    w_sens = 0.5 ** ((current_max_season - df_sens["temporada"].values) / 2.0)
+
+    churn_coef_per_fold_sens = []
+    logloss_per_fold_sens = []
+    logloss_elo_only_per_fold_sens = []
+    for vy in val_year_list:
+        tr_mask = df_sens["temporada"] != vy
+        va_mask = df_sens["temporada"] == vy
+        X_tr_s, y_tr_s, w_tr_s = (
+            X_sens[tr_mask.values],
+            y_sens[tr_mask.values],
+            w_sens[tr_mask.values],
+        )
+        X_va_s, y_va_s = X_sens[va_mask.values], y_sens[va_mask.values]
+        if len(X_va_s) < 5 or len(np.unique(y_va_s)) < 2:
+            continue
+        m_s = LogisticRegression(max_iter=2000, C=0.5, random_state=42)
+        m_s.fit(X_tr_s, y_tr_s, sample_weight=w_tr_s)
+        p_s = m_s.predict_proba(X_va_s)[:, 1]
+        p_s = np.clip(p_s, 1e-6, 1 - 1e-6)
+        p_elo_s = 1.0 / (1.0 + np.exp(-X_va_s[:, 0]))
+        p_elo_s = np.clip(p_elo_s, 1e-6, 1 - 1e-6)
+        churn_coef_per_fold_sens.append(float(m_s.coef_[0, 1]))
+        logloss_per_fold_sens.append(float(log_loss(y_va_s, p_s)))
+        logloss_elo_only_per_fold_sens.append(float(log_loss(y_va_s, p_elo_s)))
+
+    n_folds_sens = len(churn_coef_per_fold_sens)
+    if n_folds_sens > 0:
+        # Global fit on sensitivity data
+        model_sens = LogisticRegression(max_iter=2000, C=0.5, random_state=42)
+        model_sens.fit(X_sens, y_sens, sample_weight=w_sens)
+        churn_coef_sens = float(model_sens.coef_[0, 1])
+        p_sens = model_sens.predict_proba(X_sens)[:, 1]
+        p_sens = np.clip(p_sens, 1e-6, 1 - 1e-6)
+        diag_w_sens = (p_sens * (1 - p_sens)) * w_sens
+        hessian_sens = (X_sens * diag_w_sens[:, np.newaxis]).T @ X_sens
+        try:
+            cov_sens = np.linalg.inv(hessian_sens)
+            se_sens = float(np.sqrt(cov_sens[1, 1]))
+        except np.linalg.LinAlgError:
+            se_sens = 0.0
+        z_sens = churn_coef_sens / se_sens if se_sens > 0 else 0.0
+
+        # Sensitivity verdict
+        sens_improvements = [
+            e - b for e, b in zip(logloss_elo_only_per_fold_sens, logloss_per_fold_sens)
+        ]
+        sens_improvement_mean = float(np.mean(sens_improvements))
+        sens_sigma = float(np.std(sens_improvements)) if len(sens_improvements) > 1 else 0.0
+        sens_sigma = max(sens_sigma, 0.005)
+        sens_result = {
+            "n_folds": n_folds_sens,
+            "churn_coef_per_fold": churn_coef_per_fold_sens,
+            "churn_coef_global": churn_coef_sens,
+            "churn_coef_std_err": se_sens,
+            "z_stat": z_sens,
+            "logloss_per_fold": logloss_per_fold_sens,
+            "logloss_elo_only_per_fold": logloss_elo_only_per_fold_sens,
+            "logloss_mean": (
+                float(np.mean(logloss_per_fold_sens)) if logloss_per_fold_sens else float("nan")
+            ),
+            "improvement_mean": sens_improvement_mean,
+            "sigma_lofo": sens_sigma,
+            "test_metrics_if_computed": test_metrics,
+        }
+        sensitivity_verdict = evaluate_adoption(
+            sens_result,
+            elo_test_logloss_baseline=elo_baseline,
+            gate="b5",
+        )
+    else:
+        sensitivity_verdict = "no_folds"
+
+    # ── Write results ────────────────────────────────────────────────────
+    output = {
+        "shortcut": (abs(churn_coef_global) < 1e-6 and abs(improvement_mean) < 1e-9),
+        "verdict": verdict,
+        "churn_coef_global": churn_coef_global,
+        "churn_coef_std_err": churn_coef_std_err,
+        "z_stat": z_stat,
+        "churn_coef_per_fold": churn_coef_per_fold,
+        "logloss_per_fold": logloss_per_fold,
+        "logloss_elo_only_per_fold": logloss_elo_only_per_fold,
+        "logloss_mean": float(np.mean(logloss_per_fold)) if logloss_per_fold else float("nan"),
+        "logloss_elo_only_mean": (
+            float(np.mean(logloss_elo_only_per_fold)) if logloss_elo_only_per_fold else float("nan")
+        ),
+        "improvement_mean": improvement_mean,
+        "sigma_lofo": sigma_lofo,
+        "n_folds": n_folds,
+        "n_imputed_skipped": int(n_skipped),
+        "sample_population": int(len(df_clean)),
+        "elo_baseline_logloss": float(elo_baseline),
+        "test_year": test_year,
+        "val_years": list(val_years),
+        "test_metrics": test_metrics,
+        "test_metrics_if_computed": test_metrics,
+        "failing_conditions": failing_conditions,
+        "sensitivity_verdict": sensitivity_verdict,
+        "note": (
+            "B5 churn experiment: LogReg(C=0.5) on [logit(elo_win_prob_h), diff_roster_continuity] "
+            "with recency weight (half-life=2). Imputed rows skipped for primary; "
+            "sensitivity includes them."
+        ),
+    }
+
+    out_path = MODELS_DIR / "b5_churn_results.json"
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+    logger.info(f"Results written to {out_path}")
+
+    # Summary banner (NFR-005)
+    banner = (
+        f"  >>> B5 VERDICT: {verdict.upper()}  "
+        f"(churn_coef={churn_coef_global:+.6f}, Δ={improvement_mean:+.4f})"
+    )
+    logger.info("─" * 60)
+    logger.info(banner)
+    if verdict == "negative":
+        logger.info(f"  Failing conditions: {failing_conditions}")
+    logger.info("─" * 60)
+
+    return verdict
+
+
+def _write_b5_fallback(reason: str, test_year: int) -> str:
+    """Write a degenerate B5 result when data is unavailable."""
+    out_path = MODELS_DIR / "b5_churn_results.json"
+    output = {
+        "shortcut": True,
+        "verdict": "shortcut_negative",
+        "churn_coef_global": 0.0,
+        "churn_coef_std_err": 0.0,
+        "z_stat": 0.0,
+        "churn_coef_per_fold": [],
+        "logloss_per_fold": [],
+        "logloss_elo_only_per_fold": [],
+        "logloss_mean": None,
+        "logloss_elo_only_mean": None,
+        "improvement_mean": None,
+        "sigma_lofo": 0.0,
+        "n_folds": 0,
+        "n_imputed_skipped": 0,
+        "test_year": test_year,
+        "val_years": [],
+        "test_metrics_if_computed": None,
+        "failing_conditions": [f"Data unavailable: {reason}"],
+        "sensitivity_verdict": "no_folds",
+        "note": ("B5 fallback — data unavailable; verdict is shortcut_negative."),
+    }
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+    b5_logger = logging.getLogger("b5_churn")
+    b5_logger.info(f"Fallback results written to {out_path}")
+    b5_logger.info("  >>> B5 VERDICT: SHORTCUT_NEGATIVE  (data unavailable)")
+    return "shortcut_negative"
+
+
 def _write_negative_fallback(reason: str, test_year: int) -> str:
-    """Write a degenerate B4 result when SetPredictor v2 is unavailable."""
+    """Write a degenerate B4 result when SetPredictor v2 is unavailable.
+
+    R-DRIFT-1: the B4 call sites in ``run_b4_route`` still reference this
+    function name; the implementation writes ``b4_blend_results.json`` with
+    ``w_global=1.0`` (pure Elo) when SetPredictor v2 is missing.
+    """
     out_path = MODELS_DIR / "b4_blend_results.json"
     output = {
         "shortcut": True,
