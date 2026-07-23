@@ -149,7 +149,7 @@ def build_match_features(sp: pd.DataFrame) -> pd.DataFrame:
     df["sos_a"] = 0.5
     df["diff_sos"] = 0.0
 
-    # -- Orden de columnas exacto del CSV original (66 columnas) --
+    # -- Orden de columnas exacto del CSV original (69 columnas, +3 B5) --
     ordered = [
         "partido_id",
         "temporada",
@@ -216,6 +216,9 @@ def build_match_features(sp: pd.DataFrame) -> pd.DataFrame:
         "sos_h",
         "sos_a",
         "diff_sos",
+        "h_roster_continuity",
+        "a_roster_continuity",
+        "diff_roster_continuity",
         "gana_local",
     ]
 
