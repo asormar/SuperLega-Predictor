@@ -176,6 +176,38 @@ def _season_str(year: int) -> str:
     return f"{year}/{year + 1}"
 
 
+def _compute_player_mismatch_pct(player_stats: pd.DataFrame) -> dict:
+    """Compute the per-(team, T) player-name mismatch % (R-DATA-2 / REQ-025).
+
+    For each (team, T-1) player, check whether their ``jugador`` name appears
+    exactly in the (team, T) roster. The mismatch % is the fraction of T-1
+    players that do NOT have an exact match in T. Returns a dict keyed by
+    ``(equipo_id, temporada)`` with values in [0, 1] or ``None`` when T-1
+    data is absent (first-season teams).
+
+    The exact-string match is the same join key the continuity formula uses
+    (REQ-008), so the % is the noise level from homonyms, transliteration
+    differences, and orthographic drift in the source data.
+    """
+    out: dict[tuple[str, int], float | None] = {}
+    # Convert temporada 'YYYY/YYYY' string to start-year int for arithmetic.
+    ps = player_stats.copy()
+    ps["temp_int"] = ps["temporada"].astype(str).str.split("/").str[0].astype(int)
+    # Pre-build (eid, temp_int) → set(jugador) lookup for O(1) T-1 access.
+    eid_year_to_players: dict[tuple[str, int], set[str]] = {}
+    for (eid, temp_int), grp in ps.groupby(["equipo_id", "temp_int"]):
+        eid_year_to_players[(eid, int(temp_int))] = set(grp["jugador"].astype(str).values)
+    for eid, temp_int in eid_year_to_players:
+        roster_t = eid_year_to_players[(eid, int(temp_int))]
+        roster_t_minus_1 = eid_year_to_players.get((eid, int(temp_int) - 1), set())
+        if not roster_t_minus_1:
+            out[(eid, int(temp_int))] = None
+            continue
+        mismatches = roster_t_minus_1 - roster_t
+        out[(eid, int(temp_int))] = len(mismatches) / len(roster_t_minus_1)
+    return out
+
+
 # ─────────────────────────────────────────────────────────────
 # CLI
 # ─────────────────────────────────────────────────────────────
@@ -207,6 +239,17 @@ def main():
     print(f"  League-median continuity: {result['continuity'].median():.4f}")
     n_imputed = result["imputed"].sum()
     print(f"  Imputed (first-season) rows: {n_imputed} ({n_imputed / len(result) * 100:.1f}%)")
+
+    # R-DATA-2: player-name mismatch % (REQ-025 / §7.6). Exact-string match on
+    # `jugador` is the join key (REQ-008); the mismatch % is the noise level
+    # from homonyms, transliteration differences, and orthographic drift.
+    mismatch_pct = _compute_player_mismatch_pct(ps)
+    global_mismatch = np.mean([v for v in mismatch_pct.values() if v is not None])
+    n_pairs_with_t1 = sum(1 for v in mismatch_pct.values() if v is not None)
+    print(
+        f"  Player-name mismatch % (T-1 players not in T): "
+        f"{global_mismatch * 100:.2f}% (mean over {n_pairs_with_t1} (team, T) pairs with T-1 data)"
+    )
 
     # Print the full table
     print("\n  Continuity by team-season:")

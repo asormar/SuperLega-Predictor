@@ -730,15 +730,30 @@ def run_b5_route(
         churn_coef_std_err = float(np.sqrt(cov[1, 1]))
     z_stat = churn_coef_global / churn_coef_std_err if churn_coef_std_err > 0 else 0.0
 
-    # ── Step 8: Compute test-2025 metrics ────────────────────────────────
+    # ── Step 7b: Train-only model for HELD-OUT test-2025 evaluation (W1 fix) ─
+    # The global `model_all` trained on ALL non-imputed rows (including test_year)
+    # produced optimistic test_metrics. We re-fit on train-only rows to get a
+    # held-out evaluation (ml-calibration skill: never fit+eval on same data).
+    tr_only_mask = df_clean["temporada"] != test_year
+    X_tr_only = X[tr_only_mask.values]
+    y_tr_only = y[tr_only_mask.values]
+    w_tr_only = w[tr_only_mask.values]
+    model_test = LogisticRegression(max_iter=2000, C=0.5, random_state=42)
+    model_test.fit(X_tr_only, y_tr_only, sample_weight=w_tr_only)
+
+    # ── Step 8: Compute test-2025 metrics (HELD-OUT via model_test) ───────
     te_mask = df_clean["temporada"] == test_year
     if te_mask.sum() > 10:
         X_te = X[te_mask.values]
         y_te = y[te_mask.values]
-        p_te = model_all.predict_proba(X_te)[:, 1]
+        p_te = model_test.predict_proba(X_te)[:, 1]
         p_te = np.clip(p_te, 1e-6, 1 - 1e-6)
         p_elo_te = 1.0 / (1.0 + np.exp(-X_te[:, 0]))
         p_elo_te = np.clip(p_elo_te, 1e-6, 1 - 1e-6)
+        # In-sample for comparison (model_all on test_year — optimistic, not used
+        # in the gate). Kept for transparency only.
+        p_te_in_sample = model_all.predict_proba(X_te)[:, 1]
+        p_te_in_sample = np.clip(p_te_in_sample, 1e-6, 1 - 1e-6)
         test_metrics = {
             "n": int(len(y_te)),
             "logloss": float(log_loss(y_te, p_te)),
@@ -746,6 +761,8 @@ def run_b5_route(
             "auc": float(roc_auc_score(y_te, p_te)),
             "brier": float(brier_score_loss(y_te, p_te)),
             "acc": float(accuracy_score(y_te, (p_te >= 0.5).astype(int))),
+            "logloss_in_sample": float(log_loss(y_te, p_te_in_sample)),
+            "evaluation_mode": "held_out",
         }
     else:
         test_metrics = None

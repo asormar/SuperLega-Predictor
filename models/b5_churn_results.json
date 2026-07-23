@@ -39,19 +39,23 @@
   ],
   "test_metrics": {
     "n": 110,
-    "logloss": 0.4657872254248358,
+    "logloss": 0.49305908776910584,
     "logloss_elo": 0.4814994013712171,
-    "auc": 0.8567927170868348,
-    "brier": 0.15318385040055993,
-    "acc": 0.7727272727272727
+    "auc": 0.8529411764705883,
+    "brier": 0.16204457356756916,
+    "acc": 0.7454545454545455,
+    "logloss_in_sample": 0.4657872254248358,
+    "evaluation_mode": "held_out"
   },
   "test_metrics_if_computed": {
     "n": 110,
-    "logloss": 0.4657872254248358,
+    "logloss": 0.49305908776910584,
     "logloss_elo": 0.4814994013712171,
-    "auc": 0.8567927170868348,
-    "brier": 0.15318385040055993,
-    "acc": 0.7727272727272727
+    "auc": 0.8529411764705883,
+    "brier": 0.16204457356756916,
+    "acc": 0.7454545454545455,
+    "logloss_in_sample": 0.4657872254248358,
+    "evaluation_mode": "held_out"
   },
   "failing_conditions": [
     "cond2: improvement_mean=-0.013331 <= max(sigma=0.0203, noise_floor=0.005)",

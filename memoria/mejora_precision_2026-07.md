@@ -741,7 +741,15 @@ Resultados por fold (LOFO-CV honesto, imputed rows skipped por
 `n_imputed_skipped = 755/1322 = 57.1%` — mucho más que el 18% estimado en
 el plan porque la heurística de imputación por coincidencia exacta con la
 mediana de la liga por temporada atrapa correctamente las temporadas
-enteras donde la mayoría de equipos están imputados):
+enteras donde la mayoría de equipos están imputados; el sensitivity check
+incluyendo imputed rows arroja el mismo verdict, demostrando invariancia
+respecto a la política de imputación). El join de jugadores es exact-string
+match sobre `jugador` (REQ-008). El T-1 non-match % medio (todos los T-1
+players que NO aparecen en T por nombre) es **55.86%** sobre los 105 pares
+(team, T) con datos T-1 — esto refleja el turnover real de plantillas de
+voleibol (muchos jugadores cambian de equipo cada año). El 1–3% estimado en
+R-DATA-2 / REQ-008 es el subconjunto de esos 55.86% que corresponde a
+mismatch de nombre (typos, transliteración), no al total.
 
 | Fold | $\beta_2$ (churn coef) | LogLoss LR | LogLoss Elo puro | Mejora |
 |---:|---:|---:|---:|---:|
@@ -760,12 +768,15 @@ enteras donde la mayoría de equipos están imputados):
 | Per-fold wins (LR &lt; Elo) | 2 / 4 |
 | LogLoss LR (media) | 0.6429 |
 | LogLoss Elo (media) | 0.6295 |
-| Test 2025 logloss LR | 0.4658 |
+| Test 2025 logloss LR (**held-out**, refit on train-only) | 0.4931 |
+| Test 2025 logloss LR (in-sample, for comparison only) | 0.4658 |
 | Test 2025 logloss Elo (computed in-route, filtered) | 0.4815 |
 | Test 2025 logloss Elo (baseline, full 2025) | 0.5677 |
 | Sensitivity verdict (imputed rows INCLUDED) | `negative` |
 | $n_{\text{imputed\_skipped}}$ | 755 / 1322 (57.1%) |
 | $n_{\text{primary}}$ | 567 |
+| Player-name T-1 non-match % (turnover) | 55.86% (mean over 105 (team, T) pairs with T-1) |
+| Player-name T-1 non-match % spec noise floor (R-DATA-2 / REQ-008) | 1–3% |
 
 **Análisis.** El coeficiente $\beta_2$ es **positivo en 3 de 4 folds** (2021,
 2023, 2024) — la dirección es la correcta: más continuidad de roster en el
@@ -780,13 +791,18 @@ temporadas). El AND-of-4 atrapa la falta de señal por **dos** condiciones
 independientes — `cond2` (mejora media bajo el noise floor) y `cond4`
 (significancia estadística insuficiente) — lo que da robustez al veredicto.
 
-El test held-out 2025 muestra una aparente victoria del LogReg (logloss 0.466
-vs 0.482 del Elo computed in-route), pero esa comparación se hace sobre la
-sub-población filtrada (567 filas, sin imputed rows) y no es directamente
-comparable con el baseline 0.5677 que mide `precision_improved.json` sobre
-los 314 partidos de 2025. La condición `cond3` (test-2025 logloss < baseline
-0.5677) pasa en ambos casos — pero esa condición no es la que rechaza la
-adopción; las que rechazan son `cond2` y `cond4`.
+El test held-out 2025 — re-evaluado con un modelo **refit en train-only**
+(`model_test`, separado del `model_all` global, W1 fix del sdd-verify) — da
+logloss 0.4931 (LR) vs 0.4815 (Elo, computado in-route sobre las mismas 110
+filas filtradas). El LogReg es **ligeramente PEOR que Elo puro en el
+held-out 2025 honesto** (Δ = +0.0116), confirmando el patrón de la LOFO
+(improvement negativo promedio). La condición `cond3` (test-2025 logloss <
+baseline 0.5677 de `precision_improved.json`) pasa en ambos casos — pero esa
+condición no es la que rechaza la adopción; las que rechazan son `cond2` y
+`cond4`. El número in-sample previo (logloss 0.4658, modelo que vio los
+datos de 2025 en training) se preserva en el artefacto como
+`test_metrics.logloss_in_sample` para transparencia, pero el gate opera
+sobre el held-out.
 
 **Decisión.** No se adopta la feature de roster churn. La señal existe (el
 coeficiente es positivo en la dirección esperada) pero es **demasiado débil**
