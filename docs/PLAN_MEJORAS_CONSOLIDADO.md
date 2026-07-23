@@ -677,7 +677,7 @@ luego las correcciones.) A1 solo si NO se va a hacer el resto pronto.
      artefacto (guardar `w` y la config en el joblib).
 - **Esfuerzo**: 3–4 h. **Riesgo**: bajo (gated por folds). **Dependencias**: A3 (contrato).
 
-### B5 — Feature de continuidad de plantilla (roster churn)  🚧 PENDIENTE
+### B5 — Feature de continuidad de plantilla (roster churn)  ✅ HECHO (2026-07-23) — RESULTADO NEGATIVO
 
 - **Qué**: % de los puntos de la temporada T−1 anotados por jugadores que siguen
   en el equipo en T. Única señal de fichajes/éxodos disponible; pre-temporada,

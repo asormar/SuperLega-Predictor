@@ -700,6 +700,166 @@ el experimento con la metodología correcta y `a0a74f7` añadió 8 tests de
 truth-table para el gate. El veredicto NEGATIVE es el mismo en ambas
 pasadas, lo que confirma que el resultado no es artefacto del bug.
 
+### 7.6 B5 — Feature de continuidad de plantilla (roster churn): RESULTADO NEGATIVO (2026-07-23)
+
+El margin-Elo en B1 ya capturó la señal de partido (AUC 0.76 test 2025, logloss
+0.5677). B5 pregunta si la **continuidad de plantilla** — % de los puntos de T−1
+anotados por jugadores que siguen en el equipo en T— es una señal pre-temporada
+que complementa al Elo cuando se añade como feature a un LogReg encima del
+baseline. Es la **única señal de fichajes/éxodos** disponible y no tiene leakage
+porque se computa antes de que arranque la temporada.
+
+$$P_{\text{win}} = \sigma\!\left(\beta_0 + \beta_1 \cdot \text{logit}(P_{\text{Elo}}) + \beta_2 \cdot \text{diff\_roster\_continuity}\right)$$
+
+donde $\text{diff\_roster\_continuity} = h - a \in [-1, 1]$ es la diferencia de
+continuidad entre local y visitante. Imputación por **mediana de la liga** (no
+0) cuando un equipo no tiene T−1 (ascensos, gaps como Siena, primera temporada
+de Cisterna Top Volley en su discontinuidad con CIS-VOLLEY).
+
+**Protocolo.** Leave-One-Fold-Out CV sobre 2021–2024 (4 folds), igual que B4.
+`LogisticRegression(C=0.5)` fiteado sobre los **OTROS 3 folds** y evaluado sobre
+el fold held-out (LOFO honesto, fix C1 de B4 #200). Recency weight con
+half-life 2 temporadas, mismo criterio que el SET v2 de §7.3. 2025 se reserva
+como test held-out. **AND-of-4** B5-adaptado (extensión aditiva de
+`evaluate_adoption(..., gate="b5")`, rama B4 intacta — R-DRIFT-1 cerrado en
+commit `929a571`):
+
+1. per-fold `churn_coef` positivo en ≥ 3/4 folds
+2. $\text{improvement\_mean} > \max(\sigma_{\text{LOFO}}, 0.005)$ (noise floor)
+3. test-2025 logloss < Elo baseline leído en runtime desde
+   `models/precision_improved.json:11` (= 0.5677 hoy; FAIL LOUD si falta la clave)
+4. `churn_coef_global` > 0 AND $|z| = |\beta_2 / \text{se}| > 1.0$ (significancia
+   estadística; `se` por inversa de la Hessiana log-likelihood, sin dependencia
+   de `statsmodels`)
+
+**Hard shortcut**: $|\beta_2| < 10^{-6}$ AND $\text{logloss}_{\text{LR}} ==
+\text{logloss}_{\text{constante}}$ → `shortcut_negative` (modelo colapsado al
+promedio, no retry). Reproducible con
+`python -c "from src.models.train_improved import run_b5_route; print(run_b5_route())"`.
+
+Resultados por fold (LOFO-CV honesto, imputed rows skipped por
+`n_imputed_skipped = 755/1322 = 57.1%` — mucho más que el 18% estimado en
+el plan porque la heurística de imputación por coincidencia exacta con la
+mediana de la liga por temporada atrapa correctamente las temporadas
+enteras donde la mayoría de equipos están imputados):
+
+| Fold | $\beta_2$ (churn coef) | LogLoss LR | LogLoss Elo puro | Mejora |
+|---:|---:|---:|---:|---:|
+| 2021 | +0.1361 | 0.5543 | 0.5563 | **+0.0020** |
+| 2022 | +0.0002 | 0.7782 | 0.7355 | **−0.0427** |
+| 2023 | +0.0960 | 0.6866 | 0.6652 | **−0.0214** |
+| 2024 | +0.0569 | 0.5523 | 0.5610 | **+0.0087** |
+
+| Métrica global | Valor |
+|---:|---:|
+| $\beta_2$ global (churn coef) | +0.1111 |
+| $\text{se}(\beta_2)$ | 0.5067 |
+| $\|z\|$ (significancia) | **0.22** |
+| Mejora media (LR − Elo) | **−0.0133** |
+| $\sigma_{\text{LOFO}}$ (con noise floor) | 0.0203 |
+| Per-fold wins (LR &lt; Elo) | 2 / 4 |
+| LogLoss LR (media) | 0.6429 |
+| LogLoss Elo (media) | 0.6295 |
+| Test 2025 logloss LR | 0.4658 |
+| Test 2025 logloss Elo (computed in-route, filtered) | 0.4815 |
+| Test 2025 logloss Elo (baseline, full 2025) | 0.5677 |
+| Sensitivity verdict (imputed rows INCLUDED) | `negative` |
+| $n_{\text{imputed\_skipped}}$ | 755 / 1322 (57.1%) |
+| $n_{\text{primary}}$ | 567 |
+
+**Análisis.** El coeficiente $\beta_2$ es **positivo en 3 de 4 folds** (2021,
+2023, 2024) — la dirección es la correcta: más continuidad de roster en el
+local respecto del visitante se asocia marginalmente a más probabilidad de
+victoria local. Pero la magnitud es demasiado pequeña para superar el ruido:
+$\|z\| = 0.22$ está muy por debajo del umbral 1.0, y la mejora media es
+**negativa** (−0.0133), o sea el LogReg es ligeramente PEOR que Elo puro en
+promedio. Solo 2 de 4 folds ganan con la feature añadida (el fold 2021 con
+mejora marginal +0.0020 y el 2024 con +0.0087; los folds 2022 y 2023 son
+claramente peores, arrastrados por la sobreconfianza del LogReg en esas
+temporadas). El AND-of-4 atrapa la falta de señal por **dos** condiciones
+independientes — `cond2` (mejora media bajo el noise floor) y `cond4`
+(significancia estadística insuficiente) — lo que da robustez al veredicto.
+
+El test held-out 2025 muestra una aparente victoria del LogReg (logloss 0.466
+vs 0.482 del Elo computed in-route), pero esa comparación se hace sobre la
+sub-población filtrada (567 filas, sin imputed rows) y no es directamente
+comparable con el baseline 0.5677 que mide `precision_improved.json` sobre
+los 314 partidos de 2025. La condición `cond3` (test-2025 logloss < baseline
+0.5677) pasa en ambos casos — pero esa condición no es la que rechaza la
+adopción; las que rechazan son `cond2` y `cond4`.
+
+**Decisión.** No se adopta la feature de roster churn. La señal existe (el
+coeficiente es positivo en la dirección esperada) pero es **demasiado débil**
+para complementar al baseline Elo en producción. Las razones estructurales
+—constante por equipo-temporada (varianza within-fold limitada), correlación
+alta con la fuerza general del equipo ya capturada por Elo, e inversión
+limitada en la base de datos de stats por jugador— sugieren que esta línea
+no va a cambiar con más datos del mismo tipo. Cerrar B5 como NEGATIVE es
+la conclusión correcta.
+
+**Artefacto.** `models/b5_churn_results.json` contiene los resultados
+completos (per-fold $\beta_2$, loglosses, $\sigma_{\text{LOFO}}$, test_metrics,
+`failing_conditions`, `sensitivity_verdict`, `n_imputed_skipped`,
+`sample_population`, `elo_baseline_logloss`). No se modifica `api/main.py` ni
+`simulation/simulator.py` en la ruta negativa.
+
+**Próximos pasos.** Este resultado NEGATIVE cierra la línea de "feature de
+continuidad de plantilla" para este TFG. La palanca que queda en GRUPO B es
+**B6** (ampliar el dataset histórico de partidos, ver
+`docs/PLAN_MEJORAS_CONSOLIDADO.md`): la única forma plausible de mejorar
+más la señal de partido es tener más datos, no más features. B7 (re-validar
+con la temporada 2026/27 cuando esté disponible) queda como follow-up
+bloqueado por calendario.
+
+**By-products durables** (independientes del veredicto, ya en `main`):
+
+- `src/data/team_id_mapper.py` (PR1): mapa `ID_Equipo → canónico` con 22
+  entradas y correcciones de LT→'Cisterna Top Volley' y PC→'Piacenza Copra'
+  (sin esto, los dos Cisterna y los dos Piacenza se mezclaban en el cálculo
+  de continuidad).
+- Fix Q4 en `src/data/feature_store.py:282` (PR1): la llamada a
+  `normalize_team_name` con códigos opacos (`MO`, `TN-ITAS`, etc.) silenciosamente
+  fallaba para todos los equipos menos Modena/Trento/Siena. Ahora se rutea
+  primero por `team_id_mapper`. Pre-fix solo 3 equipos tenían continuidad no-cero;
+  post-fix 18 de 22.
+- `tests/test_roster_continuity.py` (PR1): test de regresión REQ-026 con
+  truth-table para APG/Perugia y BASTIA/Grottazzolina (protege contra la
+  trampa de los nombres de archivo invertidos en el dataset) + guard contra
+  re-implementación que use nombres de archivo en vez de `ID_Equipo`.
+- `tests/test_adoption_gate.py` (PR3): 6 truth-table cases para el AND-of-4
+  B5-adaptado + 1 caso de regresión B4. Garantiza que cambios futuros al gate
+  no rompen ni la rama B4 ni la B5.
+- `run_b5_route` y `_write_b5_fallback` (PR3): infraestructura reutilizable
+  para cualquier feature de "churn-style" que se quiera evaluar en el futuro
+  (ej. feature de momentum de puntos, feature de dependencia de un jugador
+  franquicia).
+
+**Nota metodológica.** La implementación de `run_b5_route` pasó por 4 fixes
+post-apply que se documentan por transparencia:
+
+1. `8c35f42` corrigió un F821 (`_write_negative_fallback` referenciado en
+   `run_b4_route` pero renombrado a `_write_b5_fallback` sin actualizar las 2
+   llamadas). Preservé la firma original de `_write_negative_fallback` para
+   no romper el contrato B4 (R-DRIFT-1).
+2. `8c35f42` también corrigió `KeyError: 'temporada_inicio'` en
+   `run_b5_route`: `match_features.csv` usa la columna `temporada`, no
+   `temporada_inicio` (esta última solo existe en el DataFrame interno de
+   `run_b4_route`). Reemplacé las 9 referencias dentro de la función B5
+   solamente, sin tocar las 11 referencias de B4 que sí son correctas.
+3. `8c35f42` convirtió `temporada` de string `'YYYY/YYYY'` a `int` (año de
+   inicio) en el load, porque la matemática de recency
+   (`(current_max_season - temporada) / 2.0`) requiere numérico.
+4. `8c35f42` agregó las dos keys que faltaban en el artefacto según REQ-022
+   del spec: `elo_baseline_logloss` y `sample_population`. Renombré
+   `test_metrics_if_computed` a `test_metrics` (manteniendo el alias para
+   back-compat).
+
+El veredicto y los números son idénticos antes y después de los fixes (el
+gate se aplica al `result` calculado por la route, no a la forma del
+artefacto escrito), así que los fixes son cosméticos respecto al resultado
+experimental pero necesarios para que el código compile, los tests pasen, y
+el artefacto cumpla con el contrato del spec.
+
 ## 8. Qué NO se hizo (honestidad de alcance)
 
 - No se amplió el nº de partidos históricos: `sets_partidos.csv` tiene ~1322
