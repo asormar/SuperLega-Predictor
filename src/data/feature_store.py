@@ -282,9 +282,7 @@ def compute_roster_features(
     # Normalizar nombres de equipo en player_stats
     # Use team_id_mapper first (handles opaque ID_EQUIPO codes), then
     # normalize_team_name as fallback for other naming variants.
-    ps["equipo"] = ps["equipo_id"].apply(
-        lambda x: get_canonical_team(x) or normalize_team_name(x)
-    )
+    ps["equipo"] = ps["equipo_id"].apply(lambda x: get_canonical_team(x) or normalize_team_name(x))
 
     # Filtrar solo jugadores individuales (no totales de equipo)
     # noqa E712 a proposito: esto es una Series de pandas, no un bool. La

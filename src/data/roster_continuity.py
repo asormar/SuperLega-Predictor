@@ -44,7 +44,6 @@ sys.path.insert(0, str(BASE_DIR))
 
 from src.data.team_id_mapper import ID_EQUIPO_MAP
 
-
 # ─────────────────────────────────────────────────────────────
 # Public API
 # ─────────────────────────────────────────────────────────────
@@ -93,7 +92,6 @@ def compute_roster_continuity(
     for _, row in flat.iterrows():
         eid = row["equipo_id"]
         temp = row["temporada"]
-        total_t = row["t1_total_pts"]
         temp_num = _parse_season(temp)
 
         # Find T-1 season
@@ -115,9 +113,9 @@ def compute_roster_continuity(
 
         # Roster in T-1
         t1_players = roster_by_season.loc[(eid, t1)]
-        t1_points_lookup = pp[
-            (pp["equipo_id"] == eid) & (pp["temporada"] == t1)
-        ].set_index("jugador")["puntos"]
+        t1_points_lookup = pp[(pp["equipo_id"] == eid) & (pp["temporada"] == t1)].set_index(
+            "jugador"
+        )["puntos"]
 
         # Roster in current season T
         t_players = roster_by_season.loc[(eid, temp)]
@@ -143,15 +141,22 @@ def compute_roster_continuity(
     result_df = pd.DataFrame(results).set_index(["equipo_id", "temporada"])
 
     # ── League-median imputation for first-season teams (REQ-005) ──
-    non_imputed = result_df[result_df["imputed"] == False]["continuity"].dropna()
+    # Rows with NaN imputed are first-season teams needing league median
+    needs_imputation = result_df["imputed"].isna()
+
+    # Compute league median from non-imputed rows
+    non_imputed = result_df[~needs_imputation]["continuity"].dropna()
     if len(non_imputed) > 0:
         league_median = float(non_imputed.median())
     else:
         league_median = 1.0
 
-    imputed_mask = result_df["imputed"].isna()
-    result_df.loc[imputed_mask, "continuity"] = league_median
-    result_df.loc[imputed_mask, "imputed"] = True
+    # Apply imputation
+    result_df.loc[needs_imputation, "continuity"] = league_median
+    result_df.loc[needs_imputation, "imputed"] = True
+
+    # Ensure imputed column is boolean (fill remaining NaN for already-False rows)
+    result_df["imputed"] = result_df["imputed"].fillna(False)
 
     return result_df
 
