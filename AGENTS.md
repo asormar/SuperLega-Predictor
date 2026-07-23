@@ -42,6 +42,7 @@ Python (all run via `python -m`):
 - `python -m src.data.feature_store` — rebuilds `models/feature_cache/{match,set}_{X,y}_{train,val,test}.csv`.
 - `python -m src.simulation.simulator` — quick CLI smoke test (Trento vs Perugia, 1000 MC sims).
 - `python -m src.simulation.season_simulator` — quick CLI season smoke test.
+- `python -m src.models.cross_temporal_check` — evalúa el modelo de producción (margin-Elo) en cada año held-out (2022-2025 por defecto) para verificar que la métrica publicada en `precision_improved.json` (logloss 0.5677, AUC 0.762 en 2025) es estable en años adyacentes. `--save` además escribe `models/report/cross_temporal.md` (tabla Markdown para la memoria).
 
 Frontend (in `src/web/`):
 - `npm run dev` / `npm run build` / `npm run preview` / `npm run lint` (ESLint flat config, ignores `dist`).
