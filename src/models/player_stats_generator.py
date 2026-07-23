@@ -168,50 +168,19 @@ class PlayerStatsGenerator:
         Los IDs reales en los CSVs de stats_por_equipo_completo son:
         APG, BASTIA, CIS-VOLLEY, LT, MC, MI-POWER, MIVER, MO, PC,
         PD, PIACENZAYOU, TN-ITAS, VRI, TA, VV, etc.
+
+        Delega a :func:`src.data.team_id_mapper.get_canonical_team`
+        para mantener un unico mapa maestro de IDs.
         """
+        from src.data.team_id_mapper import get_canonical_team
         from src.data.team_mapper import normalize_team_name
 
-        # Mapa basado en los IDs REALES del CSV
-        id_map = {
-            # Equipos temporada 2024/2025
-            "TN-ITAS": "Trento",
-            "APG": "Perugia",
-            "MC": "Lube",
-            "MI-POWER": "Milano",
-            "VRI": "Verona",
-            "MIVER": "Monza",
-            "MO": "Modena",
-            "PIACENZAYOU": "Piacenza",
-            "CIS-VOLLEY": "Cisterna",
-            "PD": "Padova",
-            "TA": "Taranto",
-            "BASTIA": "Grottazzolina",
-            # Equipos historicos
-            "LT": "Cisterna",
-            "PC": "Piacenza",
-            "RAV-ROB": "Ravenna",
-            "VV": "Vibo Valentia",
-            "FR-SORA": "Sora",
-            "SIENA-EMMAS": "Siena",
-            "BAM": "Cuneo",
-            "CUNEOSPORT": "Cuneo",
-            "CAST-MATER": "Castellana Grotte",
-            "ACICASTELLO": "Acicastello",
-        }
-
-        eid = str(equipo_id).strip()
-
-        # Busqueda exacta primero
-        if eid in id_map:
-            return id_map[eid]
-
-        # Busqueda por prefijo/sufijo exacto (para variantes con prefijos/sufijos)
-        for key, name in id_map.items():
-            if eid.startswith(key) or eid.endswith(key):
-                return name
+        name = get_canonical_team(equipo_id)
+        if name is not None:
+            return name
 
         # Fallback: intentar normalizar
-        return normalize_team_name(eid)
+        return normalize_team_name(str(equipo_id).strip())
 
     def generate_set_stats(
         self,
