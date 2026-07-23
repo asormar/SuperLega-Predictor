@@ -43,6 +43,7 @@ Python (all run via `python -m`):
 - `python -m src.simulation.simulator` — quick CLI smoke test (Trento vs Perugia, 1000 MC sims).
 - `python -m src.simulation.season_simulator` — quick CLI season smoke test.
 - `python -m src.models.cross_temporal_check` — evalúa el modelo de producción (margin-Elo) en cada año held-out (2022-2025 por defecto) para verificar que la métrica publicada en `precision_improved.json` (logloss 0.5677, AUC 0.762 en 2025) es estable en años adyacentes. `--save` además escribe `models/report/cross_temporal.md` (tabla Markdown para la memoria).
+- `python -m src.models.precision_report` — regenera el reporte unificado de precisión (E3 del plan). Salidas: `models/report/precision_report.md` (Markdown con snapshot canónico, per-year set validation, B4/B5 verdicts) + `models/report/precision_table.tex` (tabular LaTeX lista para pegar en `latex/`). Es la única fuente de cifras para la memoria; correr después de cualquier cambio de datos o modelo.
 
 Frontend (in `src/web/`):
 - `npm run dev` / `npm run build` / `npm run preview` / `npm run lint` (ESLint flat config, ignores `dist`).
