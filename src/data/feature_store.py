@@ -273,13 +273,16 @@ def compute_roster_features(
         player_stats: DataFrame de player_stats con stats individuales
     """
     from src.data.team_mapper import normalize_team_name
+    from src.data.team_id_mapper import get_canonical_team
     from scipy.stats import entropy
 
     df = match_df.copy()
     ps = player_stats.copy()
 
     # Normalizar nombres de equipo en player_stats
-    ps["equipo"] = ps["equipo_id"].apply(normalize_team_name)
+    # Use team_id_mapper first (handles opaque ID_EQUIPO codes), then
+    # normalize_team_name as fallback for other naming variants.
+    ps["equipo"] = ps["equipo_id"].apply(lambda x: get_canonical_team(x) or normalize_team_name(x))
 
     # Filtrar solo jugadores individuales (no totales de equipo)
     # noqa E712 a proposito: esto es una Series de pandas, no un bool. La
