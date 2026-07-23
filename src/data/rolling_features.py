@@ -27,6 +27,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from src.data.team_mapper import normalize_team_name
+from src.data.data_pipeline import load_player_stats
+from src.data.roster_continuity import compute_roster_continuity
+from src.data.team_id_mapper import get_canonical_team
 
 # ─── Parámetros (tuneables; ver optimize_elo) ────────────────────────────────
 # CANONICAL Elo constants — single source of truth. Other modules (e.g. the
@@ -158,6 +161,17 @@ def build_rolling_match_features(
 
     alpha = 1 - 0.5 ** (1.0 / form_halflife)  # peso EWMA
 
+    # ── Roster continuity (pre-season churn signal, B5) ──
+    ps = load_player_stats()
+    cont_df = compute_roster_continuity(ps)
+    # Map equipo_id → canonical name and aggregate (safe for 1:many mappings like Cuneo)
+    cont_df_flat = cont_df.reset_index()
+    cont_df_flat["canonical"] = cont_df_flat["equipo_id"].map(get_canonical_team)
+    cont_df_flat["temp_year"] = cont_df_flat["temporada"].str.split("/").str[0].astype(int)
+    cont_agg = cont_df_flat.groupby(["canonical", "temp_year"])["continuity"].mean()
+    cont_lookup = cont_agg.to_dict()
+    cont_league_median = float(cont_agg.median())
+
     feat_rows = []
     for _, r in m.iterrows():
         h, a = r["local"], r["visitante"]
@@ -240,6 +254,13 @@ def build_rolling_match_features(
         feat["diff_set_diff_exp"] = feat["h_set_diff_exp"] - feat["a_set_diff_exp"]
         feat["diff_streak"] = feat["h_streak"] - feat["a_streak"]
         feat["diff_win_rate_home_away"] = feat["h_win_rate_home"] - feat["a_win_rate_away"]
+
+        # ── Roster continuity (B5) ──
+        h_cont = cont_lookup.get((h, season))
+        a_cont = cont_lookup.get((a, season))
+        feat["h_roster_continuity"] = h_cont if h_cont is not None else cont_league_median
+        feat["a_roster_continuity"] = a_cont if a_cont is not None else cont_league_median
+        feat["diff_roster_continuity"] = feat["h_roster_continuity"] - feat["a_roster_continuity"]
 
         feat_rows.append(feat)
 
